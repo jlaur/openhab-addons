@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -18,7 +18,6 @@ import java.io.IOException;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.ambientweather.internal.config.BridgeConfig;
@@ -62,12 +61,10 @@ public class AmbientWeatherBridgeHandler extends BaseBridgeHandler {
     private ScheduledFuture<?> validateKeysJob;
 
     // Application key is granted only by request from developer
-    @Nullable
-    private String applicationKey;
+    private String applicationKey = "";
 
     // API key assigned to user in ambientweather.net dashboard
-    @Nullable
-    private String apiKey;
+    private String apiKey = "";
 
     // Used Ambient Weather real-time API to retrieve weather data
     // for weather stations assigned to an API key
@@ -130,7 +127,7 @@ public class AmbientWeatherBridgeHandler extends BaseBridgeHandler {
      */
     private boolean hasApplicationKey() {
         String configApplicationKey = getConfigAs(BridgeConfig.class).applicationKey;
-        if (StringUtils.isEmpty(configApplicationKey)) {
+        if (configApplicationKey == null || configApplicationKey.isEmpty()) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Missing application key");
             return false;
         }
@@ -143,7 +140,7 @@ public class AmbientWeatherBridgeHandler extends BaseBridgeHandler {
      */
     private boolean hasApiKey() {
         String configApiKey = getConfigAs(BridgeConfig.class).apiKey;
-        if (StringUtils.isEmpty(configApiKey)) {
+        if (configApiKey == null || configApiKey.isEmpty()) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Missing API key");
             return false;
         }
@@ -151,8 +148,9 @@ public class AmbientWeatherBridgeHandler extends BaseBridgeHandler {
         return true;
     }
 
-    public void setThingOfflineWithCommError(String errorDetail, String statusDescription) {
-        updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, statusDescription);
+    public void setThingOfflineWithCommError(@Nullable String errorDetail, @Nullable String statusDescription) {
+        String status = statusDescription != null ? statusDescription : "null";
+        updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, status);
     }
 
     @Override
@@ -213,11 +211,11 @@ public class AmbientWeatherBridgeHandler extends BaseBridgeHandler {
         updateStatus(ThingStatus.ONLINE, ThingStatusDetail.NONE);
     }
 
-    public @Nullable String getApplicationKey() {
+    public String getApplicationKey() {
         return applicationKey;
     }
 
-    public @Nullable String getApiKey() {
+    public String getApiKey() {
         return apiKey;
     }
 

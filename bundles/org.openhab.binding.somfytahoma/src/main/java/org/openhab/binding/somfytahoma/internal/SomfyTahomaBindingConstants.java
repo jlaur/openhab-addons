@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,7 +12,11 @@
  */
 package org.openhab.binding.somfytahoma.internal;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.core.thing.ThingTypeUID;
@@ -22,6 +26,7 @@ import org.openhab.core.thing.ThingTypeUID;
  * used across the whole binding.
  *
  * @author Ondrej Pecta - Initial contribution
+ * @author Laurent Garnier - Other portals integration
  */
 @NonNullByDefault
 public class SomfyTahomaBindingConstants {
@@ -106,7 +111,9 @@ public class SomfyTahomaBindingConstants {
     public static final ThingTypeUID THING_TYPE_POD = new ThingTypeUID(BINDING_ID, "pod");
 
     // Heating system
-    public static final ThingTypeUID THING_TYPE_HEATING_SYSTEM = new ThingTypeUID(BINDING_ID, "heatingsystem");
+    public static final ThingTypeUID THING_TYPE_VALVE_HEATING_SYSTEM = new ThingTypeUID(BINDING_ID,
+            "valveheatingsystem");
+    public static final ThingTypeUID THING_TYPE_ZWAVE_HEATING_SYSTEM = new ThingTypeUID(BINDING_ID, "heatingsystem");
     public static final ThingTypeUID THING_TYPE_ONOFF_HEATING_SYSTEM = new ThingTypeUID(BINDING_ID,
             "onoffheatingsystem");
     public static final ThingTypeUID THING_TYPE_EXTERIOR_HEATING_SYSTEM = new ThingTypeUID(BINDING_ID,
@@ -117,6 +124,10 @@ public class SomfyTahomaBindingConstants {
 
     // Pergola
     public static final ThingTypeUID THING_TYPE_PERGOLA = new ThingTypeUID(BINDING_ID, "pergola");
+
+    // Bioclimatic Pergola
+    public static final ThingTypeUID THING_TYPE_BIOCLIMATIC_PERGOLA = new ThingTypeUID(BINDING_ID,
+            "bioclimaticpergola");
 
     // Window handle
     public static final ThingTypeUID THING_TYPE_WINDOW_HANDLE = new ThingTypeUID(BINDING_ID, "windowhandle");
@@ -154,6 +165,7 @@ public class SomfyTahomaBindingConstants {
 
     // Gateway
     public static final String STATUS = "status";
+    public static final String SCENARIOS = "scenarios";
 
     // Roller shutter, Awning, Screen, Blind, Garage door, Window, Curtain
     public static final String CONTROL = "control";
@@ -164,8 +176,14 @@ public class SomfyTahomaBindingConstants {
     // Silent roller shutter
     public static final String CONTROL_SILENT = "control_silent";
 
-    // Blind
+    // Bioclimatic Pergola
+    public static final String SLATS = "slats";
+    public static final String PERGOLA_COMMAND = "pergola_command";
+
+    // Blind, Bioclimatic Pergola
     public static final String ORIENTATION = "orientation";
+
+    // Blind
     public static final String CLOSURE_AND_ORIENTATION = "closure_orientation";
 
     // Action group
@@ -220,8 +238,16 @@ public class SomfyTahomaBindingConstants {
 
     // Thermostat
     public static final String HEATING_MODE = "heating_mode";
-    public static final String DEROGATION_HEATING_MODE = "derogation_heating_mode";
     public static final String DEROGATION_ACTIVATION = "derogation_activation";
+
+    // Thermostat & Valve Heating system
+    public static final String DEROGATED_TARGET_TEMPERATURE = "derogated_target_temperature";
+    public static final String DEROGATION_HEATING_MODE = "derogation_heating_mode";
+
+    // Valve heating system
+    public static final String CURRENT_HEATING_MODE = "current_heating_mode";
+    public static final String OPEN_CLOSED_VALVE = "open_closed_valve";
+    public static final String OPERATING_MODE = "operating_mode";
 
     // Window handle
     public static final String HANDLE_STATE = "handle_state";
@@ -229,6 +255,7 @@ public class SomfyTahomaBindingConstants {
     // Gate
     public static final String GATE_STATE = "gate_state";
     public static final String GATE_COMMAND = "gate_command";
+    public static final String GATE_POSITION = "gate_position";
 
     // ElectricitySensor
     public static final String ENERGY_CONSUMPTION = "energy_consumption";
@@ -254,13 +281,14 @@ public class SomfyTahomaBindingConstants {
     public static final String SHUTTER = "shutter";
 
     // Constants
-    public static final String TAHOMA_API_URL = "https://www.tahomalink.com/enduser-mobile-web/enduserAPI/";
-    public static final String TAHOMA_EVENTS_URL = TAHOMA_API_URL + "events/";
-    public static final String SETUP_URL = TAHOMA_API_URL + "setup/";
+    public static final String TAHOMA_PORTAL = "www.tahomalink.com";
+    public static final String API_BASE_URL = "/enduser-mobile-web/enduserAPI/";
+    public static final String EVENTS_URL = "events/";
+    public static final String SETUP_URL = "setup/";
     public static final String GATEWAYS_URL = SETUP_URL + "gateways/";
     public static final String DEVICES_URL = SETUP_URL + "devices/";
     public static final String REFRESH_URL = DEVICES_URL + "states/refresh";
-    public static final String EXEC_URL = TAHOMA_API_URL + "exec/";
+    public static final String EXEC_URL = "exec/";
     public static final String DELETE_URL = EXEC_URL + "current/setup/";
     public static final String TAHOMA_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36";
     public static final int TAHOMA_TIMEOUT = 5;
@@ -285,10 +313,13 @@ public class SomfyTahomaBindingConstants {
     public static final String COMMAND_SET_HEATINGLEVEL = "setHeatingLevel";
     public static final String COMMAND_SET_PEDESTRIANPOSITION = "setPedestrianPosition";
     public static final String COMMAND_SET_ROCKERPOSITION = "setRockerPosition";
+    public static final String COMMAND_SET_DEROGATION = "setDerogation";
     public static final String COMMAND_UP = "up";
     public static final String COMMAND_DOWN = "down";
     public static final String COMMAND_OPEN = "open";
     public static final String COMMAND_CLOSE = "close";
+    public static final String COMMAND_OPEN_SLATS = "openSlats";
+    public static final String COMMAND_CLOSE_SLATS = "closeSlats";
     public static final String COMMAND_STOP = "stop";
     public static final String COMMAND_OFF = "off";
     public static final String COMMAND_CHECK_TRIGGER = "checkEventTrigger";
@@ -309,10 +340,12 @@ public class SomfyTahomaBindingConstants {
     public static final String BATTERY_LEVEL_STATE = "core:BatteryLevelState";
     public static final String SIREN_STATUS_STATE = "internal:SirenStatusState";
     public static final String TARGET_TEMPERATURE_STATE = "core:TargetTemperatureState";
+    public static final String TARGET_ROOM_TEMPERATURE_STATE = "core:TargetRoomTemperatureState";
     public static final String SMOKE_STATE = "core:SmokeState";
     public static final String SENSOR_DEFECT_STATE = "core:SensorDefectState";
     public static final String RADIO_PART_BATTERY_STATE = "io:MaintenanceRadioPartBatteryState";
     public static final String SENSOR_PART_BATTERY_STATE = "io:MaintenanceSensorPartBatteryState";
+    public static final String ZWAVE_SET_POINT_TYPE_STATE = "zwave:SetPointTypeState";
 
     // supported uiClasses
     public static final String CLASS_ROLLER_SHUTTER = "RollerShutter";
@@ -361,12 +394,13 @@ public class SomfyTahomaBindingConstants {
             THING_TYPE_EXTERIORSCREEN, THING_TYPE_EXTERIORVENETIANBLIND, THING_TYPE_GARAGEDOOR, THING_TYPE_AWNING,
             THING_TYPE_ACTIONGROUP, THING_TYPE_ONOFF, THING_TYPE_LIGHT, THING_TYPE_LIGHTSENSOR, THING_TYPE_SMOKESENSOR,
             THING_TYPE_CONTACTSENSOR, THING_TYPE_OCCUPANCYSENSOR, THING_TYPE_WINDOW, THING_TYPE_INTERNAL_ALARM,
-            THING_TYPE_EXTERNAL_ALARM, THING_TYPE_POD, THING_TYPE_HEATING_SYSTEM, THING_TYPE_ONOFF_HEATING_SYSTEM,
+            THING_TYPE_EXTERNAL_ALARM, THING_TYPE_POD, THING_TYPE_ZWAVE_HEATING_SYSTEM, THING_TYPE_ONOFF_HEATING_SYSTEM,
             THING_TYPE_DOOR_LOCK, THING_TYPE_PERGOLA, THING_TYPE_WINDOW_HANDLE, THING_TYPE_TEMPERATURESENSOR,
             THING_TYPE_GATE, THING_TYPE_CURTAIN, THING_TYPE_ELECTRICITYSENSOR, THING_TYPE_DOCK, THING_TYPE_SIREN,
             THING_TYPE_ADJUSTABLE_SLATS_ROLLERSHUTTER, THING_TYPE_MYFOX_CAMERA, THING_TYPE_ROLLERSHUTTER_UNO,
             THING_TYPE_WATERSENSOR, THING_TYPE_HUMIDITYSENSOR, THING_TYPE_MYFOX_ALARM, THING_TYPE_THERMOSTAT,
-            THING_TYPE_DIMMER_LIGHT, THING_TYPE_EXTERIOR_HEATING_SYSTEM));
+            THING_TYPE_DIMMER_LIGHT, THING_TYPE_EXTERIOR_HEATING_SYSTEM, THING_TYPE_VALVE_HEATING_SYSTEM,
+            THING_TYPE_BIOCLIMATIC_PERGOLA));
 
     // somfy gateways
     public static Map<Integer, String> gatewayTypes = new HashMap<Integer, String>() {
@@ -383,6 +417,7 @@ public class SomfyTahomaBindingConstants {
             put(29, "TAHOMA_V2");
             put(30, "KIZBOX_V2_3H");
             put(31, "KIZBOX_V2_2H");
+            put(32, "COZYTOUCH");
             put(34, "CONNEXOON");
             put(35, "JSW_CAMERA");
             put(37, "KIZBOX_MINI_DAUGHTERBOARD");

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -160,6 +160,13 @@ public class FeedHandler extends BaseThingHandler {
                 } else {
                     String description = latestEntry.getDescription().getValue();
                     state = new StringType(getValueSafely(description));
+                }
+                break;
+            case CHANNEL_LATEST_LINK:
+                if (latestEntry == null || latestEntry.getLink() == null) {
+                    state = UnDefType.UNDEF;
+                } else {
+                    state = new StringType(getValueSafely(latestEntry.getLink()));
                 }
                 break;
             case CHANNEL_LATEST_PUBLISHED_DATE:

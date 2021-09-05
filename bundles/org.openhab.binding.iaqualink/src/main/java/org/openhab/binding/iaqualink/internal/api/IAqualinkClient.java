@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -17,6 +17,7 @@ import java.lang.reflect.Type;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -30,12 +31,12 @@ import org.eclipse.jetty.client.util.StringContentProvider;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.http.HttpStatus;
-import org.openhab.binding.iaqualink.internal.api.model.AccountInfo;
-import org.openhab.binding.iaqualink.internal.api.model.Auxiliary;
-import org.openhab.binding.iaqualink.internal.api.model.Device;
-import org.openhab.binding.iaqualink.internal.api.model.Home;
-import org.openhab.binding.iaqualink.internal.api.model.OneTouch;
-import org.openhab.binding.iaqualink.internal.api.model.SignIn;
+import org.openhab.binding.iaqualink.internal.api.dto.AccountInfo;
+import org.openhab.binding.iaqualink.internal.api.dto.Auxiliary;
+import org.openhab.binding.iaqualink.internal.api.dto.Device;
+import org.openhab.binding.iaqualink.internal.api.dto.Home;
+import org.openhab.binding.iaqualink.internal.api.dto.OneTouch;
+import org.openhab.binding.iaqualink.internal.api.dto.SignIn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,7 +73,8 @@ public class IAqualinkClient {
     private static final String HEADER_ACCEPT_LANGUAGE = "en-us";
     private static final String HEADER_ACCEPT_ENCODING = "br, gzip, deflate";
 
-    private static final String SUPPORT_URL = "https://support.iaqualink.com";
+    private static final String AUTH_URL = "https://prod.zodiac-io.com/users/v1/login";
+    private static final String DEVICES_URL = "https://r-api.iaqualink.net/devices.json";
     private static final String IAQUALINK_BASE_URL = "https://p-api.iaqualink.net/v1/mobile/session.json";
 
     private Gson gson = new GsonBuilder().registerTypeAdapter(Home.class, new HomeDeserializer())
@@ -112,15 +114,15 @@ public class IAqualinkClient {
             throws IOException, NotAuthorizedException {
         String signIn = gson.toJson(new SignIn(apiKey, username, password)).toString();
         try {
-            ContentResponse response = httpClient.newRequest(SUPPORT_URL + "/users/sign_in.json")
-                    .method(HttpMethod.POST).content(new StringContentProvider(signIn), "application/json").send();
+            ContentResponse response = httpClient.newRequest(AUTH_URL).method(HttpMethod.POST)
+                    .content(new StringContentProvider(signIn), "application/json").send();
             if (response.getStatus() == HttpStatus.UNAUTHORIZED_401) {
                 throw new NotAuthorizedException(response.getReason());
             }
             if (response.getStatus() != HttpStatus.OK_200) {
                 throw new IOException(response.getReason());
             }
-            return gson.fromJson(response.getContentAsString(), AccountInfo.class);
+            return Objects.requireNonNull(gson.fromJson(response.getContentAsString(), AccountInfo.class));
         } catch (InterruptedException | TimeoutException | ExecutionException e) {
             throw new IOException(e);
         }
@@ -138,7 +140,7 @@ public class IAqualinkClient {
      */
     public Device[] getDevices(@Nullable String apiKey, @Nullable String token, int id)
             throws IOException, NotAuthorizedException {
-        return getAqualinkObject(UriBuilder.fromUri(SUPPORT_URL + "/devices.json"). //
+        return getAqualinkObject(UriBuilder.fromUri(DEVICES_URL). //
                 queryParam("api_key", apiKey). //
                 queryParam("authentication_token", token). //
                 queryParam("user_id", id).build(), Device[].class);
@@ -347,7 +349,7 @@ public class IAqualinkClient {
      * @throws NotAuthorizedException
      */
     private <T> T getAqualinkObject(URI uri, Type typeOfT) throws IOException, NotAuthorizedException {
-        return gson.fromJson(getRequest(uri), typeOfT);
+        return Objects.requireNonNull(gson.fromJson(getRequest(uri), typeOfT));
     }
 
     /**
@@ -383,11 +385,8 @@ public class IAqualinkClient {
 
     class HomeDeserializer implements JsonDeserializer<Home> {
         @Override
-        public Home deserialize(@Nullable JsonElement json, @Nullable Type typeOfT,
-                @Nullable JsonDeserializationContext context) throws JsonParseException {
-            if (json == null) {
-                throw new JsonParseException("No JSON");
-            }
+        public @Nullable Home deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+                throws JsonParseException {
             JsonObject jsonObject = json.getAsJsonObject();
             JsonArray homeScreen = jsonObject.getAsJsonArray("home_screen");
             JsonObject home = new JsonObject();
@@ -408,11 +407,8 @@ public class IAqualinkClient {
 
     class OneTouchDeserializer implements JsonDeserializer<OneTouch[]> {
         @Override
-        public OneTouch[] deserialize(@Nullable JsonElement json, @Nullable Type typeOfT,
-                @Nullable JsonDeserializationContext context) throws JsonParseException {
-            if (json == null) {
-                throw new JsonParseException("No JSON");
-            }
+        public OneTouch @Nullable [] deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+                throws JsonParseException {
             JsonObject jsonObject = json.getAsJsonObject();
             JsonArray oneTouchScreen = jsonObject.getAsJsonArray("onetouch_screen");
             List<OneTouch> list = new ArrayList<>();
@@ -429,7 +425,7 @@ public class IAqualinkClient {
                                         oneTouchJson.add(oneTouchEntry.getKey(), oneTouchEntry.getValue());
                                     });
                                 });
-                                list.add(gsonInternal.fromJson(oneTouchJson, OneTouch.class));
+                                list.add(Objects.requireNonNull(gsonInternal.fromJson(oneTouchJson, OneTouch.class)));
                             }
                         }
                     });
@@ -441,11 +437,8 @@ public class IAqualinkClient {
 
     class AuxDeserializer implements JsonDeserializer<Auxiliary[]> {
         @Override
-        public Auxiliary[] deserialize(@Nullable JsonElement json, @Nullable Type typeOfT,
-                @Nullable JsonDeserializationContext context) throws JsonParseException {
-            if (json == null) {
-                throw new JsonParseException("No JSON");
-            }
+        public Auxiliary @Nullable [] deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+                throws JsonParseException {
             JsonObject jsonObject = json.getAsJsonObject();
             JsonArray auxScreen = jsonObject.getAsJsonArray("devices_screen");
             List<Auxiliary> list = new ArrayList<>();
@@ -462,7 +455,7 @@ public class IAqualinkClient {
                                         auxJson.add(auxEntry.getKey(), auxEntry.getValue());
                                     });
                                 });
-                                list.add(gsonInternal.fromJson(auxJson, Auxiliary.class));
+                                list.add(Objects.requireNonNull(gsonInternal.fromJson(auxJson, Auxiliary.class)));
                             }
                         }
                     });

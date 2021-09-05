@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -347,16 +347,14 @@ public class IntesisBoxHandler extends BaseThingHandler implements IntesisBoxCha
                     .withType(channelTypeUID).withKind(ChannelKind.STATE).build();
             thingBuilder.withChannel(channel);
             updateThing(thingBuilder.build());
-
-            if (limits.containsKey(channelId)) {
-                List<StateOption> options = new ArrayList<>();
-                for (String mode : limits.get(channelId)) {
-                    options.add(new StateOption(mode,
-                            mode.substring(0, 1).toUpperCase() + mode.substring(1).toLowerCase()));
-                }
-                intesisStateDescriptionProvider.setStateOptions(new ChannelUID(getThing().getUID(), channelId),
-                        options);
+        }
+        if (limits.containsKey(channelId)) {
+            List<StateOption> options = new ArrayList<>();
+            for (String mode : limits.get(channelId)) {
+                options.add(
+                        new StateOption(mode, mode.substring(0, 1).toUpperCase() + mode.substring(1).toLowerCase()));
             }
+            intesisStateDescriptionProvider.setStateOptions(new ChannelUID(getThing().getUID(), channelId), options);
         }
     }
 

@@ -115,7 +115,7 @@ Thing ipcamera:hikvision:West "West Camera"
     port=80,
     nvrChannel=4,
     serverPort=54324,
-    ffmpegOutput="/etc/openhab2/html/cameras/camera-west/",
+    ffmpegOutput="/var/lib/openhab/ipcamera/West/",
     ffmpegInput="rtsp://192.168.0.XX:554/ISAPI/Streaming/channels/401"
 ]
 ```
@@ -192,10 +192,11 @@ If you do not specify any of these, the binding will use the default which shoul
 | `ffmpegInput`| Best if this stream is in H.264 format and can be RTSP or HTTP URLs. Leave this blank to use the auto detected RTSP address for ONVIF cameras. |
 | `ffmpegInputOptions` | Allows you to specify any options before the -i on the commands for FFmpeg. If you have a ESP32 camera that only has a mjpeg stream then make this equal `-f mjpeg`. |
 | `ffmpegLocation`| The full path including the filename for where you have installed FFmpeg. The default should work for most Linux installs but if using windows use this format: `c:\ffmpeg\bin\ffmpeg.exe` |
-| `ffmpegOutput`| The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this format: `c:\openhabconf\html\ipcamera\`. If you would like to expose the GIF files to your static server, you can set it to `/etc/openhab2/html/cameras/camera-name/` |
+| `ffmpegOutput`| The full path to a unique folder (different for each camera) where FFmpeg has the ability to write files to ending with a slash. If you leave this blank, the binding will automatically use `$OPENHAB_USERDATA/ipcamera/UID`. See here for where this is located on your installation, <https://www.openhab.org/docs/installation/#getting-installation-info> |
 | `hlsOutOptions`| This gives you direct access to specify your own FFmpeg options to be used. Default: `-strict -2 -f lavfi -i aevalsrc=0 -acodec aac -vcodec copy -hls_flags delete_segments -hls_time 2 -hls_list_size 4` |
 | `gifOutOptions`| This gives you direct access to specify your own FFmpeg options to be used for animated GIF files. Default: `-r 2 -filter_complex scale=-2:360:flags=lanczos,setpts=0.5*PTS,split[o1][o2];[o1]palettegen[p];[o2]fifo[o3];[o3][p]paletteuse` |
 | `mjpegOptions` | Allows you to change the settings for creating a MJPEG stream from RTSP using FFmpeg. Possible reasons to change this would be to rotate or re-scale the picture from the camera, change the JPG compression for better quality or the FPS rate. |
+| `snapshotOptions` | Specify your own FFmpeg options to be used when creating snapshots from RTSP. Default: `-an -vsync vfr -q:v 2 -update 1` |
 | `motionOptions` | This gives access to the FFmpeg parameters for detecting motion alarms from a RTSP stream. One possible use for this is to use the CROP feature to ignore any trees that move in the wind or a timecode stamp. Crop will not remove the trees from your picture, it only ignores the movement of the tree. |
 | `gifPreroll`| Store this many snapshots from BEFORE you trigger a GIF creation. Default: `0` will not use snapshots and will instead use a realtime stream from the ffmpegInput URL |
 | `ipWhitelist`| Enter any IPs inside brackets that you wish to allow to access the video stream. `DISABLE` the default value will turn this feature off.  Example: `ipWhitelist="(127.0.0.1)(192.168.0.99)"` |
@@ -212,6 +213,7 @@ The channels are kept consistent as much as possible from brand to brand to make
 | `activateAlarmOutput2` | Switch | Toggles a cameras relay output 2. |
 | `audioAlarm` | Switch (read only) | When the camera detects noise above a threshold this switch will move to ON. |
 | `autoLED` | Switch | When ON this sets a cameras IR LED to automatically turn on or off. |
+| `carAlarm` | Switch | When a car is detected the switch will turn ON. |
 | `cellMotionAlarm` | Switch (read only) | ONVIF cameras only will reflect the status of the ONVIF event of the same name. |
 | `doorBell` | Switch (read only) | Doorbird only, will reflect the status of the doorbell button. |
 | `enableAudioAlarm` | Switch | Allows the audio alarm to be turned ON or OFF. |
@@ -233,6 +235,7 @@ The channels are kept consistent as much as possible from brand to brand to make
 | `gifHistoryLength` | Number | How many filenames are in the `gifHistory`. |
 | `gotoPreset` | String | ONVIF cameras that can move only. Will cause the camera to move to a preset location. |
 | `hlsUrl` | String | The URL for the ipcamera.m3u8 file. |
+| `humanAlarm` | Switch | When a camera detects a human this switch will turn ON. |
 | `imageUrl` | String | The URL for the ipcamera.jpg file. |
 | `itemLeft` | Switch (read only) | Will turn ON if an API camera detects an item has been left behind. |
 | `itemTaken` | Switch (read only) | Will turn ON if an API camera detects an item has been stolen. |
@@ -245,6 +248,7 @@ The channels are kept consistent as much as possible from brand to brand to make
 | `pan` | Dimmer | Works with ONVIF cameras that can be moved. |
 | `parkingAlarm` | Switch (read only) | When an API camera detects a car, this will turn ON. |
 | `pirAlarm` | Switch (read only) | When a camera with PIR ability detects motion, this turns ON. |
+| `privacyMode` | Switch | Enable or disable the Privacy Mode of newer Amcrest/Dahua cameras. The camera will move the lens way down and stop the stream. |
 | `recordingGif` | Number (read only) | How many seconds recording to GIF for. 0 when file ready. |
 | `recordingMp4` | Number (read only) | How many seconds recording to MP4 for. 0 when file ready. |
 | `rtspUrl` | String | The URL for the cameras auto detected RTSP stream. |
@@ -377,6 +381,9 @@ See this forum thread for examples of how to use snapshots and streams in a site
 
 ## Video Streams
 
+To get video streams working, this forum thread has working widget examples that you can use.
+<https://community.openhab.org/t/oh3-widget-building-a-camera-widget/110069>
+
 To get some of the video formats working, you need to install FFmpeg. 
 Visit their site here to learn how <https://ffmpeg.org/>
 
@@ -478,8 +485,7 @@ To use the HLS feature, you need to:
 
 + Ensure FFmpeg is installed.
 + For `generic` cameras, you will need to use the config `ffmpegInput` to provide a HTTP or RTSP URL.
-+ Supply a folder that the openhab user has write permissions for to the config `ffmpegOutput`.
-+ Set a valid `serverPort` as the default value of -1 will turn this feature off.
++ Set a valid `serverPort` as the value of -1 will turn this feature off.
 + Consider using a SSD/HDD, zram location, or a tmpfs (ram drive) can be used if you only have micro SD/flash based storage.
 
 ### Ram Drive Setup

@@ -76,10 +76,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="serverPort" type="integer" required="true" min="-1" max="65535" groupName="Settings">
@@ -218,10 +218,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -238,6 +238,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -439,10 +447,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -476,6 +484,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -626,6 +642,7 @@
 			<channel id="rtspUrl" typeId="rtspUrl"/>
 			<channel id="imageUrl" typeId="imageUrl"/>
 			<channel id="hlsUrl" typeId="hlsUrl"/>
+			<channel id="enablePrivacyMode" typeId="enablePrivacyMode"/>
 		</channels>
 		<config-description>
 
@@ -682,10 +699,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -719,6 +736,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -910,6 +935,12 @@
 			<channel id="rtspUrl" typeId="rtspUrl"/>
 			<channel id="imageUrl" typeId="imageUrl"/>
 			<channel id="hlsUrl" typeId="hlsUrl"/>
+			<channel id="enablePrivacyMode" typeId="enablePrivacyMode"/>
+			<channel id="carAlarm" typeId="carAlarm"/>
+			<channel id="humanAlarm" typeId="humanAlarm"/>
+			<channel id="tooDarkAlarm" typeId="tooDarkAlarm"/>
+			<channel id="sceneChangeAlarm" typeId="sceneChangeAlarm"/>
+			<channel id="tooBlurryAlarm" typeId="tooBlurryAlarm"/>
 		</channels>
 		<config-description>
 
@@ -966,10 +997,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -1003,6 +1034,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -1232,10 +1271,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -1269,6 +1308,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -1495,10 +1542,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -1532,6 +1579,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -1783,10 +1838,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -1820,6 +1875,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -2058,10 +2121,10 @@
 
 			<parameter name="ffmpegOutput" type="text" required="false" groupName="FFmpeg Setup">
 				<label>FFmpeg Output Folder</label>
-				<description>The full path where FFmpeg has the ability to write files to ending with a slash. For windows use this
-					format, c:\openhabconf\html\ipcamera\
+				<description>Leave this blank and the binding will use the openHAB userdata folder. Alternatively, a unique path for
+					each camera that ends with a slash and has write permissions can be entered.
 				</description>
-				<default>/etc/openhab/html/camera1/</default>
+				<advanced>true</advanced>
 			</parameter>
 
 			<parameter name="hlsOutOptions" type="text" required="false" groupName="FFmpeg Setup">
@@ -2095,6 +2158,14 @@
 				<description>This gives you direct access to specify your own FFmpeg options to be used for MJPEG streams.
 				</description>
 				<default>-q:v 5 -r 2 -vf scale=640:-2 -update 1</default>
+				<advanced>true</advanced>
+			</parameter>
+
+			<parameter name="snapshotOptions" type="text" required="false" groupName="FFmpeg Setup">
+				<label>Snapshot Options</label>
+				<description>Specify your own FFmpeg options to be used when creating snapshots from RTSP.
+				</description>
+				<default>-an -vsync vfr -q:v 2 -update 1</default>
 				<advanced>true</advanced>
 			</parameter>
 
@@ -2476,6 +2547,22 @@
 		<state readOnly="true"/>
 	</channel-type>
 
+	<channel-type id="humanAlarm" advanced="true">
+		<item-type>Switch</item-type>
+		<label>Human Alarm</label>
+		<description>A person has triggered the Human Detection.</description>
+		<category>Alarm</category>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="carAlarm" advanced="true">
+		<item-type>Switch</item-type>
+		<label>Car Alarm</label>
+		<description>A car has triggered the Vehicle Detection.</description>
+		<category>Alarm</category>
+		<state readOnly="true"/>
+	</channel-type>
+
 	<channel-type id="parkingAlarm" advanced="true">
 		<item-type>Switch</item-type>
 		<label>Parking Alarm</label>
@@ -2597,6 +2684,12 @@
 		<label>LED Controls</label>
 		<description>Turn the LED ON and OFF and if supported also 0-100% dimming.</description>
 		<category>Light</category>
+	</channel-type>
+
+	<channel-type id="enablePrivacyMode" advanced="true">
+		<item-type>Switch</item-type>
+		<label>Enable Privacy Mode</label>
+		<description>Turn the Privacy Mode on and off.</description>
 	</channel-type>
 
 	<channel-type id="autoLED" advanced="true">

@@ -3,7 +3,7 @@
 Insteon is a home area networking technology developed primarily for connecting light switches and loads.
 Insteon devices send messages either via the power line, or by means of radio frequency (RF) waves, or both (dual-band.
 A considerable number of Insteon compatible devices such as switchable relays, thermostats, sensors etc are available.
-More about Insteon can be found on [Wikipedia](http://en.wikipedia.org/wiki/Insteon).
+More about Insteon can be found on [Wikipedia](https://en.wikipedia.org/wiki/Insteon).
 
 This binding provides access to the Insteon network by means of either an Insteon PowerLinc Modem (PLM), a legacy Insteon Hub 2242-222 or the current 2245-222 Insteon Hub.
 The modem can be connected to the openHAB server either via a serial port (Model 2413S) or a USB port (Model 2413U.
@@ -199,27 +199,27 @@ Sample things file:
 Bridge insteon:network:home [port="/dev/ttyUSB0"] {
   Thing device 22F8A8 [address="22.F8.A8", productKey="F00.00.15"] {
     Channels:
-      Type switch : keypadButtonA [ group=3 ]
-      Type switch : keypadButtonB [ group=4 ]
-      Type switch : keypadButtonC [ group=5 ]
-      Type switch : keypadButtonD [ group=6 ]
+      Type keypadButtonA : keypadButtonA [ group=3 ]
+      Type keypadButtonB : keypadButtonB [ group=4 ]
+      Type keypadButtonC : keypadButtonC [ group=5 ]
+      Type keypadButtonD : keypadButtonD [ group=6 ]
   }
   Thing device 238D93 [address="23.8D.93", productKey="F00.00.12"]
   Thing device 238F55 [address="23.8F.55", productKey="F00.00.11"] {
     Channels:
-      Type dimmer : dimmer [related="23.B0.D9+23.8F.C9"]
+      Type dimmer        : dimmer [related="23.B0.D9+23.8F.C9"]
   }
   Thing device 238FC9 [address="23.8F.C9", productKey="F00.00.11"] {
     Channels:
-      Type dimmer : dimmer [related="23.8F.55+23.B0.D9"]
+      Type dimmer        : dimmer [related="23.8F.55+23.B0.D9"]
   }
   Thing device 23B0D9 [address="23.B0.D9", productKey="F00.00.11"] {
     Channels:
-      Type dimmer : dimmer [related="23.8F.55+23.8F.C9"]
+      Type dimmer        : dimmer [related="23.8F.55+23.8F.C9"]
   }
   Thing device 243141 [address="24.31.41", productKey="F00.00.11"]  {
     Channels:
-      Type dimmer : dimmer [dimmermax=60]
+      Type dimmer        : dimmer [dimmermax=60]
   }
 }
 ```
@@ -242,22 +242,23 @@ Dimmer dimmer  { channel="insteon:device:home:238D93:dimmer" }
 ## Console Commands
 
 The binding provides commands you can use to help with troubleshooting.
-Enter `smarthome:insteon` in the console and you will get a list of available commands.
+Enter `openhab:insteon` or `insteon` in the console and you will get a list of available commands.
+The `openhab:` prefix is optional:
 
 ```
-openhab> smarthome:insteon
-Usage: smarthome:insteon display_devices - display devices that are online, along with available channels
-Usage: smarthome:insteon display_channels - display channels that are linked, along with configuration information
-Usage: smarthome:insteon display_local_database - display Insteon PLM or hub database details
-Usage: smarthome:insteon display_monitored - display monitored device(s)
-Usage: smarthome:insteon start_monitoring all|address - start displaying messages received from device(s)
-Usage: smarthome:insteon stop_monitoring all|address - stop displaying messages received from device(s)
-Usage: smarthome:insteon send_standard_message address flags cmd1 cmd2 - send standard message to a device
-Usage: smarthome:insteon send_extended_message address flags cmd1 cmd2 [up to 13 bytes] - send extended message to a device
-Usage: smarthome:insteon send_extended_message_2 address flags cmd1 cmd2 [up to 12 bytes] - send extended message with a two byte crc to a device
+openhab> openhab:insteon
+Usage: openhab:insteon display_devices - display devices that are online, along with available channels
+Usage: openhab:insteon display_channels - display channels that are linked, along with configuration information
+Usage: openhab:insteon display_local_database - display Insteon PLM or hub database details
+Usage: openhab:insteon display_monitored - display monitored device(s)
+Usage: openhab:insteon start_monitoring all|address - start displaying messages received from device(s)
+Usage: openhab:insteon stop_monitoring all|address - stop displaying messages received from device(s)
+Usage: openhab:insteon send_standard_message address flags cmd1 cmd2 - send standard message to a device
+Usage: openhab:insteon send_extended_message address flags cmd1 cmd2 [up to 13 bytes] - send extended message to a device
+Usage: openhab:insteon send_extended_message_2 address flags cmd1 cmd2 [up to 12 bytes] - send extended message with a two byte crc to a device
 ```
 
-Here is an example of command: `smarthome:insteon display_local_database`.
+Here is an example of command: `insteon display_local_database`.
 
 When monitoring devices, the output will be displayed where openHAB was started.
 You may need to redirect the output to a log file to see the messages.
@@ -329,11 +330,11 @@ The below example sets a maximum level of 70% for dim 1 and 60% for dim 2:
 Bridge insteon:network:home [port="/dev/ttyUSB0"] {
   Thing device AABBCC [address="AA.BB.CC", productKey="F00.00.11"]  {
     Channels:
-      Type dimmer : dimmer [dimmermax=70]
+      Type dimmer     : dimmer [dimmermax=70]
   }
   Thing device AABBCD [address="AA.BB.CD", productKey="F00.00.15"]  {
     Channels:
-      Type dimmer : loadDimmer [dimmermax=60]
+      Type loadDimmer : loadDimmer [dimmermax=60]
   }
 }
 ```
@@ -357,7 +358,7 @@ Switch fOutBot "Front Outlet Bottom" <socket> { channel="insteon:device:home:AAB
 ```
 
 This will give you individual control of each outlet.
-    
+
 ### Mini Remotes
 
 Link the mini remote to be a controller of the modem by using the set button.
@@ -479,7 +480,7 @@ Put something like this into your .items file:
     Switch doorLock "Front Door [MAP(lock.map):%s]"  { channel="insteon:device:home:AABBCC:switch" }
 ```
 
-and create a file "lock.map" in the transforms directory with these entries: 
+and create a file "lock.map" in the transforms directory with these entries:
 
 ```
     ON=Lock
@@ -576,10 +577,10 @@ To make the buttons available, add the following:
 Bridge insteon:network:home [port="/dev/ttyUSB0"] {
   Thing device AABBCC [address="AA.BB.CC", productKey="F00.00.15"] {
     Channels:
-      Type switch : keypadButtonA [ group="0xf3" ]
-      Type switch : keypadButtonB [ group="0xf4" ]
-      Type switch : keypadButtonC [ group="0xf5" ]
-      Type switch : keypadButtonD [ group="0xf6" ]
+      Type keypadButtonA : keypadButtonA [ group="0xf3" ]
+      Type keypadButtonB : keypadButtonB [ group="0xf4" ]
+      Type keypadButtonC : keypadButtonC [ group="0xf5" ]
+      Type keypadButtonD : keypadButtonD [ group="0xf6" ]
   }
 }
 ```
@@ -646,25 +647,24 @@ Again, refer to the [Insteon Terminal](https://github.com/pfrommerd/insteon-term
 This is an example of what to put into your .items file:
 
 ```
-    Number  thermostatCoolPoint   "cool point [%.1f °F]"  { channel="insteon:device:home:AABBCC:coolSetPoint" }
-    Number  thermostatHeatPoint   "heat point [%.1f °F]"  { channel="insteon:device:home:AABBCC:heatSetPoint" }
-    Number  thermostatSystemMode  "system mode [%d]"      { channel="insteon:device:home:AABBCC:systemMode" }
-    Number  thermostatFanMode     "fan mode [%d]"         { channel="insteon:device:home:AABBCC:fanMode" }
-    Number  thermostatIsHeating   "is heating [%d]"       { channel="insteon:device:home:AABBCC:isHeating"}
-    Number  thermostatIsCooling   "is cooling [%d]"       { channel="insteon:device:home:AABBCC:isCooling" }
-    Number  thermostatTempFahren  "temperature [%.1f °F]" { channel="insteon:device:home:AABBCC:tempFahrenheit" }
-    Number  thermostatTempCelsius "temperature [%.1f °C]" { channel="insteon:device:home:AABBCC:tempCelsius" }
-    Number  thermostatHumidity    "humidity [%.0f %%]"    { channel="insteon:device:home:AABBCC:humidity" }
+    Number              thermostatCoolPoint   "cool point [%.1f °F]"       { channel="insteon:device:home:AABBCC:coolSetPoint" }
+    Number              thermostatHeatPoint   "heat point [%.1f °F]"       { channel="insteon:device:home:AABBCC:heatSetPoint" }
+    Number              thermostatSystemMode  "system mode [%d]"           { channel="insteon:device:home:AABBCC:systemMode" }
+    Number              thermostatFanMode     "fan mode [%d]"              { channel="insteon:device:home:AABBCC:fanMode" }
+    Number              thermostatIsHeating   "is heating [%d]"            { channel="insteon:device:home:AABBCC:isHeating"}
+    Number              thermostatIsCooling   "is cooling [%d]"            { channel="insteon:device:home:AABBCC:isCooling" }
+    Number:Temperature  thermostatTemperature  "temperature [%.1f %unit%]" { channel="insteon:device:home:AABBCC:temperature" }
+    Number              thermostatHumidity    "humidity [%.0f %%]"         { channel="insteon:device:home:AABBCC:humidity" }
 ```
 
 Add this as well for some more exotic features:
 
 ```
-    Number  thermostatACDelay      "A/C delay [%d min]"        { channel="insteon:device:home:AABBCC:acDelay" }
-    Number  thermostatBacklight    "backlight [%d sec]"        { channel="insteon:device:home:AABBCC:backlightDuration" }
-    Number  thermostatStage1       "A/C stage 1 time [%d min]" { channel="insteon:device:home:AABBCC:stage1Duration" }
-    Number  thermostatHumidityHigh "humidity high [%d %%]"     { channel="insteon:device:home:AABBCC:humidityHigh" }
-    Number  thermostatHumidityLow  "humidity low [%d %%]"      { channel="insteon:device:home:AABBCC:humidityLow" }
+    Number              thermostatACDelay      "A/C delay [%d min]"        { channel="insteon:device:home:AABBCC:acDelay" }
+    Number              thermostatBacklight    "backlight [%d sec]"        { channel="insteon:device:home:AABBCC:backlightDuration" }
+    Number              thermostatStage1       "A/C stage 1 time [%d min]" { channel="insteon:device:home:AABBCC:stage1Duration" }
+    Number              thermostatHumidityHigh "humidity high [%d %%]"     { channel="insteon:device:home:AABBCC:humidityHigh" }
+    Number              thermostatHumidityLow  "humidity low [%d %%]"      { channel="insteon:device:home:AABBCC:humidityLow" }
 ```
 
 **Sitemap**
@@ -672,8 +672,7 @@ Add this as well for some more exotic features:
 For the thermostat to display in the GUI, add this to the sitemap file:
 
 ```
-    Text   item=thermostatTempCelsius icon="temperature"
-    Text   item=thermostatTempFahren icon="temperature"
+    Text   item=thermostatTemperature icon="temperature"
     Text   item=thermostatHumidity
     Setpoint item=thermostatCoolPoint icon="temperature" minValue=63 maxValue=90 step=1
     Setpoint item=thermostatHeatPoint icon="temperature" minValue=50 maxValue=80 step=1
@@ -696,7 +695,7 @@ See the example below:
 
 **Items**
 
-``` 
+```
     Number:Power  iMeterWatts   "iMeter [%d watts]"   { channel="insteon:device:home:AABBCC:watts" }
     Number:Energy iMeterKwh     "iMeter [%.04f kWh]"  { channel="insteon:device:home:AABBCC:kWh" }
     Switch        iMeterUpdate  "iMeter Update"       { channel="insteon:device:home:AABBCC:update" }
@@ -749,7 +748,7 @@ The format is `broadcastOnOff#X` where X is the group that you want to be able t
 Bridge insteon:network:home [port="/dev/ttyUSB0"] {
   Thing device AABBCC             [address="AA.BB.CC", productKey="0x000045"] {
     Channels:
-      Type switch : broadcastOnOff#2
+      Type broadcastOnOff : broadcastOnOff#2
   }
 }
 
@@ -804,7 +803,7 @@ A typical example would be a switch configured to broadcast to a group, and one 
 Bridge insteon:network:home [port="/dev/ttyUSB0"] {
   Thing device AABBCC [address="AA.BB.CC", productKey="0x000045"] {
     Channels:
-      Type switch : broadcastOnOff#3 [related="AA.BB.DD"]
+      Type broadcastOnOff : broadcastOnOff#3 [related="AA.BB.DD"]
   }
   Thing device AABBDD [address="AA.BB.DD", productKey="F00.00.11"]
 }
@@ -821,7 +820,7 @@ See [logging in openHAB](https://www.openhab.org/docs/administration/logging.htm
 ### Device Permissions / Linux Device Locks
 
 When openHAB is running as a non-root user (Linux/OSX) it is important to ensure it has write access not just to the PLM device, but to the os lock directory.
-Under openSUSE this is `/run/lock` and is managed by the **lock** group. 
+Under openSUSE this is `/run/lock` and is managed by the **lock** group.
 
 Example commands to grant openHAB access (adjust for your distribution):
 
@@ -852,13 +851,13 @@ Where the `my_own_devices.xml` file defines a new device like this:
     </xml>
 ```
 
-Finding the Insteon product key can be tricky since Insteon has not updated the product key table (http://www.insteon.com/pdf/insteon_devcats_and_product_keys_20081008.pdf) since 2008.
+Finding the Insteon product key can be tricky since Insteon has not updated the product key table (https://www.insteon.com/pdf/insteon_devcats_and_product_keys_20081008.pdf) since 2008.
 If a web search does not turn up the product key, make one up, starting with "F", like: F00.00.99.
 Avoid duplicate keys by finding the highest fake product key in the `device_types.xml` file, and incrementing by one.
 
 ### Adding New Device Features
 
-If you can't can't build a new device out of the existing device features (for a complete list see `device_features.xml`) you can add new features by specifying a file (let's call it `my_own_features.xml`) with the "additionalDevices" option in the network config parameters:
+If you can't build a new device out of the existing device features (for a complete list see `device_features.xml`) you can add new features by specifying a file (let's call it `my_own_features.xml`) with the "additionalDevices" option in the network config parameters:
 
     additionalFeatures="/usr/local/openhab/rt/my_own_features.xml"
 

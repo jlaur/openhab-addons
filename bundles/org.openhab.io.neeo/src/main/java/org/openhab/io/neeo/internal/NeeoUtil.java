@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -24,7 +24,6 @@ import java.util.concurrent.Future;
 
 import javax.servlet.http.HttpServletResponse;
 
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.core.items.Item;
@@ -155,9 +154,12 @@ public class NeeoUtil {
      * @param s The UTF-8 encoded String to be decoded
      * @return the decoded String
      */
-    public static String decodeURIComponent(String s) {
-        String result = null;
+    public static String decodeURIComponent(@Nullable String s) {
+        if (s == null) {
+            return "";
+        }
 
+        String result = null;
         try {
             result = URLDecoder.decode(s, StandardCharsets.UTF_8.name());
         } catch (UnsupportedEncodingException e) {
@@ -207,7 +209,7 @@ public class NeeoUtil {
         resp.setContentType("application/json");
         resp.setCharacterEncoding("UTF-8");
         final PrintWriter pw = resp.getWriter();
-        if (StringUtils.isEmpty(str)) {
+        if (str.isEmpty()) {
             pw.print("{}");
         } else {
             pw.print(str);
@@ -264,7 +266,7 @@ public class NeeoUtil {
      */
     public static void requireNotEmpty(String value, String msg) {
         Objects.requireNonNull(value, msg);
-        if (StringUtils.isEmpty(value)) {
+        if (value.isEmpty()) {
             throw new IllegalArgumentException(msg);
         }
     }
@@ -315,7 +317,7 @@ public class NeeoUtil {
 
         if (cmd.isEnum()) {
             for (Command cmdEnum : cmd.getEnumConstants()) {
-                if (StringUtils.equalsIgnoreCase(((Enum<?>) cmdEnum).name(), enumName)) {
+                if (((Enum<?>) cmdEnum).name().equalsIgnoreCase(enumName)) {
                     return cmdEnum;
                 }
             }
@@ -344,14 +346,14 @@ public class NeeoUtil {
     public static String getLabel(@Nullable Item item, @Nullable ChannelType channelType) {
         if (item != null) {
             final String label = item.getLabel();
-            if (label != null && StringUtils.isNotEmpty(label)) {
+            if (label != null && !label.isEmpty()) {
                 return label;
             }
         }
 
         if (channelType != null) {
             final String label = channelType.getLabel();
-            if (StringUtils.isNotEmpty(label)) {
+            if (!label.isEmpty()) {
                 return label;
             }
         }
@@ -371,8 +373,8 @@ public class NeeoUtil {
         if (item != null) {
             final StateDescription sd = item.getStateDescription();
             final String format = sd == null ? null : sd.getPattern();
-            if (StringUtils.isEmpty(format)) {
-                if (StringUtils.equalsIgnoreCase("datetime", item.getType())) {
+            if (format == null || format.isEmpty()) {
+                if ("datetime".equalsIgnoreCase(item.getType())) {
                     return "%tF %<tT";
                 }
             } else {
@@ -382,8 +384,8 @@ public class NeeoUtil {
 
         if (channelType != null) {
             final String format = channelType.getState() == null ? null : channelType.getState().getPattern();
-            if (StringUtils.isEmpty(format)) {
-                if (StringUtils.equalsIgnoreCase("datetime", channelType.getItemType())) {
+            if (format == null || format.isEmpty()) {
+                if ("datetime".equalsIgnoreCase(channelType.getItemType())) {
                     return "%tF %<tT";
                 }
             } else {
@@ -403,7 +405,7 @@ public class NeeoUtil {
     public static String getUniqueLabel(Set<String> labels, String itemLabel) {
         Objects.requireNonNull(labels, "labels cannot be null");
 
-        String label = StringUtils.isEmpty(itemLabel) ? "NA" : itemLabel;
+        String label = itemLabel.isEmpty() ? "NA" : itemLabel;
         int idx = 0;
         if (labels.contains(label)) {
             do {
@@ -429,7 +431,7 @@ public class NeeoUtil {
 
         if (groupId != null) {
             for (ChannelGroupDefinition cgd : thingType.getChannelGroupDefinitions()) {
-                if (StringUtils.equals(groupId, cgd.getId())) {
+                if (Objects.equals(groupId, cgd.getId())) {
                     return cgd.getLabel();
                 }
             }

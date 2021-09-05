@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -48,7 +48,7 @@ public class BlueZHandlerFactory extends BaseThingHandlerFactory {
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Collections
             .singleton(BlueZAdapterConstants.THING_TYPE_BLUEZ);
 
-    private final Map<ThingUID, @Nullable ServiceRegistration<?>> serviceRegs = new HashMap<>();
+    private final Map<ThingUID, ServiceRegistration<?>> serviceRegs = new HashMap<>();
 
     private final DeviceManagerFactory deviceManagerFactory;
 

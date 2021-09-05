@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -16,6 +16,7 @@ import static org.openhab.binding.gree.internal.GreeBindingConstants.*;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.net.DatagramSocket;
 import java.time.Instant;
 import java.util.List;
@@ -122,7 +123,7 @@ public class GreeHandler extends BaseThingHandler {
             message = messages.get("thinginit.failed");
             logger.info("{}: {}", thingId, message);
         } catch (GreeException e) {
-            logger.info("{}: {}", thingId, messages.get("thinginit.exception", e.getMessage()));
+            logger.info("{}: {}", thingId, messages.get("thinginit.exception", e.getMessageString()));
         } catch (IOException e) {
             logger.warn("{}: {}", thingId, messages.get("thinginit.exception", "I/O Error"), e);
         } catch (RuntimeException e) {
@@ -158,7 +159,7 @@ public class GreeHandler extends BaseThingHandler {
                         logger.debug("{}: Command {} failed for channel {}, retry", thingId, command, channelId);
                     } else {
                         String message = logInfo(
-                                messages.get("command.exception", command, channelId) + ": " + e.getMessage());
+                                messages.get("command.exception", command, channelId) + ": " + e.getMessageString());
                         updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, message);
                     }
                 } catch (IllegalArgumentException e) {
@@ -379,7 +380,7 @@ public class GreeHandler extends BaseThingHandler {
                 if (e.getCause() != null) {
                     subcode = " (" + e.getCause().getMessage() + ")";
                 }
-                String message = messages.get("update.exception", e.getMessage() + subcode);
+                String message = messages.get("update.exception", e.getMessageString() + subcode);
                 if (getThing().getStatus() == ThingStatus.OFFLINE) {
                     logger.debug("{}: Thing still OFFLINE ({})", thingId, message);
                 } else {
@@ -472,7 +473,7 @@ public class GreeHandler extends BaseThingHandler {
                 updateState(channelID, state);
             }
         } catch (GreeException e) {
-            logger.info("{}: {}", thingId, messages.get("channel.exception", channelID, e.getMessage()));
+            logger.info("{}: {}", thingId, messages.get("channel.exception", channelID, e.getMessageString()));
         } catch (RuntimeException e) {
             logger.warn("{}: {}", thingId, messages.get("channel.exception", "RuntimeException"), e);
         }
@@ -567,7 +568,7 @@ public class GreeHandler extends BaseThingHandler {
 
     public static QuantityType<?> toQuantityType(Number value, int digits, Unit<?> unit) {
         BigDecimal bd = new BigDecimal(value.doubleValue());
-        return new QuantityType<>(bd.setScale(digits, BigDecimal.ROUND_HALF_EVEN), unit);
+        return new QuantityType<>(bd.setScale(digits, RoundingMode.HALF_EVEN), unit);
     }
 
     private void stopRefreshTask() {

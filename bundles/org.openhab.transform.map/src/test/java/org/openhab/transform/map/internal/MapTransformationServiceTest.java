@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -18,11 +18,16 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Comparator;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.Callable;
+import java.util.stream.Stream;
 
-import org.apache.commons.io.FileUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -81,13 +86,26 @@ public class MapTransformationServiceTest {
     public void setUp() throws IOException {
         processor = new TestableMapTransformationService();
         processor.activate(bundleContext);
-        FileUtils.copyDirectory(new File(SRC_FOLDER), new File(CONFIG_FOLDER));
+        copyDirectory(SRC_FOLDER, CONFIG_FOLDER);
     }
 
     @AfterEach
     public void tearDown() throws IOException {
         processor.deactivate();
-        FileUtils.deleteDirectory(new File(CONFIG_FOLDER));
+
+        try (Stream<Path> walk = Files.walk(Path.of(CONFIG_FOLDER))) {
+            walk.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
+        }
+    }
+
+    private void copyDirectory(String from, String to) throws IOException {
+        Files.walk(Paths.get(from)).forEach(fromPath -> {
+            Path toPath = Paths.get(to, fromPath.toString().substring(from.length()));
+            try {
+                Files.copy(fromPath, toPath);
+            } catch (IOException e) {
+            }
+        });
     }
 
     @Test
@@ -125,7 +143,10 @@ public class MapTransformationServiceTest {
                 }
             }, 10000, 100);
         } catch (IOException e1) {
-            e1.printStackTrace(System.err);
+            PrintStream err = System.err;
+            if (err != null) {
+                e1.printStackTrace(err);
+            }
         }
 
         // Checks that an unknown input in an existing file give the expected

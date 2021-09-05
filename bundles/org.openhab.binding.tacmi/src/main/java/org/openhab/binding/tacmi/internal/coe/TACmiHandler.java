@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -31,6 +31,9 @@ import org.openhab.binding.tacmi.internal.message.Message;
 import org.openhab.binding.tacmi.internal.message.MessageType;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
+import org.openhab.core.library.types.QuantityType;
+import org.openhab.core.library.unit.SIUnits;
+import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
@@ -57,8 +60,8 @@ public class TACmiHandler extends BaseThingHandler {
 
     private final Logger logger = LoggerFactory.getLogger(TACmiHandler.class);
 
-    private final Map<@Nullable PodIdentifier, @Nullable PodData> podDatas = new HashMap<>();
-    private final Map<@Nullable ChannelUID, @Nullable TACmiChannelConfiguration> channelConfigByUID = new HashMap<>();
+    private final Map<PodIdentifier, PodData> podDatas = new HashMap<>();
+    private final Map<ChannelUID, TACmiChannelConfiguration> channelConfigByUID = new HashMap<>();
 
     private @Nullable TACmiCoEBridgeHandler bridge;
     private long lastMessageRecvTS; // last received message timestamp
@@ -286,7 +289,7 @@ public class TACmiHandler extends BaseThingHandler {
         if (analog) {
             final TACmiMeasureType measureType = TACmiMeasureType
                     .values()[((TACmiChannelConfigurationAnalog) channelConfig).type];
-            final DecimalType dt = (DecimalType) command;
+            final Number dt = (Number) command;
             final double val = dt.doubleValue() * measureType.getOffset();
             modified = message.setValue(outputIdx, (short) val, measureType.ordinal());
         } else {
@@ -352,7 +355,29 @@ public class TACmiHandler extends BaseThingHandler {
 
             if (message.getType() == MessageType.ANALOG) {
                 final AnalogValue value = ((AnalogMessage) message).getAnalogValue(output);
-                updateState(channel.getUID(), new DecimalType(value.value));
+                State newState;
+                switch (value.measureType) {
+                    case TEMPERATURE:
+                        newState = new QuantityType<>(value.value, SIUnits.CELSIUS);
+                        break;
+                    case KILOWATT:
+                        // TA uses kW, in OH we use W
+                        newState = new QuantityType<>(value.value * 1000, Units.WATT);
+                        break;
+                    case KILOWATTHOURS:
+                        newState = new QuantityType<>(value.value, Units.KILOWATT_HOUR);
+                        break;
+                    case MEGAWATTHOURS:
+                        newState = new QuantityType<>(value.value, Units.MEGAWATT_HOUR);
+                        break;
+                    case SECONDS:
+                        newState = new QuantityType<>(value.value, Units.SECOND);
+                        break;
+                    default:
+                        newState = new DecimalType(value.value);
+                        break;
+                }
+                updateState(channel.getUID(), newState);
             } else {
                 final boolean state = ((DigitalMessage) message).getPortState(output);
                 updateState(channel.getUID(), state ? OnOffType.ON : OnOffType.OFF);
@@ -368,7 +393,7 @@ public class TACmiHandler extends BaseThingHandler {
                     "No update from C.M.I. for 15 min");
         }
         for (final PodData pd : this.podDatas.values()) {
-            if (pd == null || !(pd instanceof PodDataOutgoing)) {
+            if (!(pd instanceof PodDataOutgoing)) {
                 continue;
             }
             PodDataOutgoing podDataOutgoing = (PodDataOutgoing) pd;

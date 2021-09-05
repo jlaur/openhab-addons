@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -50,7 +50,8 @@ import com.google.gson.JsonSyntaxException;
 @NonNullByDefault
 public class TouchWandWebSockets {
 
-    private static final int CONNECT_TIMEOUT_SEC = 10;
+    private static final int CONNECT_TIMEOUT_SEC = 15;
+    private static final int CONNECT_TIMEOUT_MS = CONNECT_TIMEOUT_SEC * 1000;
     private static final int WEBSOCKET_RECONNECT_INTERVAL_SEC = CONNECT_TIMEOUT_SEC * 2;
     private static final int WEBSOCKET_IDLE_TIMEOUT_MS = CONNECT_TIMEOUT_SEC * 10 * 1000;
     private final Logger logger = LoggerFactory.getLogger(TouchWandWebSockets.class);
@@ -82,7 +83,7 @@ public class TouchWandWebSockets {
             return;
         }
 
-        client.setConnectTimeout(CONNECT_TIMEOUT_SEC);
+        client.setConnectTimeout(CONNECT_TIMEOUT_MS);
         ClientUpgradeRequest request = new ClientUpgradeRequest();
         request.setSubProtocols("relay_protocol");
 
@@ -136,7 +137,9 @@ public class TouchWandWebSockets {
         public void onConnect(Session session) {
             logger.debug("TouchWandWebSockets connected to {}", session.getRemoteAddress().toString());
             try {
-                session.getRemote().sendString("{\"myopenhab\": \"myopenhab\"}");
+                long timestamp = System.currentTimeMillis(); // need unique id
+                String controllerIdStr = String.format("{\"contId\": \"openhab%d\"}", timestamp);
+                session.getRemote().sendString(controllerIdStr);
             } catch (IOException e) {
                 logger.warn("sendString : {}", e.getMessage());
             }
@@ -145,9 +148,8 @@ public class TouchWandWebSockets {
         @OnWebSocketMessage
         public void onMessage(String msg) {
             TouchWandUnitData touchWandUnit;
-            JsonParser jsonParser = new JsonParser();
             try {
-                JsonObject unitObj = jsonParser.parse(msg).getAsJsonObject();
+                JsonObject unitObj = JsonParser.parseString(msg).getAsJsonObject();
                 boolean eventUnitChanged = unitObj.get("type").getAsString().equals("UNIT_CHANGED");
                 if (!eventUnitChanged) {
                     return;

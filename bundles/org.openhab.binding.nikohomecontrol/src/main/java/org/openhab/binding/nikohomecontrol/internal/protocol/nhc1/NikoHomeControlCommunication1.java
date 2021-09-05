@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -20,8 +20,10 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -93,7 +95,7 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
                 Thread.sleep(1000);
             }
             if (nhcEventsRunning) {
-                logger.debug("Niko Home Control: starting but previous connection still active after 5000ms");
+                logger.debug("starting but previous connection still active after 5000ms");
                 throw new IOException();
             }
 
@@ -104,7 +106,7 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
             nhcSocket = socket;
             nhcOut = new PrintWriter(socket.getOutputStream(), true);
             nhcIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            logger.debug("Niko Home Control: connected via local port {}", socket.getLocalPort());
+            logger.debug("connected via local port {}", socket.getLocalPort());
 
             // initialize all info in local fields
             initialize();
@@ -114,9 +116,8 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
             (new Thread(this::runNhcEvents)).start();
 
         } catch (IOException | InterruptedException e) {
-            logger.warn("Niko Home Control: error initializing communication");
             stopCommunication();
-            handler.controllerOffline();
+            handler.controllerOffline("Error initializing communication");
         }
     }
 
@@ -138,7 +139,7 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
         }
         nhcSocket = null;
 
-        logger.debug("Niko Home Control: communication stopped");
+        logger.debug("communication stopped");
     }
 
     @Override
@@ -157,7 +158,7 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
     private void runNhcEvents() {
         String nhcMessage;
 
-        logger.debug("Niko Home Control: listening for events");
+        logger.debug("listening for events");
         listenerStopped = false;
         nhcEventsRunning = true;
 
@@ -169,7 +170,7 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
             if (!listenerStopped) {
                 nhcEventsRunning = false;
                 // this is a socket error, not a communication stop triggered from outside this runnable
-                logger.warn("Niko Home Control: IO error in listener");
+                logger.debug("IO error in listener");
                 // the IO has stopped working, so we need to close cleanly and try to restart
                 restartCommunication();
                 return;
@@ -180,7 +181,7 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
 
         nhcEventsRunning = false;
         // this is a stop from outside the runnable, so just log it and stop
-        logger.debug("Niko Home Control: event listener thread stopped");
+        logger.debug("event listener thread stopped");
     }
 
     /**
@@ -217,17 +218,16 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
     @SuppressWarnings("null")
     private synchronized void sendMessage(Object nhcMessage) {
         String json = gsonOut.toJson(nhcMessage);
-        logger.debug("Niko Home Control: send json {}", json);
+        logger.debug("send json {}", json);
         nhcOut.println(json);
         if (nhcOut.checkError()) {
-            logger.warn("Niko Home Control: error sending message, trying to restart communication");
+            logger.debug("error sending message, trying to restart communication");
             restartCommunication();
             // retry sending after restart
-            logger.debug("Niko Home Control: resend json {}", json);
+            logger.debug("resend json {}", json);
             nhcOut.println(json);
             if (nhcOut.checkError()) {
-                logger.warn("Niko Home Control: error resending message");
-                handler.controllerOffline();
+                handler.controllerOffline("Error resending message");
             }
         }
     }
@@ -238,11 +238,14 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
      * @param nhcMessage message read from Niko Home Control.
      */
     private void readMessage(@Nullable String nhcMessage) {
-        logger.debug("Niko Home Control: received json {}", nhcMessage);
+        logger.debug("received json {}", nhcMessage);
 
         try {
             NhcMessageBase1 nhcMessageGson = gsonIn.fromJson(nhcMessage, NhcMessageBase1.class);
 
+            if (nhcMessageGson == null) {
+                return;
+            }
             String cmd = nhcMessageGson.getCmd();
             String event = nhcMessageGson.getEvent();
 
@@ -267,46 +270,33 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
             } else if ("getalarms".equals(event)) {
                 eventGetAlarms(((NhcMessageMap1) nhcMessageGson).getData());
             } else {
-                logger.debug("Niko Home Control: not acted on json {}", nhcMessage);
+                logger.debug("not acted on json {}", nhcMessage);
             }
         } catch (JsonParseException e) {
-            logger.debug("Niko Home Control: not acted on unsupported json {}", nhcMessage);
+            logger.debug("not acted on unsupported json {}", nhcMessage);
+        }
+    }
+
+    private void setIfPresent(Map<String, String> data, String key, Consumer<String> consumer) {
+        String val = data.get(key);
+        if (val != null) {
+            consumer.accept(val);
         }
     }
 
     private synchronized void cmdSystemInfo(Map<String, String> data) {
-        logger.debug("Niko Home Control: systeminfo");
+        logger.debug("systeminfo");
 
-        if (data.containsKey("swversion")) {
-            systemInfo.setSwVersion(data.get("swversion"));
-        }
-        if (data.containsKey("api")) {
-            systemInfo.setApi(data.get("api"));
-        }
-        if (data.containsKey("time")) {
-            systemInfo.setTime(data.get("time"));
-        }
-        if (data.containsKey("language")) {
-            systemInfo.setLanguage(data.get("language"));
-        }
-        if (data.containsKey("currency")) {
-            systemInfo.setCurrency(data.get("currency"));
-        }
-        if (data.containsKey("units")) {
-            systemInfo.setUnits(data.get("units"));
-        }
-        if (data.containsKey("DST")) {
-            systemInfo.setDst(data.get("DST"));
-        }
-        if (data.containsKey("TZ")) {
-            systemInfo.setTz(data.get("TZ"));
-        }
-        if (data.containsKey("lastenergyerase")) {
-            systemInfo.setLastEnergyErase(data.get("lastenergyerase"));
-        }
-        if (data.containsKey("lastconfig")) {
-            systemInfo.setLastConfig(data.get("lastconfig"));
-        }
+        setIfPresent(data, "swversion", systemInfo::setSwVersion);
+        setIfPresent(data, "api", systemInfo::setApi);
+        setIfPresent(data, "time", systemInfo::setTime);
+        setIfPresent(data, "language", systemInfo::setLanguage);
+        setIfPresent(data, "currency", systemInfo::setCurrency);
+        setIfPresent(data, "units", systemInfo::setUnits);
+        setIfPresent(data, "DST", systemInfo::setDst);
+        setIfPresent(data, "TZ", systemInfo::setTz);
+        setIfPresent(data, "lastenergyerase", systemInfo::setLastEnergyErase);
+        setIfPresent(data, "lastconfig", systemInfo::setLastConfig);
     }
 
     /**
@@ -319,35 +309,47 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
     }
 
     private void cmdStartEvents(Map<String, String> data) {
-        int errorCode = Integer.parseInt(data.get("error"));
-
-        if (errorCode == 0) {
-            logger.debug("Niko Home Control: start events success");
+        String errorCodeString = data.get("error");
+        if (errorCodeString != null) {
+            int errorCode = Integer.parseInt(errorCodeString);
+            if (errorCode == 0) {
+                logger.debug("start events success");
+            } else {
+                logger.debug("error code {} returned on start events", errorCode);
+            }
         } else {
-            logger.warn("Niko Home Control: error code {} returned on start events", errorCode);
+            logger.debug("could not determine error code returned on start events");
         }
     }
 
     private void cmdListLocations(List<Map<String, String>> data) {
-        logger.debug("Niko Home Control: list locations");
+        logger.debug("list locations");
 
         locations.clear();
 
         for (Map<String, String> location : data) {
             String id = location.get("id");
             String name = location.get("name");
+            if (id == null || name == null) {
+                logger.debug("id or name null, ignoring entry");
+                continue;
+            }
             NhcLocation1 nhcLocation1 = new NhcLocation1(name);
             locations.put(id, nhcLocation1);
         }
     }
 
     private void cmdListActions(List<Map<String, String>> data) {
-        logger.debug("Niko Home Control: list actions");
+        logger.debug("list actions");
 
         for (Map<String, String> action : data) {
-
             String id = action.get("id");
-            int state = Integer.parseInt(action.get("value1"));
+            if (id == null) {
+                logger.debug("id not found in action {}", action);
+                continue;
+            }
+            String value1 = action.get("value1");
+            int state = ((value1 == null) || value1.isEmpty() ? 0 : Integer.parseInt(value1));
             String value2 = action.get("value2");
             int closeTime = ((value2 == null) || value2.isEmpty() ? 0 : Integer.parseInt(value2));
             String value3 = action.get("value3");
@@ -356,7 +358,11 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
             if (!actions.containsKey(id)) {
                 // Initial instantiation of NhcAction class for action object
                 String name = action.get("name");
-                String type = action.get("type");
+                if (name == null) {
+                    logger.debug("name not found in action {}", action);
+                    continue;
+                }
+                String type = Optional.ofNullable(action.get("type")).orElse("");
                 ActionType actionType = ActionType.GENERIC;
                 switch (type) {
                     case "0":
@@ -373,13 +379,13 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
                         actionType = ActionType.ROLLERSHUTTER;
                         break;
                     default:
-                        logger.debug("Niko Home Control: unknown action type {} for action {}", type, id);
+                        logger.debug("unknown action type {} for action {}", type, id);
                         continue;
                 }
                 String locationId = action.get("location");
                 String location = "";
-                if (!locationId.isEmpty()) {
-                    location = locations.get(locationId).getName();
+                if (locationId != null && !locationId.isEmpty()) {
+                    location = locations.getOrDefault(locationId, new NhcLocation1("")).getName();
                 }
                 NhcAction nhcAction = new NhcAction1(id, name, actionType, location, this, scheduler);
                 if (actionType == ActionType.ROLLERSHUTTER) {
@@ -391,126 +397,176 @@ public class NikoHomeControlCommunication1 extends NikoHomeControlCommunication 
                 // Action object already exists, so only update state.
                 // If we would re-instantiate action, we would lose pointer back from action to thing handler that was
                 // set in thing handler initialize().
-                actions.get(id).setState(state);
+                NhcAction nhcAction = actions.get(id);
+                if (nhcAction != null) {
+                    nhcAction.setState(state);
+                }
             }
         }
     }
 
+    private int parseIntOrThrow(@Nullable String str) throws IllegalArgumentException {
+        if (str == null) {
+            throw new IllegalArgumentException("String is null");
+        }
+        try {
+            return Integer.parseInt(str);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
     private void cmdListThermostat(List<Map<String, String>> data) {
-        logger.debug("Niko Home Control: list thermostats");
+        logger.debug("list thermostats");
 
         for (Map<String, String> thermostat : data) {
-
-            String id = thermostat.get("id");
-            int measured = Integer.parseInt(thermostat.get("measured"));
-            int setpoint = Integer.parseInt(thermostat.get("setpoint"));
-            int mode = Integer.parseInt(thermostat.get("mode"));
-            int overrule = Integer.parseInt(thermostat.get("overrule"));
-            // overruletime received in "HH:MM" format
-            String[] overruletimeStrings = thermostat.get("overruletime").split(":");
-            int overruletime = 0;
-            if (overruletimeStrings.length == 2) {
-                overruletime = Integer.parseInt(overruletimeStrings[0]) * 60 + Integer.parseInt(overruletimeStrings[1]);
-            }
-            int ecosave = Integer.parseInt(thermostat.get("ecosave"));
-
-            // For parity with NHC II, assume heating/cooling if thermostat is on and setpoint different from measured
-            int demand = (mode != 3) ? (setpoint > measured ? 1 : (setpoint < measured ? -1 : 0)) : 0;
-
-            if (!thermostats.containsKey(id)) {
-                // Initial instantiation of NhcThermostat class for thermostat object
-                String name = thermostat.get("name");
-                String locationId = thermostat.get("location");
-                String location = "";
-                if (!locationId.isEmpty()) {
-                    location = locations.get(locationId).getName();
+            try {
+                String id = thermostat.get("id");
+                if (id == null) {
+                    logger.debug("skipping thermostat {}, id not found", thermostat);
+                    continue;
                 }
-                NhcThermostat nhcThermostat = new NhcThermostat1(id, name, location, this);
-                nhcThermostat.updateState(measured, setpoint, mode, overrule, overruletime, ecosave, demand);
-                thermostats.put(id, nhcThermostat);
-            } else {
-                // Thermostat object already exists, so only update state.
-                // If we would re-instantiate thermostat, we would lose pointer back from thermostat to thing handler
-                // that was set in thing handler initialize().
-                thermostats.get(id).updateState(measured, setpoint, mode, overrule, overruletime, ecosave, demand);
+                int measured = parseIntOrThrow(thermostat.get("measured"));
+                int setpoint = parseIntOrThrow(thermostat.get("setpoint"));
+                int mode = parseIntOrThrow(thermostat.get("mode"));
+                int overrule = parseIntOrThrow(thermostat.get("overrule"));
+                // overruletime received in "HH:MM" format
+                String[] overruletimeStrings = thermostat.getOrDefault("overruletime", "").split(":");
+                int overruletime = 0;
+                if (overruletimeStrings.length == 2) {
+                    overruletime = Integer.parseInt(overruletimeStrings[0]) * 60
+                            + Integer.parseInt(overruletimeStrings[1]);
+                }
+                int ecosave = parseIntOrThrow(thermostat.get("ecosave"));
+
+                // For parity with NHC II, assume heating/cooling if thermostat is on and setpoint different from
+                // measured
+                int demand = (mode != 3) ? (setpoint > measured ? 1 : (setpoint < measured ? -1 : 0)) : 0;
+
+                NhcThermostat t = thermostats.computeIfAbsent(id, i -> {
+                    // Initial instantiation of NhcThermostat class for thermostat object
+                    String name = thermostat.get("name");
+                    String locationId = thermostat.get("location");
+                    String location = "";
+                    if (!((locationId == null) || locationId.isEmpty())) {
+                        NhcLocation1 nhcLocation = locations.get(locationId);
+                        if (nhcLocation != null) {
+                            location = nhcLocation.getName();
+                        }
+                    }
+                    if (name != null) {
+                        return new NhcThermostat1(i, name, location, this);
+                    }
+                    throw new IllegalArgumentException();
+                });
+                if (t != null) {
+                    t.updateState(measured, setpoint, mode, overrule, overruletime, ecosave, demand);
+                }
+            } catch (IllegalArgumentException e) {
+                // do nothing
             }
         }
     }
 
     private void cmdExecuteActions(Map<String, String> data) {
-        int errorCode = Integer.parseInt(data.get("error"));
-        if (errorCode == 0) {
-            logger.debug("Niko Home Control: execute action success");
-        } else {
-            logger.warn("Niko Home Control: error code {} returned on command execution", errorCode);
+        try {
+            int errorCode = parseIntOrThrow(data.get("error"));
+            if (errorCode == 0) {
+                logger.debug("execute action success");
+            } else {
+                logger.debug("error code {} returned on command execution", errorCode);
+            }
+        } catch (IllegalArgumentException e) {
+            logger.debug("no error code returned on command execution");
         }
     }
 
     private void cmdExecuteThermostat(Map<String, String> data) {
-        int errorCode = Integer.parseInt(data.get("error"));
-        if (errorCode == 0) {
-            logger.debug("Niko Home Control: execute thermostats success");
-        } else {
-            logger.warn("Niko Home Control: error code {} returned on command execution", errorCode);
+        try {
+            int errorCode = parseIntOrThrow(data.get("error"));
+            if (errorCode == 0) {
+                logger.debug("execute thermostats success");
+            } else {
+                logger.debug("error code {} returned on command execution", errorCode);
+            }
+        } catch (IllegalArgumentException e) {
+            logger.debug("no error code returned on command execution");
         }
     }
 
     private void eventListActions(List<Map<String, String>> data) {
         for (Map<String, String> action : data) {
             String id = action.get("id");
-            if (!actions.containsKey(id)) {
-                logger.warn("Niko Home Control: action in controller not known {}", id);
+            if (id == null || !actions.containsKey(id)) {
+                logger.warn("action in controller not known {}", id);
                 return;
             }
-            int state = Integer.parseInt(action.get("value1"));
-            logger.debug("Niko Home Control: event execute action {} with state {}", id, state);
-            actions.get(id).setState(state);
+            String stateString = action.get("value1");
+            if (stateString != null) {
+                int state = Integer.parseInt(stateString);
+                logger.debug("event execute action {} with state {}", id, state);
+                NhcAction action1 = actions.get(id);
+                if (action1 != null) {
+                    action1.setState(state);
+                }
+            }
         }
     }
 
     private void eventListThermostat(List<Map<String, String>> data) {
         for (Map<String, String> thermostat : data) {
-            String id = thermostat.get("id");
-            if (!thermostats.containsKey(id)) {
-                logger.warn("Niko Home Control: thermostat in controller not known {}", id);
-                return;
+            try {
+                String id = thermostat.get("id");
+                if (!thermostats.containsKey(id)) {
+                    logger.warn("thermostat in controller not known {}", id);
+                    return;
+                }
+
+                int measured = parseIntOrThrow(thermostat.get("measured"));
+                int setpoint = parseIntOrThrow(thermostat.get("setpoint"));
+                int mode = parseIntOrThrow(thermostat.get("mode"));
+                int overrule = parseIntOrThrow(thermostat.get("overrule"));
+                // overruletime received in "HH:MM" format
+                String[] overruletimeStrings = thermostat.getOrDefault("overruletime", "").split(":");
+                int overruletime = 0;
+                if (overruletimeStrings.length == 2) {
+                    overruletime = Integer.parseInt(overruletimeStrings[0]) * 60
+                            + Integer.parseInt(overruletimeStrings[1]);
+                }
+                int ecosave = parseIntOrThrow(thermostat.get("ecosave"));
+
+                int demand = (mode != 3) ? (setpoint > measured ? 1 : (setpoint < measured ? -1 : 0)) : 0;
+
+                logger.debug(
+                        "Niko Home Control: event execute thermostat {} with measured {}, setpoint {}, mode {}, overrule {}, overruletime {}, ecosave {}, demand {}",
+                        id, measured, setpoint, mode, overrule, overruletime, ecosave, demand);
+                NhcThermostat t = thermostats.get(id);
+                if (t != null) {
+                    t.updateState(measured, setpoint, mode, overrule, overruletime, ecosave, demand);
+                }
+            } catch (IllegalArgumentException e) {
+                // do nothing
             }
-
-            int measured = Integer.parseInt(thermostat.get("measured"));
-            int setpoint = Integer.parseInt(thermostat.get("setpoint"));
-            int mode = Integer.parseInt(thermostat.get("mode"));
-            int overrule = Integer.parseInt(thermostat.get("overrule"));
-            // overruletime received in "HH:MM" format
-            String[] overruletimeStrings = thermostat.get("overruletime").split(":");
-            int overruletime = 0;
-            if (overruletimeStrings.length == 2) {
-                overruletime = Integer.parseInt(overruletimeStrings[0]) * 60 + Integer.parseInt(overruletimeStrings[1]);
-            }
-            int ecosave = Integer.parseInt(thermostat.get("ecosave"));
-
-            int demand = (mode != 3) ? (setpoint > measured ? 1 : (setpoint < measured ? -1 : 0)) : 0;
-
-            logger.debug(
-                    "Niko Home Control: event execute thermostat {} with measured {}, setpoint {}, mode {}, overrule {}, overruletime {}, ecosave {}, demand {}",
-                    id, measured, setpoint, mode, overrule, overruletime, ecosave, demand);
-            thermostats.get(id).updateState(measured, setpoint, mode, overrule, overruletime, ecosave, demand);
         }
     }
 
     private void eventGetAlarms(Map<String, String> data) {
-        int type = Integer.parseInt(data.get("type"));
         String alarmText = data.get("text");
-        switch (type) {
-            case 0:
-                logger.debug("Niko Home Control: alarm - {}", alarmText);
+        if (alarmText == null) {
+            logger.debug("message does not contain alarmtext: {}", data);
+            return;
+        }
+        switch (data.getOrDefault("type", "")) {
+            case "0":
+                logger.debug("alarm - {}", alarmText);
                 handler.alarmEvent(alarmText);
                 break;
-            case 1:
-                logger.debug("Niko Home Control: notice - {}", alarmText);
+            case "1":
+                logger.debug("notice - {}", alarmText);
                 handler.noticeEvent(alarmText);
                 break;
             default:
-                logger.debug("Niko Home Control: unexpected message type {}", type);
+                logger.debug("unexpected message type {}", data.get("type"));
         }
     }
 

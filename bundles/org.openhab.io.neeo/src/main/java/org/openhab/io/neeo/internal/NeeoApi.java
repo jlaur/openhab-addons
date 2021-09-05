@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -27,7 +27,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.commons.lang.StringUtils;
+import javax.ws.rs.client.ClientBuilder;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jetty.http.HttpStatus;
@@ -68,6 +69,8 @@ public class NeeoApi implements AutoCloseable {
     /** The brain's IP address */
     private final String brainIpAddress;
 
+    private final ClientBuilder clientBuilder;
+
     /** The URL of the brain */
     private final String brainUrl;
 
@@ -107,8 +110,7 @@ public class NeeoApi implements AutoCloseable {
     private final AtomicReference<@Nullable ScheduledFuture<?>> checkStatus = new AtomicReference<>(null);
 
     /** The {@link HttpRequest} used for making requests */
-    private final AtomicReference<HttpRequest> request = new AtomicReference<>(new HttpRequest());
-
+    private final AtomicReference<HttpRequest> request;
     /** Whether the brain is currently connected */
     private final AtomicBoolean connected = new AtomicBoolean(false);
 
@@ -120,29 +122,32 @@ public class NeeoApi implements AutoCloseable {
      * @param context the non-null {@link ServiceContext}
      * @throws IOException if an exception occurs connecting to the brain
      */
-    public NeeoApi(String ipAddress, String brainId, ServiceContext context) throws IOException {
+    public NeeoApi(String ipAddress, String brainId, ServiceContext context, ClientBuilder clientBuilder)
+            throws IOException {
         NeeoUtil.requireNotEmpty(ipAddress, "ipAddress cannot be empty");
         NeeoUtil.requireNotEmpty(brainId, "brainId cannot be empty");
         Objects.requireNonNull(context, "context cannot be null");
 
         this.brainIpAddress = ipAddress;
         this.brainId = brainId;
+        this.clientBuilder = clientBuilder;
         this.brainUrl = NeeoConstants.PROTOCOL + (ipAddress.startsWith("/") ? ipAddress.substring(1) : ipAddress) + ":"
                 + NeeoConstants.DEFAULT_BRAIN_PORT;
-        deviceKeys = new NeeoDeviceKeys(brainUrl);
+        deviceKeys = new NeeoDeviceKeys(brainUrl, clientBuilder);
 
-        this.systemInfo = getSystemInfo(ipAddress);
+        request = new AtomicReference<>(new HttpRequest(clientBuilder));
+
+        this.systemInfo = getSystemInfo(ipAddress, clientBuilder);
 
         String name = brainId;
-        try (HttpRequest request = new HttpRequest()) {
+        try (HttpRequest request = new HttpRequest(clientBuilder)) {
             logger.debug("Getting existing device mappings from {}{}", brainUrl, NeeoConstants.PROJECTS_HOME);
             final HttpResponse resp = request.sendGetCommand(brainUrl + NeeoConstants.PROJECTS_HOME);
             if (resp.getHttpCode() != HttpStatus.OK_200) {
                 throw resp.createException();
             }
 
-            final JsonParser parser = new JsonParser();
-            final JsonObject root = parser.parse(resp.getContent()).getAsJsonObject();
+            final JsonObject root = JsonParser.parseString(resp.getContent()).getAsJsonObject();
             for (Map.Entry<String, JsonElement> room : root.getAsJsonObject("rooms").entrySet()) {
                 final JsonObject roomObj = (JsonObject) room.getValue();
 
@@ -196,15 +201,15 @@ public class NeeoApi implements AutoCloseable {
      * @return the non-null {@link NeeoSystemInfo} for the address
      * @throws IOException Signals that an I/O exception has occurred or the URL is not a brain
      */
-    public static NeeoSystemInfo getSystemInfo(String ipAddress) throws IOException {
+    public static NeeoSystemInfo getSystemInfo(String ipAddress, ClientBuilder clientBuilder) throws IOException {
         NeeoUtil.requireNotEmpty(ipAddress, "ipAddress cannot be empty");
         final String sysInfo = NeeoConstants.PROTOCOL + (ipAddress.startsWith("/") ? ipAddress.substring(1) : ipAddress)
                 + ":" + NeeoConstants.DEFAULT_BRAIN_PORT + NeeoConstants.SYSTEMINFO;
 
-        try (HttpRequest req = new HttpRequest()) {
+        try (HttpRequest req = new HttpRequest(clientBuilder)) {
             final HttpResponse res = req.sendGetCommand(sysInfo);
             if (res.getHttpCode() == HttpStatus.OK_200) {
-                return GSON.fromJson(res.getContent(), NeeoSystemInfo.class);
+                return Objects.requireNonNull(GSON.fromJson(res.getContent(), NeeoSystemInfo.class));
             } else {
                 throw res.createException();
             }
@@ -387,7 +392,7 @@ public class NeeoApi implements AutoCloseable {
         try {
             setConnected(false);
 
-            NeeoUtil.close(request.getAndSet(new HttpRequest()));
+            NeeoUtil.close(request.getAndSet(new HttpRequest(clientBuilder)));
 
             NeeoUtil.checkInterrupt();
             registerApi();
@@ -514,11 +519,11 @@ public class NeeoApi implements AutoCloseable {
         }
 
         for (NeeoRecipe recipe : GSON.fromJson(resp.getContent(), NeeoRecipe[].class)) {
-            if (StringUtils.equalsIgnoreCase(recipe.getUid(), deviceKey)) {
+            if (deviceKey.equalsIgnoreCase(recipe.getUid())) {
                 final NeeoRecipeUrls urls = recipe.getUrls();
                 final String url = urls == null ? null : (on ? urls.getSetPowerOn() : urls.getSetPowerOff());
 
-                if (url != null && StringUtils.isNotEmpty(url)) {
+                if (url != null && !url.isEmpty()) {
                     final HttpResponse cmdResp = rqst.sendGetCommand(url);
                     if (cmdResp.getHttpCode() != HttpStatus.OK_200) {
                         throw cmdResp.createException();

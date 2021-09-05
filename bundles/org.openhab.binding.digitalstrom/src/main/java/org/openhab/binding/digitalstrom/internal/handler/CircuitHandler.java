@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -16,11 +16,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.commons.lang.StringUtils;
 import org.openhab.binding.digitalstrom.internal.DigitalSTROMBindingConstants;
 import org.openhab.binding.digitalstrom.internal.lib.listener.DeviceStatusListener;
 import org.openhab.binding.digitalstrom.internal.lib.structure.devices.Circuit;
-import org.openhab.binding.digitalstrom.internal.lib.structure.devices.Device;
 import org.openhab.binding.digitalstrom.internal.lib.structure.devices.GeneralDeviceInformation;
 import org.openhab.binding.digitalstrom.internal.lib.structure.devices.deviceparameters.CachedMeteringValue;
 import org.openhab.binding.digitalstrom.internal.lib.structure.devices.deviceparameters.DeviceStateUpdate;
@@ -78,8 +76,8 @@ public class CircuitHandler extends BaseThingHandler implements DeviceStatusList
     @Override
     public void initialize() {
         logger.debug("Initializing CircuitHandler.");
-        if (StringUtils.isNotBlank((String) getConfig().get(DigitalSTROMBindingConstants.DEVICE_DSID))) {
-            dSID = getConfig().get(DigitalSTROMBindingConstants.DEVICE_DSID).toString();
+        dSID = (String) getConfig().get(DigitalSTROMBindingConstants.DEVICE_DSID);
+        if (dSID != null && !dSID.isBlank()) {
             final Bridge bridge = getBridge();
             if (bridge != null) {
                 bridgeStatusChanged(bridge.getStatusInfo());
@@ -152,9 +150,6 @@ public class CircuitHandler extends BaseThingHandler implements DeviceStatusList
         if (bridgeStatusInfo.getStatus().equals(ThingStatus.OFFLINE)) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
         }
-        if (bridgeStatusInfo.getStatus().equals(ThingStatus.REMOVED)) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.NONE, "Bridge has been removed.");
-        }
         logger.debug("Set status to {}", getThing().getStatusInfo());
     }
 
@@ -186,13 +181,13 @@ public class CircuitHandler extends BaseThingHandler implements DeviceStatusList
     public void onDeviceRemoved(GeneralDeviceInformation device) {
         if (device instanceof Circuit) {
             this.circuit = (Circuit) device;
-            if (this.getThing().getStatus().equals(ThingStatus.ONLINE)) {
-                if (!((Device) circuit).isPresent()) {
+            if (getThing().getStatus().equals(ThingStatus.ONLINE)) {
+                if (!circuit.isPresent()) {
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.NONE,
                             "Circuit is not present in the digitalSTROM-System.");
                 } else {
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.NONE,
-                            "Circuit is not avaible in the digitalSTROM-System.");
+                            "Circuit is not available in the digitalSTROM-System.");
                 }
 
             }

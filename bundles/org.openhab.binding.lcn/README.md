@@ -1,10 +1,10 @@
 # LCN Binding
 
-[Local Control Network (LCN)](http://www.lcn.eu) is a building automation system for small and very large installations.
+[Local Control Network (LCN)](https://www.lcn.eu) is a building automation system for small and very large installations.
 It is capable of controlling lights, shutters, access control etc. and can process data from several sensor types.
 It has been introduced in 1992.
 
-A broad range of glass key panels, displays, remote controls, sensors and in- and outputs exist.  
+A broad range of glass key panels, displays, remote controls, sensors and in- and outputs exist.
 The system can handle up to 30,000 bus members, called modules.
 LCN modules are available for DIN rail and in-wall mounting and feature versatile interfaces. The bus modules and most of the accessories are developed, manufactured and assembled in Germany.
 
@@ -43,7 +43,7 @@ Examples for PCK gateways are the *LCN-PCHK* software running on Windows or Linu
 
 For each LCN bus, interfaced to openHAB, a PCK gateway needs to be added to openHAB as a *Thing*.
 
-Several PCK gateways can be added to openHAB to control multiple LCN busses in distinct locations. 
+Several PCK gateways can be added to openHAB to control multiple LCN busses in distinct locations.
 
 The minimum recommended version is LCN-PCHK 2.8 (older versions will also work, but lack some functionality).
 Visit [https://www.lcn.eu](https://www.lcn.eu) for updates.
@@ -59,14 +59,15 @@ Thing Type ID: `pckGateway`
 | `mode`      | Dimmer resolution: `native50` or `native200` See below.                                                    | String  | Yes      |
 | `timeoutMs` | Period after which an LCN command is resent, when no acknowledge has been received (in ms) (default: 3500) | Integer | Yes      |
 
-> **IMPORTANT:** You need to configure the dimmer output resolution. This setting is valid for the **whole** LCN bus.<br />
-The setting is either 0-50 steps or 0-200 steps.
-It **has to be the same** as in the parameterizing software **LCN-PRO** under Options/Settings/Expert Settings.
-See the following screenshot.
+> **ATTENTION:** You must set the correct dimmer output resolution in the PCK Gateway Thing (`mode`)!
+This setting is crucial, and valid for the **whole** LCN bus.<br />
+It is either 0-50 steps or 0-200 steps.
+It has to be the same as in the parameterizing software LCN-PRO under Options/Settings/Expert Settings.<br />
+**When using a wrong dimmer output setting, dimming the outputs will result in unintended behavior!**
+
+Please see the following LCN-PRO screenshot to determine the dimmer output resolution for the LCN bus:
 
 ![LCN-PRO screenshot, showing the 50 or 200 steps for the dimmer outputs](doc/LCN-PRO_output_steps.png)
-
-When using a wrong dimmer output setting, dimming the outputs will result in unintended behavior.
 
 ### Thing: LCN Group
 
@@ -96,7 +97,7 @@ Basic data like the names of all LCN modules in the bus, can be read out by open
 If not all LCN modules get listed on the first run, click on the refresh button to start another scan.
 
 When adding a module by discovery, the new *Thing*'s UID will be a combination of segment and module id using the following format:
-*S<segmentId>M<moduleId>* where *segmentId* and *moduleId* are formatted as three-digit numbers with leading zeros.
+`S<segmentId>M<moduleId>` where `segmentId` and `moduleId` are formatted as three-digit numbers with leading zeros.
 
 ### Discover PCK Gateways
 
@@ -130,7 +131,7 @@ If a special command is needed, the [Hit Key](#hit-key) action (German: "Sende T
 |---------------------------------|----------------------------------|------------------------|------|--------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | Dimmer Output Control Single    | Ausgang                          | output                 | 1-4  | Dimmer, Switch                 | Sets the dimming value of an output with a given ramp.                                                                        |
 | Relay                           | Relais                           | relay                  | 1-8  | Switch                         | Controls a relay and visualizes its state.                                                                                    |
-| Visualize Binary Sensor         | Binärsensor anzeigen             | binarysensor           | 1-8  | Contact                        | Visualizes the state of a binary sensor.                                                                                      |
+| Visualize Binary Sensor         | Binärsensor anzeigen             | binarysensor           | 1-8  | Contact                        | Visualizes the state of a binary sensor (special channel mapping for some devices).                                                                                      |
 | LED Control                     | LED-Steuerung                    | led                    | 1-12 | Text (ON, OFF, BLINK, FLICKER) | Controls an LED and visualizes its current state.                                                                             |
 | Visualize Logic Operations      | Logik Funktion anzeigen          | logic                  | 1-4  | Text (NOT, OR, AND)            | Visualizes the result of the logic operation.                                                                                 |
 | Motor/Shutter on Dimmer Outputs | Motor/Rollladen an Ausgängen     | rollershutteroutput    | 1-4  | Rollershutter                  | Control roller shutters on dimmer outputs                                                                                     |
@@ -196,7 +197,7 @@ The binary sensor Channels provide the boolean parameter `invertState`, which ca
 
 LCN transponder readers or fingerprint readers can be integrated in openHAB e.g. for access control.
 The transponder function must be enabled in the module's I-port properties within *LCN-PRO*.
- 
+
 Example: When the transponder card with the ID "12ABCD" is seen by the reader connected to LCN module "S000M011", the item "M10_Relay7" is switched on:
 
 ```
@@ -248,6 +249,10 @@ After the colon, the LCN "hit type" follows: HIT, MAKE or BREAK (German: kurz, l
 
 If multiple keys or key tables are programmed in a single "send keys" command, multiple triggers will be executed.
 
+> Notice: Don't test the command with the "Test command" button in LCN-PRO.
+This will send a command from LCN-PRO to openHAB, but openHAB expects the module as the sender.
+Simply press the physical button at the module for testing.
+
 ### Remote Control
 
 To evaluate commands from LCN remote controls (e.g. LCN-RT or LCN-RT16), the module's I-port behavior must be configured as "IR access control" within *LCN-PRO*:
@@ -295,7 +300,7 @@ When no *ramp* parameter is specified or no profile is configured, the ramp is 0
 The ramp parameter is not available for Color *Item*s.
 
 ```
-// Dim output 2 in 0.25s 
+// Dim output 2 in 0.25s
 Switch M10_Output2 {channel="lcn:module:b827ebfea4bb:S000M010:output#2"[profile="lcn:output", ramp=0.25]} // with ramp of 0.25s (smallest value)
 // Dim output 3 in 486s
 Dimmer M10_Output3 {channel="lcn:module:b827ebfea4bb:S000M010:output#3"[profile="lcn:output", ramp=486]}  // with ramp of 486s (biggest value)
@@ -385,7 +390,7 @@ This action has also effect, if the given output is off. The output will be dimm
 ```
 rule "Flicker output 1 when window opens"
 when
-    Item M10_BinarySensor5 changed to OPEN 
+    Item M10_BinarySensor5 changed to OPEN
 then
     val actions = getActions("lcn","lcn:module:b827ebfea4bb:S000M010")
     // output=1, depth=2=100%, ramp=0=2s, count=3
@@ -406,7 +411,7 @@ When programming a "Relay Timer" *Action*, the following parameters need to be s
 ```
 rule "Start relay timer for led driver when dummy switch changed"
 when
-    Item Dummy_Switch changed 
+    Item Dummy_Switch changed
 then
     val actions = getActions("lcn","lcn:module:b827ebfea4bb:17B4196847")
     // relayNumber=3, duration=90
@@ -423,7 +428,21 @@ LEDs do not support the *OnOffCommand* and respectively the *Switch* Item type, 
 
 ## Full Example
 
-Config .items
+Config `.things`
+
+```
+Bridge lcn:pckGateway:myPCHK [ hostname="192.168.123.123", port=4114, username="myUser", password="myPassword", mode="native200" ] {
+	Thing module M99 "M99 MyModule" [ moduleId=99, segmentId=0 ] {
+	Channels:
+        Rollershutter : rollershutterrelay#1 "My twisted rollershutter relay" [ invertUpDown = true ]
+		Contact : binarysensor#6 [ invertState=true ]
+		Number  : rvarsetpoint#1 [ unit="temperature" ]
+		Number  : variable#3     [ unit="temperature" ]
+	}
+}
+```
+
+Config `.items`
 
 ```
 // Dimmer Outputs
@@ -440,7 +459,7 @@ Dimmer M10_OutputAll3 {channel="lcn:module:b827ebfea4bb:S000M010:output#1"[profi
 Dimmer M10_Outputs12b {channel="lcn:module:b827ebfea4bb:S000M010:output#1"[profile="lcn:output", controlOutputs12=true, ramp=0.25]}
 
 // Dimmer Outputs: RGB Control
-Color M10_Color {channel="lcn:module:b827ebfea4bb:S000M010:output#color"[profile="lcn:output"]} 
+Color M10_Color {channel="lcn:module:b827ebfea4bb:S000M010:output#color"[profile="lcn:output"]}
 
 // Roller Shutter on Output 1+2
 Rollershutter M10_RollershutterOutput1 {channel="lcn:module:b827ebfea4bb:S000M010:rollershutteroutput#1"}
@@ -463,7 +482,7 @@ String M10_Logic2 {channel="lcn:module:b827ebfea4bb:S000M010:logic#2"[profile="t
 // OR=Some windows are open
 // AND=All windows are open
 
-// Binary Sensors
+// Binary Sensors (Channels 1-3 of LCN-B3I are mapped to BinarySensor6, BinarySensor7, BinarySensor8)
 Contact M10_BinarySensor1 {channel="lcn:module:b827ebfea4bb:S000M010:binarysensor#1"}
 
 // Variables
@@ -496,7 +515,7 @@ Switch M10_KeyLockA1 {channel="lcn:module:b827ebfea4bb:S000M010:keylocktablea#1"
 Switch M10_KeyLockD5 {channel="lcn:module:b827ebfea4bb:S000M010:keylocktabled#5"}
 ```
 
-Config .sitemap
+Config `.sitemap`
 
 ```
 sitemap lcn label="My home automation" {
@@ -505,39 +524,39 @@ sitemap lcn label="My home automation" {
         Default item=M10_Output1 label="Output 1"
         Default item=M10_Output2 label="Output 2"
         Default item=M10_Output3 label="Output 3"
-        
+
         // Dimmer Outputs: Control all simultaneously. Status of Output 1 is visualized.
         Default item=M10_OutputAll1 label="All Outputs ramp=0 since firmware 180501"
         Default item=M10_OutputAll2 label="All Outputs ramp=250ms all firmwares"
         Default item=M10_OutputAll3 label="All Outputs ramp>=500ms since firmware 180501"
-        
+
         // Dimmer Outputs: Control outputs 1+2 simultaneously. Status of Output 1 is visualized. Only ramps of 0s or 0.25s are supported.
         Default item=M10_Outputs12a label="Outputs 1+2 Ramp=0"
         Default item=M10_Outputs12b label="Outputs 1+2 Ramp=0.25s"
-        
+
         // Dimmer Outputs: RGB Control
         Colorpicker item=M10_Color
-        
+
         // Roller Shutter on Outputs 1+2
         Default item=M10_RollershutterOutput1 label="Roller Shutter on Output 1+2"
-        
+
         // Relays
         Default item=M10_Relay1 label="Relay 1"
-        
+
         // Roller Shutter on Relays
         Default item=M10_RollershutterRelay1 label="Roller Shutter on Relay 1-2"
-        
+
         // LEDs
         Switch item=M10_LED1 label="LED 1" mappings=[ON=ON, OFF=OFF] // Don't display "Blink" or "Flicker"
         Switch item=M10_LED2 label="LED 2"
-        
+
         // Logic Operations (legacy name: "Sums")
         Default item=M10_Logic1 label="Logic Operation 1"
         Default item=M10_Logic2 label="Logic Operation 2"
-        
-        // Binary Sensors
-        Default item=M10_BinarySensor1 label="Binary Sensor 1" 
-        
+
+        // Binary Sensors (Channels 1-3 of LCN-B3I are mapped to BinarySensor6, BinarySensor7, BinarySensor8)
+        Default item=M10_BinarySensor1 label="Binary Sensor 1"
+
         // Variables
         Setpoint item=M10_Variable1 label="Variable 1"
         Default item=M10_Variable2 label="Variable 2"
@@ -550,21 +569,21 @@ sitemap lcn label="My home automation" {
         Default item=M10_Variable9 label="Variable 9"
         Default item=M10_Variable10 label="Variable 10"
         Default item=M10_Variable11 label="Variable 11"
-        
+
         // Regulators
         Setpoint item=M10_R1VarSetpoint label="R1Var Setpoint" step=1 minValue=-10.0
         Default item=M10_R1VarLock label="R1Var Lock"  // Lock state of R1Var
-        
+
         // Thresholds
         Setpoint item=M10_ThresholdRegister1_Threshold1 label="Threshold Register 1 Threshold 1"
         Setpoint item=M10_ThresholdRegister4_Threshold2 label="Threshold Register 4 Threshold 2"
-        
+
         // S0 Counters
         Default item=M10_S0Counter1 label="S0 Counter 1"
-        
+
         // Key Locks
         Default item=M10_KeyLockA1 label="Locked State Key A1"
         Default item=M10_KeyLockD5 label="Locked State Key D5"
-    }   
+    }
 }
 ```

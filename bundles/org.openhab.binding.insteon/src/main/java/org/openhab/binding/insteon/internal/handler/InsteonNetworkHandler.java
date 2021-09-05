@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -45,7 +45,6 @@ import org.slf4j.LoggerFactory;
  * @author Rob Nielsen - Initial contribution
  */
 @NonNullByDefault
-@SuppressWarnings("null")
 public class InsteonNetworkHandler extends BaseBridgeHandler {
     private static final int LOG_DEVICE_STATISTICS_DELAY_IN_SECONDS = 600;
     private static final int RETRY_DELAY_IN_SECONDS = 30;
@@ -53,7 +52,6 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
 
     private final Logger logger = LoggerFactory.getLogger(InsteonNetworkHandler.class);
 
-    private @Nullable InsteonNetworkConfiguration config;
     private @Nullable InsteonBinding insteonBinding;
     private @Nullable InsteonDeviceDiscoveryService insteonDeviceDiscoveryService;
     private @Nullable ScheduledFuture<?> pollingJob = null;
@@ -78,11 +76,20 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
     @Override
     public void initialize() {
         logger.debug("Starting Insteon bridge");
-        config = getConfigAs(InsteonNetworkConfiguration.class);
-        updateStatus(ThingStatus.UNKNOWN);
+        InsteonNetworkConfiguration config = getConfigAs(InsteonNetworkConfiguration.class);
 
         scheduler.execute(() -> {
+            SerialPortManager serialPortManager = this.serialPortManager;
+            if (serialPortManager == null) {
+                String msg = "Initialization failed, serial port manager is null.";
+                logger.warn(msg);
+
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, msg);
+
+                return;
+            }
             insteonBinding = new InsteonBinding(this, config, serialPortManager, scheduler);
+            updateStatus(ThingStatus.UNKNOWN);
 
             // hold off on starting to poll until devices that already are defined as things are added.
             // wait SETTLE_TIME_IN_SECONDS to start then check every second afterwards until it has been at
@@ -91,7 +98,8 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
                 // check to see if it has been at least SETTLE_TIME_IN_SECONDS since last device was created
                 if (System.currentTimeMillis() - lastInsteonDeviceCreatedTimestamp > SETTLE_TIME_IN_SECONDS * 1000) {
                     // settle time has expired start polling
-                    if (insteonBinding.startPolling()) {
+                    InsteonBinding insteonBinding = this.insteonBinding;
+                    if (insteonBinding != null && insteonBinding.startPolling()) {
                         pollingJob = scheduler.scheduleWithFixedDelay(() -> {
                             insteonBinding.logDeviceStatistics();
                         }, 0, LOG_DEVICE_STATISTICS_DELAY_IN_SECONDS, TimeUnit.SECONDS);
@@ -107,8 +115,11 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
                         updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, msg);
                     }
 
-                    settleJob.cancel(false);
-                    settleJob = null;
+                    ScheduledFuture<?> settleJob = this.settleJob;
+                    if (settleJob != null) {
+                        settleJob.cancel(false);
+                    }
+                    this.settleJob = null;
                 }
             }, SETTLE_TIME_IN_SECONDS, 1, TimeUnit.SECONDS);
         });
@@ -118,24 +129,28 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
     public void dispose() {
         logger.debug("Shutting down Insteon bridge");
 
+        ScheduledFuture<?> pollingJob = this.pollingJob;
         if (pollingJob != null) {
             pollingJob.cancel(true);
-            pollingJob = null;
+            this.pollingJob = null;
         }
 
+        ScheduledFuture<?> reconnectJob = this.reconnectJob;
         if (reconnectJob != null) {
             reconnectJob.cancel(true);
-            reconnectJob = null;
+            this.reconnectJob = null;
         }
 
+        ScheduledFuture<?> settleJob = this.settleJob;
         if (settleJob != null) {
             settleJob.cancel(true);
-            settleJob = null;
+            this.settleJob = null;
         }
 
+        InsteonBinding insteonBinding = this.insteonBinding;
         if (insteonBinding != null) {
             insteonBinding.shutdown();
-            insteonBinding = null;
+            this.insteonBinding = null;
         }
 
         deviceInfo.clear();
@@ -151,10 +166,14 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
 
     public void bindingDisconnected() {
         reconnectJob = scheduler.scheduleWithFixedDelay(() -> {
-            if (insteonBinding.reconnect()) {
+            InsteonBinding insteonBinding = this.insteonBinding;
+            if (insteonBinding != null && insteonBinding.reconnect()) {
                 updateStatus(ThingStatus.ONLINE);
-                reconnectJob.cancel(false);
-                reconnectJob = null;
+                ScheduledFuture<?> reconnectJob = this.reconnectJob;
+                if (reconnectJob != null) {
+                    reconnectJob.cancel(false);
+                }
+                this.reconnectJob = null;
             } else {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Port disconnected.");
             }
@@ -165,8 +184,13 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
         lastInsteonDeviceCreatedTimestamp = System.currentTimeMillis();
     }
 
-    public @Nullable InsteonBinding getInsteonBinding() {
-        return insteonBinding;
+    public InsteonBinding getInsteonBinding() {
+        InsteonBinding insteonBinding = this.insteonBinding;
+        if (insteonBinding != null) {
+            return insteonBinding;
+        } else {
+            throw new IllegalArgumentException("insteon binding is null");
+        }
     }
 
     public void setInsteonDeviceDiscoveryService(InsteonDeviceDiscoveryService insteonDeviceDiscoveryService) {
@@ -175,7 +199,10 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
 
     public void addMissingDevices(List<String> missing) {
         scheduler.execute(() -> {
-            insteonDeviceDiscoveryService.addInsteonDevices(missing, getThing().getUID());
+            InsteonDeviceDiscoveryService insteonDeviceDiscoveryService = this.insteonDeviceDiscoveryService;
+            if (insteonDeviceDiscoveryService != null) {
+                insteonDeviceDiscoveryService.addInsteonDevices(missing, getThing().getUID());
+            }
         });
     }
 
@@ -188,9 +215,12 @@ public class InsteonNetworkHandler extends BaseBridgeHandler {
     }
 
     public void displayLocalDatabase(Console console) {
-        Map<String, String> databaseInfo = insteonBinding.getDatabaseInfo();
-        console.println("local database contains " + databaseInfo.size() + " entries");
-        display(console, databaseInfo);
+        InsteonBinding insteonBinding = this.insteonBinding;
+        if (insteonBinding != null) {
+            Map<String, String> databaseInfo = insteonBinding.getDatabaseInfo();
+            console.println("local database contains " + databaseInfo.size() + " entries");
+            display(console, databaseInfo);
+        }
     }
 
     public void initialized(ThingUID uid, String msg) {

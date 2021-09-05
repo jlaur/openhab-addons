@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -10,7 +10,6 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-
 package org.openhab.binding.ipcamera.internal;
 
 import static org.openhab.binding.ipcamera.internal.IpCameraBindingConstants.*;
@@ -20,9 +19,7 @@ import java.util.ArrayList;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.ipcamera.internal.IpCameraBindingConstants.FFmpegFormat;
 import org.openhab.binding.ipcamera.internal.handler.IpCameraHandler;
-import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.thing.ChannelUID;
@@ -63,70 +60,67 @@ public class HikvisionHandler extends ChannelDuplexHandler {
         this.nvrChannel = nvrChannel;
     }
 
+    private void processEvent(String content) {
+        // some cameras use <dynChannelID> or <channelID> and NVRs use channel 0 to say all channels
+        if (content.contains("hannelID>" + nvrChannel) || content.contains("<channelID>0</channelID>")) {
+            final int debounce = 3;
+            String eventType = Helper.fetchXML(content, "", "<eventType>");
+            switch (eventType) {
+                case "videoloss":
+                    if (content.contains("<eventState>inactive</eventState>")) {
+                        if (vmdCount > 1) {
+                            vmdCount = 1;
+                        }
+                        countDown();
+                        countDown();
+                    }
+                    break;
+                case "PIR":
+                    ipCameraHandler.motionDetected(CHANNEL_PIR_ALARM);
+                    pirCount = debounce;
+                    break;
+                case "attendedBaggage":
+                    ipCameraHandler.setChannelState(CHANNEL_ITEM_TAKEN, OnOffType.ON);
+                    takenCount = debounce;
+                    break;
+                case "unattendedBaggage":
+                    ipCameraHandler.setChannelState(CHANNEL_ITEM_LEFT, OnOffType.ON);
+                    leftCount = debounce;
+                    break;
+                case "facedetection":
+                    ipCameraHandler.setChannelState(CHANNEL_FACE_DETECTED, OnOffType.ON);
+                    faceCount = debounce;
+                    break;
+                case "VMD":
+                    ipCameraHandler.motionDetected(CHANNEL_MOTION_ALARM);
+                    vmdCount = debounce;
+                    break;
+                case "fielddetection":
+                    ipCameraHandler.motionDetected(CHANNEL_FIELD_DETECTION_ALARM);
+                    fieldCount = debounce;
+                    break;
+                case "linedetection":
+                    ipCameraHandler.motionDetected(CHANNEL_LINE_CROSSING_ALARM);
+                    lineCount = debounce;
+                    break;
+                default:
+                    logger.debug("Unrecognised Hikvision eventType={}", eventType);
+            }
+        }
+        countDown();
+    }
+
     // This handles the incoming http replies back from the camera.
     @Override
     public void channelRead(@Nullable ChannelHandlerContext ctx, @Nullable Object msg) throws Exception {
         if (msg == null || ctx == null) {
             return;
         }
-        String content = "";
-        int debounce = 3;
         try {
-            content = msg.toString();
-            if (content.isEmpty()) {
-                return;
-            }
+            String content = msg.toString();
             logger.trace("HTTP Result back from camera is \t:{}:", content);
-
-            if (content.contains("--boundary")) {// Alarm checking goes in here//
-                if (content.contains("<EventNotificationAlert version=\"")) {
-                    if (content.contains("hannelID>" + nvrChannel + "</")) {// some camera use c or <dynChannelID>
-                        if (content.contains("<eventType>linedetection</eventType>")) {
-                            ipCameraHandler.motionDetected(CHANNEL_LINE_CROSSING_ALARM);
-                            lineCount = debounce;
-                        }
-                        if (content.contains("<eventType>fielddetection</eventType>")) {
-                            ipCameraHandler.motionDetected(CHANNEL_FIELD_DETECTION_ALARM);
-                            fieldCount = debounce;
-                        }
-                        if (content.contains("<eventType>VMD</eventType>")) {
-                            ipCameraHandler.motionDetected(CHANNEL_MOTION_ALARM);
-                            vmdCount = debounce;
-                        }
-                        if (content.contains("<eventType>facedetection</eventType>")) {
-                            ipCameraHandler.setChannelState(CHANNEL_FACE_DETECTED, OnOffType.ON);
-                            faceCount = debounce;
-                        }
-                        if (content.contains("<eventType>unattendedBaggage</eventType>")) {
-                            ipCameraHandler.setChannelState(CHANNEL_ITEM_LEFT, OnOffType.ON);
-                            leftCount = debounce;
-                        }
-                        if (content.contains("<eventType>attendedBaggage</eventType>")) {
-                            ipCameraHandler.setChannelState(CHANNEL_ITEM_TAKEN, OnOffType.ON);
-                            takenCount = debounce;
-                        }
-                        if (content.contains("<eventType>PIR</eventType>")) {
-                            ipCameraHandler.motionDetected(CHANNEL_PIR_ALARM);
-                            pirCount = debounce;
-                        }
-                        if (content.contains("<eventType>videoloss</eventType>\r\n<eventState>inactive</eventState>")) {
-                            if (vmdCount > 1) {
-                                vmdCount = 1;
-                            }
-                            countDown();
-                            countDown();
-                        }
-                    } else if (content.contains("<channelID>0</channelID>")) {// NVR uses channel 0 to say all channels
-                        if (content.contains("<eventType>videoloss</eventType>\r\n<eventState>inactive</eventState>")) {
-                            if (vmdCount > 1) {
-                                vmdCount = 1;
-                            }
-                            countDown();
-                            countDown();
-                        }
-                    }
-                    countDown();
-                }
+            if (content.startsWith("--boundary")) {// Alarm checking goes in here//
+                processEvent(content);
             } else {
                 String replyElement = Helper.fetchXML(content, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>", "<");
                 switch (replyElement) {
@@ -203,23 +197,7 @@ public class HikvisionHandler extends ChannelDuplexHandler {
                         }
                         break;
                     default:
-                        if (content.contains("<EventNotificationAlert")) {
-                            if (content.contains("hannelID>" + nvrChannel + "</")
-                                    || content.contains("<channelID>0</channelID>")) {// some camera use c or
-                                                                                      // <dynChannelID>
-                                if (content.contains(
-                                        "<eventType>videoloss</eventType>\r\n<eventState>inactive</eventState>")) {
-                                    if (vmdCount > 1) {
-                                        vmdCount = 1;
-                                    }
-                                    countDown();
-                                    countDown();
-                                }
-                                countDown();
-                            }
-                        } else {
-                            logger.debug("Unhandled reply-{}.", content);
-                        }
+                        logger.debug("Unhandled reply-{}.", content);
                         break;
                 }
             }
@@ -440,19 +418,6 @@ public class HikvisionHandler extends ChannelDuplexHandler {
                     hikSendXml("/ISAPI/System/IO/outputs/" + nvrChannel + "/trigger",
                             "<IOPortData version=\"1.0\" xmlns=\"http://www.hikvision.com/ver10/XMLSchema\">\r\n    <outputState>low</outputState>\r\n</IOPortData>\r\n");
                 }
-                return;
-            case CHANNEL_FFMPEG_MOTION_CONTROL:
-                if (OnOffType.ON.equals(command)) {
-                    ipCameraHandler.motionAlarmEnabled = true;
-                } else if (OnOffType.OFF.equals(command) || DecimalType.ZERO.equals(command)) {
-                    ipCameraHandler.motionAlarmEnabled = false;
-                    ipCameraHandler.noMotionDetected(CHANNEL_MOTION_ALARM);
-                } else {
-                    ipCameraHandler.motionAlarmEnabled = true;
-                    ipCameraHandler.motionThreshold = Double.valueOf(command.toString());
-                    ipCameraHandler.motionThreshold = ipCameraHandler.motionThreshold / 10000;
-                }
-                ipCameraHandler.setupFfmpegFormat(FFmpegFormat.RTSP_ALARMS);
                 return;
         }
     }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -13,7 +13,7 @@
 package org.openhab.binding.lifx.internal;
 
 import static org.openhab.binding.lifx.internal.LifxBindingConstants.PACKET_INTERVAL;
-import static org.openhab.binding.lifx.internal.protocol.Product.Feature.MULTIZONE;
+import static org.openhab.binding.lifx.internal.LifxProduct.Feature.MULTIZONE;
 import static org.openhab.binding.lifx.internal.util.LifxMessageUtil.*;
 
 import java.time.Duration;
@@ -29,25 +29,25 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.lifx.internal.LifxProduct.Features;
+import org.openhab.binding.lifx.internal.dto.AcknowledgementResponse;
+import org.openhab.binding.lifx.internal.dto.ApplicationRequest;
+import org.openhab.binding.lifx.internal.dto.Effect;
+import org.openhab.binding.lifx.internal.dto.GetColorZonesRequest;
+import org.openhab.binding.lifx.internal.dto.GetLightInfraredRequest;
+import org.openhab.binding.lifx.internal.dto.GetLightPowerRequest;
+import org.openhab.binding.lifx.internal.dto.GetRequest;
+import org.openhab.binding.lifx.internal.dto.Packet;
+import org.openhab.binding.lifx.internal.dto.PowerState;
+import org.openhab.binding.lifx.internal.dto.SetColorRequest;
+import org.openhab.binding.lifx.internal.dto.SetColorZonesRequest;
+import org.openhab.binding.lifx.internal.dto.SetLightInfraredRequest;
+import org.openhab.binding.lifx.internal.dto.SetLightPowerRequest;
+import org.openhab.binding.lifx.internal.dto.SetPowerRequest;
+import org.openhab.binding.lifx.internal.dto.SetTileEffectRequest;
+import org.openhab.binding.lifx.internal.dto.SignalStrength;
 import org.openhab.binding.lifx.internal.fields.HSBK;
 import org.openhab.binding.lifx.internal.listener.LifxLightStateListener;
-import org.openhab.binding.lifx.internal.protocol.AcknowledgementResponse;
-import org.openhab.binding.lifx.internal.protocol.ApplicationRequest;
-import org.openhab.binding.lifx.internal.protocol.Effect;
-import org.openhab.binding.lifx.internal.protocol.GetColorZonesRequest;
-import org.openhab.binding.lifx.internal.protocol.GetLightInfraredRequest;
-import org.openhab.binding.lifx.internal.protocol.GetLightPowerRequest;
-import org.openhab.binding.lifx.internal.protocol.GetRequest;
-import org.openhab.binding.lifx.internal.protocol.Packet;
-import org.openhab.binding.lifx.internal.protocol.PowerState;
-import org.openhab.binding.lifx.internal.protocol.Product;
-import org.openhab.binding.lifx.internal.protocol.SetColorRequest;
-import org.openhab.binding.lifx.internal.protocol.SetColorZonesRequest;
-import org.openhab.binding.lifx.internal.protocol.SetLightInfraredRequest;
-import org.openhab.binding.lifx.internal.protocol.SetLightPowerRequest;
-import org.openhab.binding.lifx.internal.protocol.SetPowerRequest;
-import org.openhab.binding.lifx.internal.protocol.SetTileEffectRequest;
-import org.openhab.binding.lifx.internal.protocol.SignalStrength;
 import org.openhab.core.library.types.PercentType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,7 +57,7 @@ import org.slf4j.LoggerFactory;
  * light so the change the actual light state to that of the {@code pendingLightState}. When the light does not
  * acknowledge a packet, it resends it (max 3 times).
  *
- * @author Wouter Born - Extracted class from LifxLightHandler, added logic for handling packet loss
+ * @author Wouter Born - Initial contribution
  */
 @NonNullByDefault
 public class LifxLightStateChanger implements LifxLightStateListener {
@@ -75,7 +75,7 @@ public class LifxLightStateChanger implements LifxLightStateListener {
     private final Logger logger = LoggerFactory.getLogger(LifxLightStateChanger.class);
 
     private final String logId;
-    private final Product product;
+    private final Features features;
     private final Duration fadeTime;
     private final LifxLightState pendingLightState;
     private final ScheduledExecutorService scheduler;
@@ -85,7 +85,7 @@ public class LifxLightStateChanger implements LifxLightStateListener {
 
     private @Nullable ScheduledFuture<?> sendJob;
 
-    private Map<Integer, @Nullable List<PendingPacket>> pendingPacketsMap = new ConcurrentHashMap<>();
+    private Map<Integer, List<PendingPacket>> pendingPacketsMap = new ConcurrentHashMap<>();
 
     private class PendingPacket {
 
@@ -105,7 +105,7 @@ public class LifxLightStateChanger implements LifxLightStateListener {
 
     public LifxLightStateChanger(LifxLightContext context, LifxLightCommunicationHandler communicationHandler) {
         this.logId = context.getLogId();
-        this.product = context.getProduct();
+        this.features = context.getFeatures();
         this.fadeTime = context.getConfiguration().getFadeTime();
         this.pendingLightState = context.getPendingLightState();
         this.scheduler = context.getScheduler();
@@ -230,12 +230,10 @@ public class LifxLightStateChanger implements LifxLightStateListener {
     private @Nullable PendingPacket findPacketToSend() {
         PendingPacket result = null;
         for (List<PendingPacket> pendingPackets : pendingPacketsMap.values()) {
-            if (pendingPackets != null) {
-                for (PendingPacket pendingPacket : pendingPackets) {
-                    if (pendingPacket.hasAcknowledgeIntervalElapsed()
-                            && (result == null || pendingPacket.lastSend < result.lastSend)) {
-                        result = pendingPacket;
-                    }
+            for (PendingPacket pendingPacket : pendingPackets) {
+                if (pendingPacket.hasAcknowledgeIntervalElapsed()
+                        && (result == null || pendingPacket.lastSend < result.lastSend)) {
+                    result = pendingPacket;
                 }
             }
         }
@@ -254,15 +252,13 @@ public class LifxLightStateChanger implements LifxLightStateListener {
 
     private void removeFailedPackets() {
         for (List<PendingPacket> pendingPackets : pendingPacketsMap.values()) {
-            if (pendingPackets != null) {
-                Iterator<PendingPacket> it = pendingPackets.iterator();
-                while (it.hasNext()) {
-                    PendingPacket pendingPacket = it.next();
-                    if (pendingPacket.sendCount > MAX_RETRIES && pendingPacket.hasAcknowledgeIntervalElapsed()) {
-                        logger.warn("{} failed (unacknowledged {} times to light {})",
-                                pendingPacket.packet.getClass().getSimpleName(), pendingPacket.sendCount, logId);
-                        it.remove();
-                    }
+            Iterator<PendingPacket> it = pendingPackets.iterator();
+            while (it.hasNext()) {
+                PendingPacket pendingPacket = it.next();
+                if (pendingPacket.sendCount > MAX_RETRIES && pendingPacket.hasAcknowledgeIntervalElapsed()) {
+                    logger.warn("{} failed (unacknowledged {} times to light {})",
+                            pendingPacket.packet.getClass().getSimpleName(), pendingPacket.sendCount, logId);
+                    it.remove();
                 }
             }
         }
@@ -270,14 +266,12 @@ public class LifxLightStateChanger implements LifxLightStateListener {
 
     private @Nullable PendingPacket removeAcknowledgedPacket(int sequenceNumber) {
         for (List<PendingPacket> pendingPackets : pendingPacketsMap.values()) {
-            if (pendingPackets != null) {
-                Iterator<PendingPacket> it = pendingPackets.iterator();
-                while (it.hasNext()) {
-                    PendingPacket pendingPacket = it.next();
-                    if (pendingPacket.packet.getSequence() == sequenceNumber) {
-                        it.remove();
-                        return pendingPacket;
-                    }
+            Iterator<PendingPacket> it = pendingPackets.iterator();
+            while (it.hasNext()) {
+                PendingPacket pendingPacket = it.next();
+                if (pendingPacket.packet.getSequence() == sequenceNumber) {
+                    it.remove();
+                    return pendingPacket;
                 }
             }
         }
@@ -378,7 +372,7 @@ public class LifxLightStateChanger implements LifxLightStateListener {
     }
 
     private void getZonesIfZonesAreSet() {
-        if (product.hasFeature(MULTIZONE)) {
+        if (features.hasFeature(MULTIZONE)) {
             List<PendingPacket> pending = pendingPacketsMap.get(SetColorZonesRequest.TYPE);
             if (pending == null || pending.isEmpty()) {
                 GetColorZonesRequest zoneColorPacket = new GetColorZonesRequest();

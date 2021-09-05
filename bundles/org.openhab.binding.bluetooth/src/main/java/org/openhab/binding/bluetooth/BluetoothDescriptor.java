@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -30,7 +30,8 @@ public class BluetoothDescriptor {
 
     protected final BluetoothCharacteristic characteristic;
     protected final UUID uuid;
-    protected byte[] value;
+
+    protected final int handle;
 
     /**
      * The main constructor
@@ -38,9 +39,10 @@ public class BluetoothDescriptor {
      * @param characteristic the characteristic that this class describes
      * @param uuid the uuid of the descriptor
      */
-    public BluetoothDescriptor(BluetoothCharacteristic characteristic, UUID uuid) {
+    public BluetoothDescriptor(BluetoothCharacteristic characteristic, UUID uuid, int handle) {
         this.characteristic = characteristic;
         this.uuid = uuid;
+        this.handle = handle;
     }
 
     /**
@@ -71,21 +73,12 @@ public class BluetoothDescriptor {
     }
 
     /**
-     * Returns the stored value for this descriptor. It doesn't read remote data.
+     * Returns the handle for this descriptor
      *
-     * @return the value of the descriptor
+     * @return the handle for the descriptor
      */
-    public byte[] getValue() {
-        return value;
-    }
-
-    /**
-     * Sets the stored value for this descriptor. It doesn't update remote data.
-     *
-     * @param value the value for this descriptor instance
-     */
-    public void setValue(byte[] value) {
-        this.value = value;
+    public int getHandle() {
+        return handle;
     }
 
     public GattDescriptor getDescriptor() {
@@ -111,7 +104,7 @@ public class BluetoothDescriptor {
         private final UUID uuid;
 
         private GattDescriptor(long key) {
-            this.uuid = new UUID((key << 32) | 0x1000, BluetoothBindingConstants.BLUETOOTH_BASE_UUID);
+            this.uuid = BluetoothBindingConstants.createBluetoothUUID(key);
         }
 
         private static void initMapping() {

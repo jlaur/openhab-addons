@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,7 +15,7 @@ package org.openhab.binding.volvooncall.internal.handler;
 import static org.openhab.binding.volvooncall.internal.VolvoOnCallBindingConstants.*;
 import static org.openhab.core.library.unit.MetricPrefix.KILO;
 import static org.openhab.core.library.unit.SIUnits.*;
-import static org.openhab.core.library.unit.SmartHomeUnits.*;
+import static org.openhab.core.library.unit.Units.*;
 
 import java.time.ZonedDateTime;
 import java.util.Collection;
@@ -42,10 +42,12 @@ import org.openhab.binding.volvooncall.internal.dto.HvBattery;
 import org.openhab.binding.volvooncall.internal.dto.Position;
 import org.openhab.binding.volvooncall.internal.dto.PostResponse;
 import org.openhab.binding.volvooncall.internal.dto.Status;
+import org.openhab.binding.volvooncall.internal.dto.Status.FluidLevel;
 import org.openhab.binding.volvooncall.internal.dto.Trip;
 import org.openhab.binding.volvooncall.internal.dto.TripDetail;
 import org.openhab.binding.volvooncall.internal.dto.Trips;
 import org.openhab.binding.volvooncall.internal.dto.TyrePressure;
+import org.openhab.binding.volvooncall.internal.dto.TyrePressure.PressureLevel;
 import org.openhab.binding.volvooncall.internal.dto.Vehicles;
 import org.openhab.binding.volvooncall.internal.dto.WindowsStatus;
 import org.openhab.binding.volvooncall.internal.wrapper.VehiclePositionWrapper;
@@ -131,8 +133,9 @@ public class VehicleHandler extends BaseThingHandler {
                                 thing.getProperties().entrySet().stream().filter(p -> "true".equals(p.getValue()))
                                         .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)));
 
-                        if (thing.getProperties().containsKey(LAST_TRIP_ID)) {
-                            lastTripId = Long.parseLong(thing.getProperties().get(LAST_TRIP_ID));
+                        String lastTripIdString = thing.getProperties().get(LAST_TRIP_ID);
+                        if (lastTripIdString != null) {
+                            lastTripId = Long.parseLong(lastTripIdString);
                         }
 
                         updateStatus(ThingStatus.ONLINE);
@@ -294,7 +297,8 @@ public class VehicleHandler extends BaseThingHandler {
             case TRIP_END_TIME:
                 return tripDetails.getEndTime();
             case TRIP_DURATION:
-                return new QuantityType<>(tripDetails.getDurationInMinutes(), MINUTE);
+                return tripDetails.getDurationInMinutes().map(value -> (State) new QuantityType<>(value, MINUTE))
+                        .orElse(UnDefType.UNDEF);
             case TRIP_START_ODOMETER:
                 return new QuantityType<>((double) tripDetails.startOdometer / 1000, KILO(METRE));
             case TRIP_STOP_ODOMETER:
@@ -339,16 +343,20 @@ public class VehicleHandler extends BaseThingHandler {
         return UnDefType.NULL;
     }
 
+    private State pressureLevelToState(PressureLevel level) {
+        return level != PressureLevel.UNKNOWN ? new DecimalType(level.ordinal()) : UnDefType.UNDEF;
+    }
+
     private State getTyresValue(String channelId, TyrePressure tyrePressure) {
         switch (channelId) {
             case REAR_RIGHT_TYRE:
-                return tyrePressure.rearRightTyrePressure;
+                return pressureLevelToState(tyrePressure.rearRightTyrePressure);
             case REAR_LEFT_TYRE:
-                return tyrePressure.rearLeftTyrePressure;
+                return pressureLevelToState(tyrePressure.rearLeftTyrePressure);
             case FRONT_RIGHT_TYRE:
-                return tyrePressure.frontRightTyrePressure;
+                return pressureLevelToState(tyrePressure.frontRightTyrePressure);
             case FRONT_LEFT_TYRE:
-                return tyrePressure.frontLeftTyrePressure;
+                return pressureLevelToState(tyrePressure.frontLeftTyrePressure);
         }
         return UnDefType.NULL;
     }
@@ -365,6 +373,22 @@ public class VehicleHandler extends BaseThingHandler {
     private State getBatteryValue(String channelId, HvBattery hvBattery) {
         switch (channelId) {
             case BATTERY_LEVEL:
+                /*
+                 * If the car is charging the battery level can be reported as 100% by the API regardless of actual
+                 * charge level, but isn't always. So, if we see that the car is Charging, ChargingPaused, or
+                 * ChargingInterrupted and the reported battery level is 100%, then instead produce UNDEF.
+                 *
+                 * If we see FullyCharged, then we can rely on the value being 100% anyway.
+                 */
+                if (hvBattery.hvBatteryChargeStatusDerived != null
+                        && hvBattery.hvBatteryChargeStatusDerived.toString().startsWith("CablePluggedInCar_Charging")
+                        && hvBattery.hvBatteryLevel != UNDEFINED && hvBattery.hvBatteryLevel == 100) {
+                    return UnDefType.UNDEF;
+                } else {
+                    return hvBattery.hvBatteryLevel != UNDEFINED ? new QuantityType<>(hvBattery.hvBatteryLevel, PERCENT)
+                            : UnDefType.UNDEF;
+                }
+            case BATTERY_LEVEL_RAW:
                 return hvBattery.hvBatteryLevel != UNDEFINED ? new QuantityType<>(hvBattery.hvBatteryLevel, PERCENT)
                         : UnDefType.UNDEF;
             case BATTERY_DISTANCE_TO_EMPTY:
@@ -374,6 +398,27 @@ public class VehicleHandler extends BaseThingHandler {
             case CHARGE_STATUS:
                 return hvBattery.hvBatteryChargeStatusDerived != null ? hvBattery.hvBatteryChargeStatusDerived
                         : UnDefType.UNDEF;
+            case CHARGE_STATUS_CABLE:
+                return hvBattery.hvBatteryChargeStatusDerived != null
+                        ? OnOffType.from(
+                                hvBattery.hvBatteryChargeStatusDerived.toString().startsWith("CablePluggedInCar_"))
+                        : UnDefType.UNDEF;
+            case CHARGE_STATUS_CHARGING:
+                return hvBattery.hvBatteryChargeStatusDerived != null
+                        ? OnOffType.from(hvBattery.hvBatteryChargeStatusDerived.toString().endsWith("_Charging"))
+                        : UnDefType.UNDEF;
+            case CHARGE_STATUS_FULLY_CHARGED:
+                /*
+                 * If the car is charging the battery level can be reported incorrectly by the API, so use the charging
+                 * status instead of checking the level when the car is plugged in.
+                 */
+                if (hvBattery.hvBatteryChargeStatusDerived != null
+                        && hvBattery.hvBatteryChargeStatusDerived.toString().startsWith("CablePluggedInCar_")) {
+                    return OnOffType.from(hvBattery.hvBatteryChargeStatusDerived.toString().endsWith("_FullyCharged"));
+                } else {
+                    return hvBattery.hvBatteryLevel != UNDEFINED ? OnOffType.from(hvBattery.hvBatteryLevel == 100)
+                            : UnDefType.UNDEF;
+                }
             case TIME_TO_BATTERY_FULLY_CHARGED:
                 return hvBattery.timeToHVBatteryFullyCharged != UNDEFINED
                         ? new QuantityType<>(hvBattery.timeToHVBatteryFullyCharged, MINUTE)
@@ -395,9 +440,9 @@ public class VehicleHandler extends BaseThingHandler {
             case ENGINE_RUNNING:
                 return status.getEngineRunning().map(State.class::cast).orElse(UnDefType.UNDEF);
             case BRAKE_FLUID_LEVEL:
-                return new StringType(status.brakeFluid);
+                return fluidLevelToState(status.brakeFluidLevel);
             case WASHER_FLUID_LEVEL:
-                return new StringType(status.washerFluidLevel);
+                return fluidLevelToState(status.washerFluidLevel);
             case AVERAGE_SPEED:
                 return status.averageSpeed != UNDEFINED ? new QuantityType<>(status.averageSpeed, KILOMETRE_PER_HOUR)
                         : UnDefType.UNDEF;
@@ -427,6 +472,10 @@ public class VehicleHandler extends BaseThingHandler {
                         .orElse(UnDefType.NULL);
         }
         return UnDefType.NULL;
+    }
+
+    private State fluidLevelToState(FluidLevel level) {
+        return level != FluidLevel.UNKNOWN ? new DecimalType(level.ordinal()) : UnDefType.UNDEF;
     }
 
     private State getTankValue(String channelId, Status status) {

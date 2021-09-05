@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,13 +12,15 @@
  */
 package org.openhab.binding.openweathermap.internal.connection;
 
-import static java.util.stream.Collectors.joining;
 import static org.eclipse.jetty.http.HttpMethod.GET;
 import static org.eclipse.jetty.http.HttpStatus.*;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.stream.Collectors;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -33,12 +36,15 @@ import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.HttpResponseException;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.openhab.binding.openweathermap.internal.config.OpenWeatherMapAPIConfiguration;
+import org.openhab.binding.openweathermap.internal.dto.OpenWeatherMapJsonAirPollutionData;
 import org.openhab.binding.openweathermap.internal.dto.OpenWeatherMapJsonDailyForecastData;
 import org.openhab.binding.openweathermap.internal.dto.OpenWeatherMapJsonHourlyForecastData;
 import org.openhab.binding.openweathermap.internal.dto.OpenWeatherMapJsonUVIndexData;
 import org.openhab.binding.openweathermap.internal.dto.OpenWeatherMapJsonWeatherData;
+import org.openhab.binding.openweathermap.internal.dto.onecall.OpenWeatherMapOneCallAPIData;
+import org.openhab.binding.openweathermap.internal.dto.onecallhist.OpenWeatherMapOneCallHistAPIData;
 import org.openhab.binding.openweathermap.internal.handler.OpenWeatherMapAPIHandler;
-import org.openhab.binding.openweathermap.internal.utils.ByteArrayFileCache;
+import org.openhab.core.cache.ByteArrayFileCache;
 import org.openhab.core.cache.ExpiringCacheMap;
 import org.openhab.core.io.net.http.HttpUtil;
 import org.openhab.core.library.types.PointType;
@@ -72,6 +78,8 @@ public class OpenWeatherMapConnection {
     private static final String PARAM_LON = "lon";
     private static final String PARAM_LANG = "lang";
     private static final String PARAM_FORECAST_CNT = "cnt";
+    private static final String PARAM_HISTORY_DATE = "dt";
+    private static final String PARAM_EXCLUDE = "exclude";
 
     // Current weather data (see https://openweathermap.org/current)
     private static final String WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather";
@@ -82,8 +90,14 @@ public class OpenWeatherMapConnection {
     // UV Index (see https://openweathermap.org/api/uvi)
     private static final String UVINDEX_URL = "https://api.openweathermap.org/data/2.5/uvi";
     private static final String UVINDEX_FORECAST_URL = "https://api.openweathermap.org/data/2.5/uvi/forecast";
+    // Air Pollution (see https://openweathermap.org/api/air-pollution)
+    private static final String AIR_POLLUTION_URL = "https://api.openweathermap.org/data/2.5/air_pollution";
+    private static final String AIR_POLLUTION_FORECAST_URL = "https://api.openweathermap.org/data/2.5/air_pollution/forecast";
     // Weather icons (see https://openweathermap.org/weather-conditions)
     private static final String ICON_URL = "https://openweathermap.org/img/w/%s.png";
+    // One Call API (see https://openweathermap.org/api/one-call-api )
+    private static final String ONECALL_URL = "https://api.openweathermap.org/data/2.5/onecall";
+    private static final String ONECALL_HISTORY_URL = "https://api.openweathermap.org/data/2.5/onecall/timemachine";
 
     private final OpenWeatherMapAPIHandler handler;
     private final HttpClient httpClient;
@@ -91,7 +105,6 @@ public class OpenWeatherMapConnection {
     private static final ByteArrayFileCache IMAGE_CACHE = new ByteArrayFileCache("org.openhab.binding.openweathermap");
     private final ExpiringCacheMap<String, String> cache;
 
-    private final JsonParser parser = new JsonParser();
     private final Gson gson = new Gson();
 
     public OpenWeatherMapConnection(OpenWeatherMapAPIHandler handler, HttpClient httpClient) {
@@ -168,7 +181,7 @@ public class OpenWeatherMapConnection {
     }
 
     /**
-     * Requests the UV Index data for the given location (see https://api.openweathermap.org/data/2.5/uvi).
+     * Requests the UV Index data for the given location (see https://openweathermap.org/api/uvi).
      *
      * @param location location represented as {@link PointType}
      * @return the UV Index data
@@ -185,7 +198,7 @@ public class OpenWeatherMapConnection {
     }
 
     /**
-     * Requests the UV Index forecast data for the given location (see https://api.openweathermap.org/data/2.5/uvi).
+     * Requests the UV Index forecast data for the given location (see https://openweathermap.org/api/uvi).
      *
      * @param location location represented as {@link PointType}
      * @return the UV Index forecast data
@@ -209,6 +222,42 @@ public class OpenWeatherMapConnection {
     }
 
     /**
+     * Requests the Air Pollution data for the given location (see https://openweathermap.org/api/air-pollution).
+     *
+     * @param location location represented as {@link PointType}
+     * @return the Air Pollution data
+     * @throws JsonSyntaxException
+     * @throws OpenWeatherMapCommunicationException
+     * @throws OpenWeatherMapConfigurationException
+     */
+    public synchronized @Nullable OpenWeatherMapJsonAirPollutionData getAirPollutionData(@Nullable PointType location)
+            throws JsonSyntaxException, OpenWeatherMapCommunicationException, OpenWeatherMapConfigurationException {
+        return gson.fromJson(
+                getResponseFromCache(
+                        buildURL(AIR_POLLUTION_URL, getRequestParams(handler.getOpenWeatherMapAPIConfig(), location))),
+                OpenWeatherMapJsonAirPollutionData.class);
+    }
+
+    /**
+     * Requests the Air Pollution forecast data for the given location (see
+     * https://openweathermap.org/api/air-pollution).
+     *
+     * @param location location represented as {@link PointType}
+     * @return the Air Pollution forecast data
+     * @throws JsonSyntaxException
+     * @throws OpenWeatherMapCommunicationException
+     * @throws OpenWeatherMapConfigurationException
+     */
+    public synchronized @Nullable OpenWeatherMapJsonAirPollutionData getAirPollutionForecastData(
+            @Nullable PointType location)
+            throws JsonSyntaxException, OpenWeatherMapCommunicationException, OpenWeatherMapConfigurationException {
+        return gson.fromJson(
+                getResponseFromCache(buildURL(AIR_POLLUTION_FORECAST_URL,
+                        getRequestParams(handler.getOpenWeatherMapAPIConfig(), location))),
+                OpenWeatherMapJsonAirPollutionData.class);
+    }
+
+    /**
      * Downloads the icon for the given icon id (see https://openweathermap.org/weather-conditions).
      *
      * @param iconId the id of the icon
@@ -224,7 +273,12 @@ public class OpenWeatherMapConnection {
 
     private static @Nullable RawType downloadWeatherIconFromCache(String url) {
         if (IMAGE_CACHE.containsKey(url)) {
-            return new RawType(IMAGE_CACHE.get(url), PNG_CONTENT_TYPE);
+            try {
+                return new RawType(IMAGE_CACHE.get(url), PNG_CONTENT_TYPE);
+            } catch (Exception e) {
+                LoggerFactory.getLogger(OpenWeatherMapConnection.class)
+                        .trace("Failed to download the content of URL '{}'", url, e);
+            }
         } else {
             RawType image = downloadWeatherIcon(url);
             if (image != null) {
@@ -239,13 +293,73 @@ public class OpenWeatherMapConnection {
         return HttpUtil.downloadImage(url);
     }
 
+    /**
+     * Get Weather data from the One Call API for the given location. See https://openweathermap.org/api/one-call-api
+     * for details.
+     *
+     * @param location location represented as {@link PointType}
+     * @param excludeMinutely if true, will not fetch minutely forecast data from the server
+     * @param excludeHourly if true, will not fetch hourly forecast data from the server
+     * @param excludeDaily if true, will not fetch hourly forecast data from the server
+     * @return
+     * @throws JsonSyntaxException
+     * @throws OpenWeatherMapCommunicationException
+     * @throws OpenWeatherMapConfigurationException
+     */
+    public synchronized @Nullable OpenWeatherMapOneCallAPIData getOneCallAPIData(@Nullable PointType location,
+            boolean excludeMinutely, boolean excludeHourly, boolean excludeDaily, boolean excludeAlerts)
+            throws JsonSyntaxException, OpenWeatherMapCommunicationException, OpenWeatherMapConfigurationException {
+        Map<String, String> params = getRequestParams(handler.getOpenWeatherMapAPIConfig(), location);
+        List<String> exclude = new ArrayList<>();
+        if (excludeMinutely) {
+            exclude.add("minutely");
+        }
+        if (excludeHourly) {
+            exclude.add("hourly");
+        }
+        if (excludeDaily) {
+            exclude.add("daily");
+        }
+        if (excludeAlerts) {
+            exclude.add("alerts");
+        }
+        logger.debug("Exclude: '{}'", exclude);
+        if (!exclude.isEmpty()) {
+            params.put(PARAM_EXCLUDE, exclude.stream().collect(Collectors.joining(",")));
+        }
+        return gson.fromJson(getResponseFromCache(buildURL(ONECALL_URL, params)), OpenWeatherMapOneCallAPIData.class);
+    }
+
+    /**
+     * Get the historical weather data from the One Call API for the given location and the given number of days in the
+     * past. As of now, OpenWeatherMap supports this function for up to 5 days in the past. However, this may change in
+     * the future, so we don't enforce this limit here. See https://openweathermap.org/api/one-call-api for details.
+     *
+     * @param location location represented as {@link PointType}
+     * @param days number of days in the past, relative to the current time.
+     * @return
+     * @throws JsonSyntaxException
+     * @throws OpenWeatherMapCommunicationException
+     * @throws OpenWeatherMapConfigurationException
+     */
+    public synchronized @Nullable OpenWeatherMapOneCallHistAPIData getOneCallHistAPIData(@Nullable PointType location,
+            int days)
+            throws JsonSyntaxException, OpenWeatherMapCommunicationException, OpenWeatherMapConfigurationException {
+        Map<String, String> params = getRequestParams(handler.getOpenWeatherMapAPIConfig(), location);
+        // the API requests the history as timestamp in Unix time format.
+        params.put(PARAM_HISTORY_DATE,
+                Long.toString(ZonedDateTime.now(ZoneId.of("UTC")).minusDays(days).toEpochSecond()));
+        return gson.fromJson(getResponseFromCache(buildURL(ONECALL_HISTORY_URL, params)),
+                OpenWeatherMapOneCallHistAPIData.class);
+    }
+
     private Map<String, String> getRequestParams(OpenWeatherMapAPIConfiguration config, @Nullable PointType location) {
         if (location == null) {
             throw new OpenWeatherMapConfigurationException("@text/offline.conf-error-missing-location");
         }
 
         Map<String, String> params = new HashMap<>();
-        // API key (see http://openweathermap.org/appid)
+        // API key (see https://openweathermap.org/appid)
         String apikey = config.apikey;
         if (apikey == null || (apikey = apikey.trim()).isEmpty()) {
             throw new OpenWeatherMapConfigurationException("@text/offline.conf-error-missing-apikey");
@@ -269,10 +383,13 @@ public class OpenWeatherMapConnection {
 
     private String buildURL(String url, Map<String, String> requestParams) {
         return requestParams.keySet().stream().map(key -> key + "=" + encodeParam(requestParams.get(key)))
-                .collect(joining("&", url + "?", ""));
+                .collect(Collectors.joining("&", url + "?", ""));
     }
 
-    private String encodeParam(String value) {
+    private String encodeParam(@Nullable String value) {
+        if (value == null) {
+            return "";
+        }
         try {
             return URLEncoder.encode(value, StandardCharsets.UTF_8.name());
         } catch (UnsupportedEncodingException e) {
@@ -332,7 +449,7 @@ public class OpenWeatherMapConnection {
     }
 
     private String getErrorMessage(String response) {
-        JsonElement jsonResponse = parser.parse(response);
+        JsonElement jsonResponse = JsonParser.parseString(response);
         if (jsonResponse.isJsonObject()) {
             JsonObject json = jsonResponse.getAsJsonObject();
             if (json.has(PROPERTY_MESSAGE)) {

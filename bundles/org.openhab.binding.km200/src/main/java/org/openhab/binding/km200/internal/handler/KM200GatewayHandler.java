@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -30,7 +30,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jetty.client.HttpClient;
@@ -177,7 +176,7 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
             switch (key) {
                 case "ip4Address":
                     String ip = (String) configuration.get("ip4Address");
-                    if (StringUtils.isNotBlank(ip)) {
+                    if (ip != null && !ip.isBlank()) {
                         try {
                             InetAddress.getByName(ip);
                         } catch (UnknownHostException e) {
@@ -190,25 +189,25 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
                     break;
                 case "privateKey":
                     String privateKey = (String) configuration.get("privateKey");
-                    if (StringUtils.isNotBlank(privateKey)) {
+                    if (privateKey != null && !privateKey.isBlank()) {
                         getDevice().setCryptKeyPriv(privateKey);
                     }
                     break;
                 case "md5Salt":
                     String md5Salt = (String) configuration.get("md5Salt");
-                    if (StringUtils.isNotBlank(md5Salt)) {
+                    if (md5Salt != null && !md5Salt.isBlank()) {
                         getDevice().setMD5Salt(md5Salt);
                     }
                     break;
                 case "gatewayPassword":
                     String gatewayPassword = (String) configuration.get("gatewayPassword");
-                    if (StringUtils.isNotBlank(gatewayPassword)) {
+                    if (gatewayPassword != null && !gatewayPassword.isBlank()) {
                         getDevice().setGatewayPassword(gatewayPassword);
                     }
                     break;
                 case "privatePassword":
                     String privatePassword = (String) configuration.get("privatePassword");
-                    if (StringUtils.isNotBlank(privatePassword)) {
+                    if (privatePassword != null && !privatePassword.isBlank()) {
                         getDevice().setPrivatePassword(privatePassword);
                     }
                     break;
@@ -436,10 +435,10 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
                     if (null != tmpSerObjekt) {
                         if (parent == null || parent.equals(tmpSerObjekt.getParent())) {
                             synchronized (sendMap) {
-                                if (sendMap.containsKey(actChannel)) {
-                                    state = dataHandler.parseJSONData(sendMap.get(actChannel),
-                                            tmpSerObjekt.getServiceType(), tmpService, actChTypes,
-                                            KM200Utils.getChannelConfigurationStrings(actChannel));
+                                JsonObject obj = sendMap.get(actChannel);
+                                if (obj != null) {
+                                    state = dataHandler.parseJSONData(obj, tmpSerObjekt.getServiceType(), tmpService,
+                                            actChTypes, KM200Utils.getChannelConfigurationStrings(actChannel));
                                 } else {
                                     state = dataHandler.getProvidersState(tmpService, actChTypes,
                                             KM200Utils.getChannelConfigurationStrings(actChannel));
@@ -548,10 +547,10 @@ public class KM200GatewayHandler extends BaseBridgeHandler {
                             synchronized (sendMap) {
                                 KM200ServiceObject serObjekt = remoteDevice.getServiceObject(service);
                                 if (null != serObjekt) {
-                                    if (sendMap.containsKey(channel)) {
-                                        state = dataHandler.parseJSONData(sendMap.get(channel),
-                                                serObjekt.getServiceType(), service, chTypes,
-                                                KM200Utils.getChannelConfigurationStrings(channel));
+                                    JsonObject obj = sendMap.get(channel);
+                                    if (obj != null) {
+                                        state = dataHandler.parseJSONData(obj, serObjekt.getServiceType(), service,
+                                                chTypes, KM200Utils.getChannelConfigurationStrings(channel));
                                     } else {
                                         state = dataHandler.getProvidersState(service, chTypes,
                                                 KM200Utils.getChannelConfigurationStrings(channel));

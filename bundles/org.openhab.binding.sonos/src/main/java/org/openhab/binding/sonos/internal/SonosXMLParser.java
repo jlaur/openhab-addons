@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -25,7 +25,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.lang3.StringEscapeUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.slf4j.Logger;
@@ -134,6 +134,7 @@ public class SonosXMLParser {
      */
     public static @Nullable SonosResourceMetaData getResourceMetaData(String xml) throws SAXException {
         XMLReader reader = XMLReaderFactory.createXMLReader();
+        reader.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
         ResourceMetaDataHandler handler = new ResourceMetaDataHandler();
         reader.setContentHandler(handler);
         try {
@@ -185,7 +186,7 @@ public class SonosXMLParser {
         return handler.getTextFields();
     }
 
-    public static Map<String, @Nullable String> getRenderingControlFromXML(String xml) {
+    public static Map<String, String> getRenderingControlFromXML(String xml) {
         RenderingControlEventHandler handler = new RenderingControlEventHandler();
         try {
             XMLReader reader = XMLReaderFactory.createXMLReader();
@@ -200,7 +201,7 @@ public class SonosXMLParser {
         return handler.getChanges();
     }
 
-    public static Map<String, @Nullable String> getAVTransportFromXML(String xml) {
+    public static Map<String, String> getAVTransportFromXML(String xml) {
         AVTransportEventHandler handler = new AVTransportEventHandler();
         try {
             XMLReader reader = XMLReaderFactory.createXMLReader();
@@ -328,7 +329,7 @@ public class SonosXMLParser {
         @Override
         public void characters(char @Nullable [] ch, int start, int length) throws SAXException {
             Element elt = element;
-            if (elt == null) {
+            if (elt == null || ch == null) {
                 return;
             }
             switch (elt) {
@@ -370,7 +371,7 @@ public class SonosXMLParser {
                 int trackNumberVal = 0;
                 try {
                     trackNumberVal = Integer.parseInt(trackNumber.toString());
-                } catch (Exception e) {
+                } catch (NumberFormatException e) {
                 }
 
                 SonosResourceMetaData md = null;
@@ -446,7 +447,7 @@ public class SonosXMLParser {
         @Override
         public void characters(char @Nullable [] ch, int start, int length) throws SAXException {
             Element elt = element;
-            if (elt == null) {
+            if (elt == null || ch == null) {
                 return;
             }
             switch (elt) {
@@ -530,9 +531,17 @@ public class SonosXMLParser {
                 boolean finalIncludeLinkedZones = !"0".equals(includeLinkedZones);
 
                 try {
+                    String id = this.id;
+                    if (id == null) {
+                        throw new NumberFormatException();
+                    }
                     finalID = Integer.parseInt(id);
+                    String volume = this.volume;
+                    if (volume == null) {
+                        throw new NumberFormatException();
+                    }
                     finalVolume = Integer.parseInt(volume);
-                } catch (Exception e) {
+                } catch (NumberFormatException e) {
                     LOGGER.debug("Error parsing Integer");
                 }
 
@@ -704,7 +713,7 @@ public class SonosXMLParser {
          * </Event>
          */
 
-        private final Map<String, @Nullable String> changes = new HashMap<>();
+        private final Map<String, String> changes = new HashMap<>();
 
         @Override
         public void startElement(@Nullable String uri, @Nullable String localName, @Nullable String qName,
@@ -724,7 +733,7 @@ public class SonosXMLParser {
             }
         }
 
-        public Map<String, @Nullable String> getChanges() {
+        public Map<String, String> getChanges() {
             return changes;
         }
     }
@@ -790,7 +799,7 @@ public class SonosXMLParser {
         @Override
         public void characters(char @Nullable [] ch, int start, int length) throws SAXException {
             CurrentElement elt = currentElement;
-            if (elt == null) {
+            if (elt == null || ch == null) {
                 return;
             }
             switch (elt) {
@@ -834,7 +843,7 @@ public class SonosXMLParser {
 
     private static class RenderingControlEventHandler extends DefaultHandler {
 
-        private final Map<String, @Nullable String> changes = new HashMap<>();
+        private final Map<String, String> changes = new HashMap<>();
 
         private boolean getPresetName = false;
         private @Nullable String presetName;
@@ -860,6 +869,16 @@ public class SonosXMLParser {
                 case "Bass":
                 case "Treble":
                 case "OutputFixed":
+                case "NightMode":
+                case "DialogLevel":
+                case "SubEnabled":
+                case "SubGain":
+                case "SurroundEnabled":
+                case "SurroundMode":
+                case "SurroundLevel":
+                case "HTAudioIn":
+                case "MusicSurroundLevel":
+                case "HeightChannelLevel":
                     val = attributes == null ? null : attributes.getValue("val");
                     if (val != null) {
                         changes.put(qName, val);
@@ -875,7 +894,7 @@ public class SonosXMLParser {
 
         @Override
         public void characters(char @Nullable [] ch, int start, int length) throws SAXException {
-            if (getPresetName) {
+            if (getPresetName && ch != null) {
                 presetName = new String(ch, start, length);
             }
         }
@@ -892,7 +911,7 @@ public class SonosXMLParser {
             }
         }
 
-        public Map<String, @Nullable String> getChanges() {
+        public Map<String, String> getChanges() {
             return changes;
         }
     }
@@ -944,7 +963,7 @@ public class SonosXMLParser {
 
         @Override
         public void characters(char @Nullable [] ch, int start, int length) throws SAXException {
-            if (roomNameTag) {
+            if (roomNameTag && ch != null) {
                 roomName = new String(ch, start, length);
                 roomNameTag = false;
             }
@@ -983,7 +1002,7 @@ public class SonosXMLParser {
 
         @Override
         public void characters(char @Nullable [] ch, int start, int length) throws SAXException {
-            if (modelNameTag) {
+            if (modelNameTag && ch != null) {
                 modelName = new String(ch, start, length);
                 modelNameTag = false;
             }

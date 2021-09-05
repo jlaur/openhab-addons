@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,9 +15,7 @@ package org.openhab.io.neeo.internal.serialization;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.io.neeo.internal.NeeoConstants;
@@ -54,12 +52,7 @@ public class NeeoBrainDeviceSerializer implements JsonSerializer<NeeoDevice> {
     private final Logger logger = LoggerFactory.getLogger(NeeoBrainDeviceSerializer.class);
 
     @Override
-    public JsonElement serialize(NeeoDevice device, @Nullable Type deviceType,
-            @Nullable JsonSerializationContext jsonContext) {
-        Objects.requireNonNull(device, "device cannot be null");
-        Objects.requireNonNull(deviceType, "deviceType cannot be null");
-        Objects.requireNonNull(jsonContext, "jsonContext cannot be null");
-
+    public JsonElement serialize(NeeoDevice device, Type deviceType, JsonSerializationContext jsonContext) {
         final JsonObject jsonObject = new JsonObject();
 
         final String adapterName = device.getUid().getNeeoUID();
@@ -96,16 +89,16 @@ public class NeeoBrainDeviceSerializer implements JsonSerializer<NeeoDevice> {
         jsonObject.add("device", deviceObj);
 
         final String specificName = device.getSpecificName();
-        if (specificName != null && StringUtils.isNotEmpty(specificName)) {
+        if (specificName != null && !specificName.isEmpty()) {
             deviceObj.addProperty("specificname", specificName);
             jsonObject.addProperty("specificname", specificName);
-        } else if (StringUtils.isNotEmpty(deviceName)) {
+        } else if (!deviceName.isEmpty()) {
             deviceObj.addProperty("specificname", deviceName);
             jsonObject.addProperty("specificname", deviceName);
         }
 
         final String iconName = device.getIconName();
-        if (iconName != null && StringUtils.isNotEmpty(iconName)) {
+        if (iconName != null && !iconName.isEmpty()) {
             deviceObj.addProperty("icon", iconName);
             jsonObject.addProperty("icon", iconName);
         }
@@ -119,19 +112,19 @@ public class NeeoBrainDeviceSerializer implements JsonSerializer<NeeoDevice> {
 
             final String uniqueItemName = channel.getUniqueItemName();
             final String sensorItemName = uniqueItemName
-                    + (StringUtils.endsWithIgnoreCase(uniqueItemName, NeeoConstants.NEEO_SENSOR_SUFFIX) ? ""
+                    + (uniqueItemName.toLowerCase().endsWith(NeeoConstants.NEEO_SENSOR_SUFFIX.toLowerCase()) ? ""
                             : NeeoConstants.NEEO_SENSOR_SUFFIX);
 
             if (capabilityType == NeeoCapabilityType.BUTTON) {
-                final String name = StringUtils.isEmpty(channel.getLabel()) ? uniqueItemName : channel.getLabel();
+                final String name = channel.getLabel().isEmpty() ? uniqueItemName : channel.getLabel();
 
                 if (channel.getKind() == NeeoDeviceChannelKind.TRIGGER) {
                     final String path = compPath + "/button/trigger";
                     capabilities.add(createBase(name, channel.getLabel(), capabilityType.toString(), path));
                 } else {
                     final String value = channel.getValue();
-                    final String path = compPath + "/button/" + (value == null || StringUtils.isEmpty(value) ? "on"
-                            : NeeoUtil.encodeURIComponent(value.trim()));
+                    final String path = compPath + "/button/"
+                            + (value == null || value.isEmpty() ? "on" : NeeoUtil.encodeURIComponent(value.trim()));
                     capabilities.add(createBase(name, channel.getLabel(), capabilityType.toString(), path));
                 }
             } else if (capabilityType == NeeoCapabilityType.SENSOR_POWER) {
@@ -193,8 +186,7 @@ public class NeeoBrainDeviceSerializer implements JsonSerializer<NeeoDevice> {
                 }
             } else if (capabilityType == NeeoCapabilityType.IMAGEURL) {
                 final String value = channel.getValue();
-                final String size = (value == null || StringUtils.isEmpty(value) ? "large" : value.trim())
-                        .toLowerCase();
+                final String size = (value == null || value.isEmpty() ? "large" : value.trim()).toLowerCase();
 
                 final JsonObject jo = createBase(uniqueItemName, channel.getLabel(), capabilityType.toString(),
                         compPath + "/image/actor", "sensor", new JsonPrimitive(sensorItemName));
@@ -283,7 +275,7 @@ public class NeeoBrainDeviceSerializer implements JsonSerializer<NeeoDevice> {
         compObj.addProperty("type", type);
 
         compObj.addProperty("path", NeeoUtil.encodeURIComponent(path));
-        if (sensor != null && StringUtils.isNotEmpty(sensorName)) {
+        if (sensor != null && sensorName != null && !sensorName.isEmpty()) {
             if (sensor instanceof JsonPrimitive) {
                 compObj.addProperty(sensorName, sensor.getAsString());
             } else {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -285,7 +286,8 @@ public class Schedules implements RegistryChangeListener<Rule> {
             return NetworkUtils.singleError(cs.gson, uri, HueResponse.UNAUTHORIZED, "Not Authorized");
         }
 
-        final HueChangeScheduleEntry changeRequest = cs.gson.fromJson(body, HueChangeScheduleEntry.class);
+        final HueChangeScheduleEntry changeRequest = Objects
+                .requireNonNull(cs.gson.fromJson(body, HueChangeScheduleEntry.class));
 
         Rule rule = ruleRegistry.remove(id);
         if (rule == null) {

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -29,10 +29,14 @@ public class CaddxBridgeConfiguration {
     public static final String PROTOCOL = "protocol";
     public static final String SERIAL_PORT = "serialPort";
     public static final String BAUD = "baud";
+    public static final String MAX_ZONE_NUMBER = "maxZoneNumber";
+    public static final String IGNORE_ZONE_STATUS_TRANSITIONS = "ignoreZoneStatusTransitions";
 
     private CaddxProtocol protocol = CaddxProtocol.Binary;
     private @Nullable String serialPort;
     private int baudrate = 9600;
+    private int maxZoneNumber = 16;
+    private boolean ignoreZoneStatusTransitions = false;
 
     public CaddxProtocol getProtocol() {
         return protocol;
@@ -44,5 +48,13 @@ public class CaddxBridgeConfiguration {
 
     public int getBaudrate() {
         return baudrate;
+    }
+
+    public int getMaxZoneNumber() {
+        return maxZoneNumber;
+    }
+
+    public boolean isIgnoreZoneStatusTransitions() {
+        return ignoreZoneStatusTransitions;
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -18,8 +18,8 @@ import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.openwebnet.OpenWebNetBindingConstants;
-import org.openhab.binding.openwebnet.handler.OpenWebNetBridgeHandler;
+import org.openhab.binding.openwebnet.internal.OpenWebNetBindingConstants;
+import org.openhab.binding.openwebnet.internal.handler.OpenWebNetBridgeHandler;
 import org.openhab.core.config.discovery.AbstractDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResult;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
@@ -41,6 +41,8 @@ import org.slf4j.LoggerFactory;
  * bridge/gateway
  *
  * @author Massimo Valla - Initial contribution
+ * @author Andrea Conte - Energy management, Thermoregulation
+ * @author Gilberto Cocchi - Thermoregulation
  */
 @NonNullByDefault
 public class OpenWebNetDeviceDiscoveryService extends AbstractDiscoveryService
@@ -60,7 +62,7 @@ public class OpenWebNetDeviceDiscoveryService extends AbstractDiscoveryService
 
     @Override
     public Set<ThingTypeUID> getSupportedThingTypes() {
-        return OpenWebNetDeviceDiscoveryService.SUPPORTED_THING_TYPES;
+        return SUPPORTED_THING_TYPES;
     }
 
     @Override
@@ -129,6 +131,28 @@ public class OpenWebNetDeviceDiscoveryService extends AbstractDiscoveryService
                 deviceWho = Who.AUTOMATION;
                 break;
             }
+            case SCS_THERMO_SENSOR: {
+                thingTypeUID = OpenWebNetBindingConstants.THING_TYPE_BUS_THERMO_SENSOR;
+                thingLabel = OpenWebNetBindingConstants.THING_LABEL_BUS_THERMO_SENSOR;
+                deviceWho = Who.THERMOREGULATION;
+                break;
+            }
+            case SCS_THERMO_ZONE: {
+                thingTypeUID = OpenWebNetBindingConstants.THING_TYPE_BUS_THERMO_ZONE;
+                thingLabel = OpenWebNetBindingConstants.THING_LABEL_BUS_THERMO_ZONE;
+                deviceWho = Who.THERMOREGULATION;
+                break;
+            }
+            case SCS_THERMO_CENTRAL_UNIT: {
+                logger.warn("newDiscoveryResult() deviceType={} is not supported yet (WHERE={})", deviceType, where);
+                break;
+            }
+            case SCS_ENERGY_METER: {
+                thingTypeUID = OpenWebNetBindingConstants.THING_TYPE_BUS_ENERGY_METER;
+                thingLabel = OpenWebNetBindingConstants.THING_LABEL_BUS_ENERGY_METER;
+                deviceWho = Who.ENERGY_MANAGEMENT;
+                break;
+            }
             default:
                 logger.warn("Device type {} is not supported, default to GENERIC device (WHERE={})", deviceType, where);
                 if (where instanceof WhereZigBee) {
@@ -139,7 +163,7 @@ public class OpenWebNetDeviceDiscoveryService extends AbstractDiscoveryService
                 }
         }
 
-        String ownId = bridgeHandler.ownIdFromWhoWhere(where, deviceWho);
+        String ownId = bridgeHandler.ownIdFromWhoWhere(deviceWho, where);
         if (thingTypeUID == OpenWebNetBindingConstants.THING_TYPE_BUS_ON_OFF_SWITCH) {
             if (bridgeHandler.getRegisteredDevice(ownId) != null) {
                 logger.debug("dimmer/switch with WHERE={} already registered, skipping this discovery result", where);
@@ -152,27 +176,26 @@ public class OpenWebNetDeviceDiscoveryService extends AbstractDiscoveryService
 
         DiscoveryResult discoveryResult = null;
 
-        String whereLabel = where.value();
+        String whereConfig = bridgeHandler.normalizeWhere(where);
         if (where instanceof WhereZigBee && WhereZigBee.UNIT_02.equals(((WhereZigBee) where).getUnit())) {
-            logger.debug("UNIT=02 found (WHERE={})", where);
-            logger.debug("will remove previous result if exists");
+            logger.debug("UNIT=02 found (WHERE={}) -> will remove previous result if exists", where);
             thingRemoved(thingUID); // remove previously discovered thing
             // re-create thingUID with new type
             thingTypeUID = OpenWebNetBindingConstants.THING_TYPE_ZB_ON_OFF_SWITCH_2UNITS;
             thingLabel = OpenWebNetBindingConstants.THING_LABEL_ZB_ON_OFF_SWITCH_2UNITS;
             thingUID = new ThingUID(thingTypeUID, bridgeUID, tId);
-            whereLabel = whereLabel.replace("02#", "00#"); // replace unit '02' with all unit '00'
+            whereConfig = ((WhereZigBee) where).valueWithUnit(WhereZigBee.UNIT_ALL); // replace unit '02' with '00'
             logger.debug("UNIT=02, switching type from {} to {}",
                     OpenWebNetBindingConstants.THING_TYPE_ZB_ON_OFF_SWITCH,
                     OpenWebNetBindingConstants.THING_TYPE_ZB_ON_OFF_SWITCH_2UNITS);
         }
         Map<String, Object> properties = new HashMap<>(2);
-        properties.put(OpenWebNetBindingConstants.CONFIG_PROPERTY_WHERE, bridgeHandler.normalizeWhere(where));
+        properties.put(OpenWebNetBindingConstants.CONFIG_PROPERTY_WHERE, whereConfig);
         properties.put(OpenWebNetBindingConstants.PROPERTY_OWNID, ownId);
         if (thingTypeUID == OpenWebNetBindingConstants.THING_TYPE_GENERIC_DEVICE) {
-            thingLabel = thingLabel + " (WHO=" + deviceWho + ", WHERE=" + whereLabel + ")";
+            thingLabel = thingLabel + " (WHO=" + deviceWho + ", WHERE=" + whereConfig + ")";
         } else {
-            thingLabel = thingLabel + " (WHERE=" + whereLabel + ")";
+            thingLabel = thingLabel + " (WHERE=" + whereConfig + ")";
         }
         discoveryResult = DiscoveryResultBuilder.create(thingUID).withThingType(thingTypeUID).withProperties(properties)
                 .withRepresentationProperty(OpenWebNetBindingConstants.PROPERTY_OWNID).withBridge(bridgeUID)

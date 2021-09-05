@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -146,7 +146,7 @@ public abstract class AbstractSnmpTargetHandlerTest extends JavaTest {
 
         if (refresh) {
             ArgumentCaptor<PDU> pduCaptor = ArgumentCaptor.forClass(PDU.class);
-            verify(snmpService, atLeast(1)).send(pduCaptor.capture(), any(), eq(null), eq(thingHandler));
+            verify(snmpService, timeout(500).atLeast(1)).send(pduCaptor.capture(), any(), eq(null), eq(thingHandler));
             Vector<? extends VariableBinding> variables = pduCaptor.getValue().getVariableBindings();
             assertTrue(variables.stream().filter(v -> v.getOid().toDottedString().equals(TEST_OID)).findFirst()
                     .isPresent());
@@ -170,6 +170,11 @@ public abstract class AbstractSnmpTargetHandlerTest extends JavaTest {
 
     protected void setup(ChannelTypeUID channelTypeUID, SnmpChannelMode channelMode, SnmpDatatype datatype,
             String onValue, String offValue, String exceptionValue) {
+        setup(channelTypeUID, channelMode, datatype, onValue, offValue, exceptionValue, null);
+    }
+
+    protected void setup(ChannelTypeUID channelTypeUID, SnmpChannelMode channelMode, SnmpDatatype datatype,
+            String onValue, String offValue, String exceptionValue, String unit) {
         Map<String, Object> channelConfig = new HashMap<>();
         Map<String, Object> thingConfig = new HashMap<>();
         mocks = MockitoAnnotations.openMocks(this);
@@ -194,6 +199,9 @@ public abstract class AbstractSnmpTargetHandlerTest extends JavaTest {
             }
             if (exceptionValue != null) {
                 channelConfig.put("exceptionValue", exceptionValue);
+            }
+            if (unit != null) {
+                channelConfig.put("unit", unit);
             }
             Channel channel = ChannelBuilder.create(CHANNEL_UID, itemType).withType(channelTypeUID)
                     .withConfiguration(new Configuration(channelConfig)).build();

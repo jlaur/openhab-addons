@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -10,7 +10,6 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-
 package org.openhab.binding.touchwand.internal.dto;
 
 /**
@@ -21,15 +20,18 @@ package org.openhab.binding.touchwand.internal.dto;
  */
 public class TouchWandUnitDataWallController extends TouchWandUnitData {
 
-    private CurrStatus currStatus;
+    private CurrStatus currStatus = new CurrStatus();
+
+    // currStatus can be null since the object is created by gson fromJson
+    // in case the key is null or not exist , the variable will be null.
+    // if this is the case , default status is created
 
     @Override
-    public Integer getCurrStatus() {
-        if (currStatus != null) {
-            return currStatus.getCsc().getKeyAttr();
-        } else {
-            return 0;
+    public Csc getCurrStatus() {
+        if (currStatus == null) {
+            currStatus = new CurrStatus();
         }
+        return currStatus.getCsc();
     }
 
     public void setCurrStatus(CurrStatus currStatus) {

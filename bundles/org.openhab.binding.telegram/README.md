@@ -4,12 +4,13 @@ The Telegram binding allows sending and receiving messages to and from Telegram 
 
 # Prerequisites
 
-As described in the Telegram Bot API, this is the manual procedure needed in order to get the necessary information.
+As described in the Telegram Bot API (https://core.telegram.org/bots#6-botfather), this is the manual procedure needed in order to get the necessary information.
 
-1. Create the Bot and get the Token
+1. Create a new Bot and get the Token
 
 - On a Telegram client open a chat with BotFather.
 - Send `/newbot` to BotFather and fill in all the needed information. The authentication token that is given will be needed in the next steps.
+- The token is a combination with double point separated parts of numbers and letters e.g.: 158642643:ABCHL_O-MUovQ1NzrDF5R_nqLbFhPPrg9Jps
 
 2. Create the destination chat
 
@@ -17,7 +18,7 @@ As described in the Telegram Bot API, this is the manual procedure needed in ord
 
 3. Get the chatID
 
-- Open a browser and invoke `https://api.telegram.org/bot<token>/getUpdates` (where `<token>` is the authentication token previously obtained)
+- Open a browser and invoke `https://api.telegram.org/bot<token>/getUpdates` (where `<token>` is the authentication token previously obtained e.g.:  `https://api.telegram.org/bot158642643:ABCHL_O-MUovQ1NzrDF5R_nqLbFhPPrg9Jps/getUpdates`)
 - Look at the JSON result to find the value of `id`: that's the chatID.
 
 Note that if using a Telegram group chat, the group chatIDs are prefixed with a dash that must be included in the config (e.g. `-22334455`).
@@ -32,13 +33,15 @@ Note bots may work or not at any time so eventually you need to try another one.
 - `https://api.telegram.org/bot<token>/sendMessage?chat_id=<chatId>&text=testing`
 - Your Telegram-bot should send you a message with the text: `testing`
 
-**Notice:** By default your bot will only receive messages that either start with the '/' symbol or mention the bot by username (or if you talk to it directly). However, if you add your bot to a group you must either talk to BotFather and send the command "/setprivacy" and then disable it or you give admin rights to your bot in that group. Otherwise you will not be able to receive those messages.
+**Notice:** By default your bot will only receive messages that either start with the '/' symbol or mention the bot by username (or if you talk to it directly).
+However, if you add your bot to a group you must either talk to BotFather and send the command "/setprivacy" and then disable it or you give admin rights to your bot in that group.
+Otherwise you will not be able to receive those messages.
 
 ## Supported Things
 
 **telegramBot** - A Telegram Bot that can send and receive messages.
 
-The Telegram binding supports the following things which origin from the latest message sent to the Telegram bot:
+The Telegram binding supports the following things which originate from the last message sent to the Telegram bot:
 
 * message text or URL
 * message date
@@ -47,28 +50,28 @@ The Telegram binding supports the following things which origin from the latest 
 * chat id (used to identify the chat of the last message)
 * reply id (used to identify an answer from a user of a previously sent message by the binding)
 
-Please note that the things cannot be used to send messages.
+Please note that the binding channels cannot be used to send messages.
 In order to send a message, an action must be used instead.
 
 ## Thing Configuration
 
 **telegramBot** parameters:
 
-| Property                | Default | Required | Description                                                                                  |
-|-------------------------|---------|:--------:|----------------------------------------------------------------------------------------------|
-| `chatIds`               |         | Yes      | Comma-separated list of chat ids                                                             |
-| `botToken`              |         | Yes      | authentication token                                                                         |
-| `parseMode`             |  None   | No       | Support for formatted messages, values: Markdown or HTML.                                    |
-| `proxyHost`             |  None   | No       | Proxy host for telegram binding.                                                             |
-| `proxyPort`             |  None   | No       | Proxy port for telegram binding.                                                             |
-| `proxyType`             |  SOCKS5 | No       | Type of proxy server for telegram binding (SOCKS5 or HTTP). Default: SOCKS5                  |
-| `longPollingTime`       |  25     | No       | Timespan for long polling the telegram API                                                   |
+| Property | Default | Required | Description |
+|-|-|-|-|
+| `chatIds` | | Yes | A list of chatIds that are entered one per line in the UI, or are comma separated values when using textual config. |
+| `botToken` | | Yes | Authentication token that looks like 1122334455:AABBCCDDEEFFGG1122334455667788 |
+| `parseMode` |  None   | No | Support for formatted messages, values: Markdown or HTML. |
+| `proxyHost` |  None   | No | Proxy host for telegram binding. |
+| `proxyPort` |  None   | No | Proxy port for telegram binding. |
+| `proxyType` |  SOCKS5 | No | Type of proxy server for telegram binding (SOCKS5 or HTTP). |
+| `longPollingTime` | 25 | No | Timespan in seconds for long polling the telegram API. |
 
 By default chat ids are bi-directionally, i.e. they can send and receive messages.
 They can be prefixed with an access modifier:
 
 - `<` restricts the chat to send only, i.e. this chat id can send messages to openHAB, but will never receive a notification.
-- `>` restricts the chat to receive only, i.e. this chat id will receive all notifications, but messages from this chat id will be discarded. 
+- `>` restricts the chat to receive only, i.e. this chat id will receive all notifications, but messages from this chat id will be discarded.
 
 To use the reply function, chat ids need to be bi-directional.
 
@@ -84,14 +87,13 @@ telegram.thing (multiple chat ids, one bi-directional chat (ID1), one outbound-o
 Thing telegram:telegramBot:Telegram_Bot [ chatIds="ID1",">ID2", botToken="TOKEN" ]
 ```
 
-
 telegram.thing (markdown format):
 
 ```
 Thing telegram:telegramBot:Telegram_Bot [ chatIds="ID", botToken="TOKEN", parseMode ="Markdown" ]
 ```
 
-telegram.thing (SOCKS5 proxy server is used): 
+telegram.thing (SOCKS5 proxy server is used):
 
 ```
 Thing telegram:telegramBot:Telegram_Bot [ chatIds="ID", botToken="TOKEN", proxyHost="HOST", proxyPort="PORT", proxyType="TYPE" ]
@@ -102,7 +104,6 @@ or HTTP proxy server
 ```
 Thing telegram:telegramBot:Telegram_Bot [ chatIds="ID", botToken="TOKEN", proxyHost="localhost", proxyPort="8123", proxyType="HTTP" ]
 ```
-
 
 ## Channels
 
@@ -119,11 +120,11 @@ Thing telegram:telegramBot:Telegram_Bot [ chatIds="ID", botToken="TOKEN", proxyH
 All channels are read-only.
 Either `lastMessageText` or `lastMessageURL` are populated for a given message.
 If the message did contain text, the content is written to `lastMessageText`.
-If the message did contain an audio, photo, video or voice, the URL to retrieve that content can be found in `lastMessageURL`. 
+If the message did contain an audio, photo, video or voice, the URL to retrieve that content can be found in `lastMessageURL`.
 
 ## Rule Actions
 
-This binding includes a rule action, which allows to send Telegram messages from within rules.
+This binding includes a number of rule actions, which allow the sending of Telegram messages from within rules.
 
 ```
 val telegramAction = getActions("telegram","telegram:telegramBot:<uid>")
@@ -150,8 +151,18 @@ These actions will send a message to all chat ids configured for this bot.
 | sendTelegram(String format, Object... args)          | Sends a formatted message (See https://docs.oracle.com/javase/8/docs/api/java/util/Formatter.html for more information).
 | sendTelegramQuery(String message, String replyId, String... buttons) | Sends a question to the user that can be answered via the defined buttons. The replyId can be freely choosen and is sent back with the answer. Then, the id is required to identify what question has been answered (e.g. in case of multiple open questions). The final result looks like this: ![Telegram Inline Keyboard](doc/queryExample.png). |
 | sendTelegramAnswer(String replyId, String message) | Sends a message after the user has answered a question. You should *always* call this method after you received an answer. It will remove buttons from the specific question and will also stop the progress bar displayed at the client side. If no message is necessary, just pass `null` here. |
-| sendTelegramPhoto(String photoURL, String caption) | Sends a picture. The URL can be specified using the http, https, and file protocols or a base64 encoded image (simple base64 data or data URI scheme). |
+| sendTelegramPhoto(String photoURL, String caption) | Sends a picture. Can be one of the URL formats, see the Note below, or a base64 encoded image (simple base64 data or data URI scheme). |
 | sendTelegramPhoto(String photoURL, String caption, String username, String password) | Sends a picture which is downloaded from a username/password protected http/https address. |
+| sendTelegramAnimation(String animationURL, String caption) | Send animation files either GIF or H.264/MPEG-4 AVC video without sound. |
+| sendTelegramVideo(String videoURL, String caption) | Send MP4 video files up to 50MB. |
+
+**Note:** In actions that require a file URL, the following formats are acceptable:
+
++ http://foo.com/bar.jpg
++ https://foo.com/bar.jpg
++ file://c:\\foo\\bar.jpg
++ c:\\foo\\bar.jpg
++ /etc/openhab/html/bar.jpg
 
 ### Actions to send messages to a particular chat
 
@@ -203,7 +214,7 @@ when
     Item Light_GF_Living_Table changed
 then
     val telegramAction = getActions("telegram","telegram:telegramBot:2b155b22")
-    telegramAction.sendTelegramPhoto("http://www.openhab.org/assets/images/openhab-logo-top.png",
+    telegramAction.sendTelegramPhoto("https://www.openhab.org/openhab-logo-top.png",
         "sent from openHAB")
 end
 ```
@@ -216,7 +227,7 @@ when
     Item Light_GF_Living_Table changed
 then
     val telegramAction = getActions("telegram","telegram:telegramBot:2b155b22")
-    telegramAction.sendTelegramPhoto("http://www.openhab.org/assets/images/openhab-logo-top.png",
+    telegramAction.sendTelegramPhoto("https://www.openhab.org/openhab-logo-top.png",
         null)
 end
 ```
@@ -246,10 +257,10 @@ then
     // image as base64 string
     var String base64Image = "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAS1BMVEUAAABAQEA9QUc7P0Y0OD88QEY+QUhmaW7c3N3w8PBlaG0+QUjb29w5PUU3O0G+vsigoas6P0WfoKo4O0I9QUdkZ2w9Qkg+QkkkSUnT3FKbAAAAGXRSTlMACJbx//CV9v//9pT/7Ur//+z/SfD2kpMHrnfDaAAAAGhJREFUeAHt1bUBAzAMRFGZmcL7LxpOalN5r/evLIlgGwBgXMhxSjP64sa6cdYH+hLWzYiKvqSbI4kQeEt5PlBealsMFIkAAgi8HNriOLcjduLTafWwBB9n3p8v/+Ma1Mxxvd4IAGCzB4xDPuBRkEZiAAAAAElFTkSuQmCC"
     telegramAction.sendTelegramPhoto(base64Image, "battery of motion sensor is empty")
-    
+
     // image as base64 string in data URI scheme
     var String base64ImageDataURI = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAS1BMVEUAAABAQEA9QUc7P0Y0OD88QEY+QUhmaW7c3N3w8PBlaG0+QUjb29w5PUU3O0G+vsigoas6P0WfoKo4O0I9QUdkZ2w9Qkg+QkkkSUnT3FKbAAAAGXRSTlMACJbx//CV9v//9pT/7Ur//+z/SfD2kpMHrnfDaAAAAGhJREFUeAHt1bUBAzAMRFGZmcL7LxpOalN5r/evLIlgGwBgXMhxSjP64sa6cdYH+hLWzYiKvqSbI4kQeEt5PlBealsMFIkAAgi8HNriOLcjduLTafWwBB9n3p8v/+Ma1Mxxvd4IAGCzB4xDPuBRkEZiAAAAAElFTkSuQmCC"
-    telegramAction.sendTelegramPhoto(base64ImageDataURI, "battery of motion sensor is empty")    
+    telegramAction.sendTelegramPhoto(base64ImageDataURI, "battery of motion sensor is empty")
 end
 ```
 
@@ -329,7 +340,7 @@ then
     if (telegramMessage.state.toString == "Yes")
     {
         gLights.sendCommand(OFF)
-        telegramAction.sendTelegramAnswer(telegramReplyId.state.toString, "Ok, lights are *off* now.") 
+        telegramAction.sendTelegramAnswer(telegramReplyId.state.toString, "Ok, lights are *off* now.")
     }
     else
     {
@@ -337,4 +348,3 @@ then
     }
 end
 ```
-

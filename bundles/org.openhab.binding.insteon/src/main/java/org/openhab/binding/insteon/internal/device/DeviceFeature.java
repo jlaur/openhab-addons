@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -62,7 +63,6 @@ import org.slf4j.LoggerFactory;
  * @author Rob Nielsen - Port to openHAB 2 insteon binding
  */
 @NonNullByDefault
-@SuppressWarnings("null")
 public class DeviceFeature {
     public static enum QueryStatus {
         NEVER_QUERIED,
@@ -80,8 +80,8 @@ public class DeviceFeature {
     private int directAckTimeout = 6000;
     private QueryStatus queryStatus = QueryStatus.NEVER_QUERIED;
 
-    private @Nullable MessageHandler defaultMsgHandler = new MessageHandler.DefaultMsgHandler(this);
-    private @Nullable CommandHandler defaultCommandHandler = new CommandHandler.WarnCommandHandler(this);
+    private MessageHandler defaultMsgHandler = new MessageHandler.DefaultMsgHandler(this);
+    private CommandHandler defaultCommandHandler = new CommandHandler.WarnCommandHandler(this);
     private @Nullable PollHandler pollHandler = null;
     private @Nullable MessageDispatcher dispatcher = null;
 
@@ -135,7 +135,7 @@ public class DeviceFeature {
         return directAckTimeout;
     }
 
-    public @Nullable MessageHandler getDefaultMsgHandler() {
+    public MessageHandler getDefaultMsgHandler() {
         return defaultMsgHandler;
     }
 
@@ -164,11 +164,11 @@ public class DeviceFeature {
         dispatcher = md;
     }
 
-    public void setDefaultCommandHandler(@Nullable CommandHandler ch) {
+    public void setDefaultCommandHandler(CommandHandler ch) {
         defaultCommandHandler = ch;
     }
 
-    public void setDefaultMsgHandler(@Nullable MessageHandler mh) {
+    public void setDefaultMsgHandler(MessageHandler mh) {
         defaultMsgHandler = mh;
     }
 
@@ -264,11 +264,12 @@ public class DeviceFeature {
      * @return true if dispatch successful
      */
     public boolean handleMessage(Msg msg) {
+        MessageDispatcher dispatcher = this.dispatcher;
         if (dispatcher == null) {
             logger.warn("{} no dispatcher for msg {}", name, msg);
             return false;
         }
-        return (dispatcher.dispatch(msg));
+        return dispatcher.dispatch(msg);
     }
 
     /**
@@ -280,9 +281,11 @@ public class DeviceFeature {
     public void handleCommand(InsteonChannelConfiguration c, Command cmd) {
         Class<? extends Command> key = cmd.getClass();
         CommandHandler h = commandHandlers.containsKey(key) ? commandHandlers.get(key) : defaultCommandHandler;
-        logger.trace("{} uses {} to handle command {} for {}", getName(), h.getClass().getSimpleName(),
-                key.getSimpleName(), getDevice().getAddress());
-        h.handleCommand(c, cmd, getDevice());
+        if (h != null) {
+            logger.trace("{} uses {} to handle command {} for {}", getName(), h.getClass().getSimpleName(),
+                    key.getSimpleName(), getDevice().getAddress());
+            h.handleCommand(c, cmd, getDevice());
+        }
     }
 
     /**
@@ -291,6 +294,7 @@ public class DeviceFeature {
      * @return the poll message
      */
     public @Nullable Msg makePollMsg() {
+        PollHandler pollHandler = this.pollHandler;
         if (pollHandler == null) {
             return null;
         }
@@ -387,8 +391,9 @@ public class DeviceFeature {
     public static DeviceFeature makeDeviceFeature(String s) {
         DeviceFeature f = null;
         synchronized (features) {
-            if (features.containsKey(s)) {
-                f = features.get(s).build();
+            FeatureTemplate ft = features.get(s);
+            if (ft != null) {
+                f = ft.build();
             } else {
                 logger.warn("unimplemented feature requested: {}", s);
             }
@@ -436,6 +441,7 @@ public class DeviceFeature {
     static {
         // read features from xml file and store them in a map
         InputStream input = DeviceFeature.class.getResourceAsStream("/device_features.xml");
+        Objects.requireNonNull(input);
         readFeatureTemplates(input);
     }
 }

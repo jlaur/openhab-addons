@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -25,8 +25,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jdt.annotation.NonNull;
 import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.servlet.ServletHolder;
@@ -148,6 +148,7 @@ public class FSInternetRadioHandlerJavaTest extends JavaTest {
     private static @NonNull Channel getChannel(final @NonNull Thing thing, final @NonNull String channelId) {
         final Channel channel = thing.getChannel(channelId);
         assertNotNull(channel);
+        Objects.requireNonNull(channel);
         return channel;
     }
 
@@ -820,7 +821,7 @@ public class FSInternetRadioHandlerJavaTest extends JavaTest {
         BigDecimal port = (BigDecimal) config.get(FSInternetRadioBindingConstants.CONFIG_PROPERTY_PORT.toString());
         String pin = (String) config.get(FSInternetRadioBindingConstants.CONFIG_PROPERTY_PIN.toString());
 
-        if (ip == null || port.compareTo(BigDecimal.ZERO) == 0 || StringUtils.isEmpty(pin)) {
+        if (ip == null || port.compareTo(BigDecimal.ZERO) == 0 || pin == null || pin.isEmpty()) {
             return false;
         }
         return true;

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -20,11 +20,11 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jetty.client.HttpClient;
@@ -95,7 +95,8 @@ public class FoobotApiConnector {
                     URLEncoder.encode(username, StandardCharsets.UTF_8.toString()));
             logger.debug("URL = {}", url);
 
-            return GSON.fromJson(request(url, apiKey), FOOTBOT_DEVICE_LIST_TYPE);
+            List<FoobotDevice> foobotDevices = GSON.fromJson(request(url, apiKey), FOOTBOT_DEVICE_LIST_TYPE);
+            return Objects.requireNonNull(foobotDevices);
         } catch (JsonParseException | UnsupportedEncodingException e) {
             throw new FoobotApiException(0, e.getMessage());
         }
@@ -154,7 +155,7 @@ public class FoobotApiConnector {
                 apiKeyLimitRemaining = API_RATE_LIMIT_EXCEEDED;
                 throw new FoobotApiException(response.getStatus(), API_RATE_LIMIT_EXCEEDED_MESSAGE);
             case HttpStatus.OK_200:
-                if (StringUtils.trimToNull(content) == null) {
+                if (content == null || content.isBlank()) {
                     throw new FoobotApiException(0, "No data returned");
                 }
                 return content;

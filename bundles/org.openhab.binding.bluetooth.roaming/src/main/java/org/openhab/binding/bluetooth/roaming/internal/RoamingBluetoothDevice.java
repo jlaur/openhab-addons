@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,6 +15,7 @@ package org.openhab.binding.bluetooth.roaming.internal;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
@@ -24,7 +25,6 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.bluetooth.BluetoothAdapter;
 import org.openhab.binding.bluetooth.BluetoothAddress;
 import org.openhab.binding.bluetooth.BluetoothCharacteristic;
-import org.openhab.binding.bluetooth.BluetoothCompletionStatus;
 import org.openhab.binding.bluetooth.BluetoothDescriptor;
 import org.openhab.binding.bluetooth.BluetoothDevice;
 import org.openhab.binding.bluetooth.BluetoothDeviceListener;
@@ -52,11 +52,14 @@ public class RoamingBluetoothDevice extends DelegateBluetoothDevice {
     }
 
     public void addBluetoothDevice(BluetoothDevice device) {
-        device.addListener(devices.computeIfAbsent(device, Listener::new));
+        device.addListener(Objects.requireNonNull(devices.computeIfAbsent(device, Listener::new)));
     }
 
     public void removeBluetoothDevice(BluetoothDevice device) {
-        device.removeListener(devices.remove(device));
+        BluetoothDeviceListener listener = devices.remove(device);
+        if (listener != null) {
+            device.removeListener(listener);
+        }
     }
 
     @Override
@@ -65,6 +68,7 @@ public class RoamingBluetoothDevice extends DelegateBluetoothDevice {
     }
 
     @Override
+    @SuppressWarnings("PMD.CompareObjectsWithEquals")
     protected @Nullable BluetoothDevice getDelegate() {
         BluetoothDevice newDelegate = null;
         int newRssi = Integer.MIN_VALUE;
@@ -131,32 +135,16 @@ public class RoamingBluetoothDevice extends DelegateBluetoothDevice {
         }
 
         @Override
-        public void onCharacteristicReadComplete(BluetoothCharacteristic characteristic,
-                BluetoothCompletionStatus status) {
+        public void onCharacteristicUpdate(BluetoothCharacteristic characteristic, byte[] value) {
             if (device == getDelegate()) {
-                notifyListeners(BluetoothEventType.CHARACTERISTIC_READ_COMPLETE, characteristic, status);
+                notifyListeners(BluetoothEventType.CHARACTERISTIC_UPDATED, characteristic, value);
             }
         }
 
         @Override
-        public void onCharacteristicWriteComplete(BluetoothCharacteristic characteristic,
-                BluetoothCompletionStatus status) {
+        public void onDescriptorUpdate(BluetoothDescriptor bluetoothDescriptor, byte[] value) {
             if (device == getDelegate()) {
-                notifyListeners(BluetoothEventType.CHARACTERISTIC_WRITE_COMPLETE, characteristic);
-            }
-        }
-
-        @Override
-        public void onCharacteristicUpdate(BluetoothCharacteristic characteristic) {
-            if (device == getDelegate()) {
-                notifyListeners(BluetoothEventType.CHARACTERISTIC_UPDATED, characteristic);
-            }
-        }
-
-        @Override
-        public void onDescriptorUpdate(BluetoothDescriptor bluetoothDescriptor) {
-            if (device == getDelegate()) {
-                notifyListeners(BluetoothEventType.DESCRIPTOR_UPDATED, bluetoothDescriptor);
+                notifyListeners(BluetoothEventType.DESCRIPTOR_UPDATED, bluetoothDescriptor, value);
             }
         }
 

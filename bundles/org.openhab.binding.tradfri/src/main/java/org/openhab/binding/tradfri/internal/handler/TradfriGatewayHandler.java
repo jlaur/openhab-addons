@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -19,6 +19,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -114,8 +115,8 @@ public class TradfriGatewayHandler extends BaseBridgeHandler implements CoapCall
             }
         } else {
             String currentFirmware = thing.getProperties().get(Thing.PROPERTY_FIRMWARE_VERSION);
-            if (!isNullOrEmpty(currentFirmware)
-                    && MIN_SUPPORTED_VERSION.compareTo(new TradfriVersion(currentFirmware)) > 0) {
+            if (!isNullOrEmpty(currentFirmware) && MIN_SUPPORTED_VERSION
+                    .compareTo(new TradfriVersion(Objects.requireNonNull(currentFirmware))) > 0) {
                 // older firmware not supported
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                         String.format(
@@ -214,7 +215,7 @@ public class TradfriGatewayHandler extends BaseBridgeHandler implements CoapCall
 
             if (gatewayResponse.isSuccess()) {
                 responseText = gatewayResponse.getResponseText();
-                json = new JsonParser().parse(responseText).getAsJsonObject();
+                json = JsonParser.parseString(responseText).getAsJsonObject();
                 preSharedKey = json.get(NEW_PSK_BY_GW).getAsString();
 
                 if (isNullOrEmpty(preSharedKey)) {
@@ -326,7 +327,7 @@ public class TradfriGatewayHandler extends BaseBridgeHandler implements CoapCall
         deviceClient.setURI(gatewayInfoURI);
         deviceClient.asyncGet().thenAccept(data -> {
             logger.debug("requestGatewayInfo response: {}", data);
-            JsonObject json = new JsonParser().parse(data).getAsJsonObject();
+            JsonObject json = JsonParser.parseString(data).getAsJsonObject();
             String firmwareVersion = json.get(VERSION).getAsString();
             getThing().setProperty(Thing.PROPERTY_FIRMWARE_VERSION, firmwareVersion);
             updateStatus(ThingStatus.ONLINE, ThingStatusDetail.NONE);
@@ -340,7 +341,7 @@ public class TradfriGatewayHandler extends BaseBridgeHandler implements CoapCall
         deviceClient.setURI(gatewayURI + "/" + instanceId);
         deviceClient.asyncGet().thenAccept(data -> {
             logger.debug("requestDeviceDetails response: {}", data);
-            JsonObject json = new JsonParser().parse(data).getAsJsonObject();
+            JsonObject json = JsonParser.parseString(data).getAsJsonObject();
             deviceUpdateListeners.forEach(listener -> listener.onUpdate(instanceId, json));
         });
         // restore root URI

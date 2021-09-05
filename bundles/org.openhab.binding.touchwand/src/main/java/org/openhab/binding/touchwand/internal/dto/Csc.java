@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -10,19 +10,21 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-
 package org.openhab.binding.touchwand.internal.dto;
+
+import org.eclipse.jdt.annotation.NonNullByDefault;
 
 /**
  * The {@link Csc} implements Csc data class.
  *
  * @author Roie Geron - Initial contribution
  */
+@NonNullByDefault
 public class Csc {
 
-    private int sceneNo;
-    private int ts;
-    private int keyAttr;
+    private int sceneNo = 0;
+    private long ts = 0;
+    private int keyAttr = 0;
 
     public int getSceneNo() {
         return sceneNo;
@@ -32,11 +34,11 @@ public class Csc {
         this.sceneNo = sceneNo;
     }
 
-    public int getTs() {
+    public long getTs() {
         return ts;
     }
 
-    public void setTs(int ts) {
+    public void setTs(long ts) {
         this.ts = ts;
     }
 

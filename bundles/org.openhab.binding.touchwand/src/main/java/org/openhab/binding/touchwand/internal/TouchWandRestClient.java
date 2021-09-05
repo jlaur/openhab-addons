@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -10,7 +10,6 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-
 package org.openhab.binding.touchwand.internal;
 
 import static org.openhab.binding.touchwand.internal.TouchWandBindingConstants.*;
@@ -68,6 +67,11 @@ public class TouchWandRestClient {
     private static final String ACTION_SHUTTER_STOP = "{\"id\":%s,\"value\":0,\"type\":\"stop\"}";
     private static final String ACTION_SHUTTER_POSITION = "{\"id\":%s,\"value\":%s}";
     private static final String ACTION_DIMMER_POSITION = "{\"id\":%s,\"value\":%s}";
+    private static final String ACTION_THERMOSTAT_ON = "{\"id\":%s,\"value\":" + THERMOSTAT_STATE_ON + "}";
+    private static final String ACTION_THERMOSTAT_OFF = "{\"id\":%s,\"value\":" + THERMOSTAT_STATE_OFF + "}";
+    private static final String ACTION_THERMOSTAT_MODE = "{\"id\":%s,\"ac-all\":\"mode\",\"fan\":\"%s\"}";
+    private static final String ACTION_THERMOSTAT_FAN_LEVEL = "{\"id\":%s,\"ac-all\":\"fan\",\"fan\":\"%s\"}";
+    private static final String ACTION_THERMOSTAT_TARGET_TEMPERATURE = "{\"id\":%s,\"ac-all\":\"temp\",\"temp_val\":%s}";
 
     private static final String CONTENT_TYPE_APPLICATION_JSON = MimeTypes.Type.APPLICATION_JSON.asString();
 
@@ -117,16 +121,21 @@ public class TouchWandRestClient {
     }
 
     public String cmdListUnits() {
-        String command = buildUrl(CMD_LIST_UNITS);
-        String response = sendCommand(command, METHOD_GET, "");
-
+        String response = "";
+        if (isConnected) {
+            String command = buildUrl(CMD_LIST_UNITS);
+            response = sendCommand(command, METHOD_GET, "");
+        }
         return response;
     }
 
     public String cmdGetUnitById(String id) {
-        String command = buildUrl(CMD_GET_UNIT_BY_ID) + "id=" + id;
-        String response = sendCommand(command, METHOD_GET, "");
+        String response = "";
 
+        if (isConnected) {
+            String command = buildUrl(CMD_GET_UNIT_BY_ID) + "id=" + id;
+            response = sendCommand(command, METHOD_GET, "");
+        }
         return response;
     }
 
@@ -166,10 +175,38 @@ public class TouchWandRestClient {
         cmdUnitAction(action);
     }
 
-    private String cmdUnitAction(String action) {
-        String command = buildUrl(CMD_UNIT_ACTION);
-        String response = sendCommand(command, METHOD_POST, action);
+    public void cmdThermostatOnOff(String id, OnOffType onoff) {
+        String action;
 
+        if (OnOffType.OFF.equals(onoff)) {
+            action = String.format(ACTION_THERMOSTAT_OFF, id);
+        } else {
+            action = String.format(ACTION_THERMOSTAT_ON, id);
+        }
+        cmdUnitAction(action);
+    }
+
+    public void cmdThermostatMode(String id, String mode) {
+        String action = String.format(ACTION_THERMOSTAT_MODE, id, mode);
+        cmdUnitAction(action);
+    }
+
+    public void cmdThermostatFanLevel(String id, String fanLevel) {
+        String action = String.format(ACTION_THERMOSTAT_FAN_LEVEL, id, fanLevel);
+        cmdUnitAction(action);
+    }
+
+    public void cmdThermostatTargetTemperature(String id, String targetTemperature) {
+        String action = String.format(ACTION_THERMOSTAT_TARGET_TEMPERATURE, id, targetTemperature);
+        cmdUnitAction(action);
+    }
+
+    private String cmdUnitAction(String action) {
+        String response = "";
+        if (isConnected) {
+            String command = buildUrl(CMD_UNIT_ACTION);
+            response = sendCommand(command, METHOD_POST, action);
+        }
         return response;
     }
 

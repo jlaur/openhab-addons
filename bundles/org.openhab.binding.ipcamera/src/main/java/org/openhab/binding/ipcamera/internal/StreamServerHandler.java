@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -10,13 +10,13 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-
 package org.openhab.binding.ipcamera.internal;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -81,7 +81,7 @@ public class StreamServerHandler extends ChannelInboundHandlerAdapter {
         try {
             if (msg instanceof HttpRequest) {
                 HttpRequest httpRequest = (HttpRequest) msg;
-                if (!whiteList.equals("DISABLE")) {
+                if (!"DISABLE".equals(whiteList)) {
                     String requestIP = "("
                             + ((InetSocketAddress) ctx.channel().remoteAddress()).getAddress().getHostAddress() + ")";
                     if (!whiteList.contains(requestIP)) {
@@ -96,20 +96,19 @@ public class StreamServerHandler extends ChannelInboundHandlerAdapter {
                     QueryStringDecoder queryStringDecoder = new QueryStringDecoder(httpRequest.uri());
                     switch (queryStringDecoder.path()) {
                         case "/ipcamera.m3u8":
-                            if (ipCameraHandler.ffmpegHLS != null) {
-                                if (!ipCameraHandler.ffmpegHLS.getIsAlive()) {
-                                    if (ipCameraHandler.ffmpegHLS != null) {
-                                        ipCameraHandler.ffmpegHLS.startConverting();
-                                    }
-                                }
-                            } else {
+                            Ffmpeg localFfmpeg = ipCameraHandler.ffmpegHLS;
+                            if (localFfmpeg == null) {
                                 ipCameraHandler.setupFfmpegFormat(FFmpegFormat.HLS);
+                            } else if (!localFfmpeg.getIsAlive()) {
+                                localFfmpeg.startConverting();
+                            } else {
+                                localFfmpeg.setKeepAlive(8);
+                                sendFile(ctx, httpRequest.uri(), "application/x-mpegurl");
+                                return;
                             }
-                            if (ipCameraHandler.ffmpegHLS != null) {
-                                ipCameraHandler.ffmpegHLS.setKeepAlive(8);
-                            }
+                            // Allow files to be created, or you get old m3u8 from the last time this ran.
+                            TimeUnit.MILLISECONDS.sleep(4500);
                             sendFile(ctx, httpRequest.uri(), "application/x-mpegurl");
-                            ctx.close();
                             return;
                         case "/ipcamera.mpd":
                             sendFile(ctx, httpRequest.uri(), "application/dash+xml");

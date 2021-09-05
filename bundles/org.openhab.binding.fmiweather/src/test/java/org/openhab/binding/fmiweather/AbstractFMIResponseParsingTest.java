@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -12,7 +12,7 @@
  */
 package org.openhab.binding.fmiweather;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -23,6 +23,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -108,6 +110,36 @@ public class AbstractFMIResponseParsingTest {
                 return timestampMatcher.matches(dataValues.timestampsEpochSecs)
                         && valuesMatcher.matches(dataValues.values);
             }
+
+            @Override
+            protected void describeMismatchSafely(Data dataValues, @Nullable Description mismatchDescription) {
+                if (mismatchDescription == null) {
+                    super.describeMismatchSafely(dataValues, mismatchDescription);
+                    return;
+                }
+                if (!timestampMatcher.matches(dataValues.timestampsEpochSecs)) {
+                    mismatchDescription.appendText("timestamps mismatch: ");
+                    if (dataValues.timestampsEpochSecs[0] != start) {
+                        mismatchDescription.appendText("start mismatch (was ");
+                        mismatchDescription.appendValue(dataValues.timestampsEpochSecs[0]);
+                        mismatchDescription.appendText(")");
+                    } else if (dataValues.timestampsEpochSecs.length != values.length) {
+                        mismatchDescription.appendText("length mismatch (was ");
+                        mismatchDescription.appendValue(dataValues.timestampsEpochSecs.length);
+                        mismatchDescription.appendText(")");
+                    } else {
+                        mismatchDescription.appendText("interval mismatch (was ");
+                        Set<Long> intervals = new HashSet<>();
+                        for (int i = 1; i < values.length; i++) {
+                            long interval = dataValues.timestampsEpochSecs[i] - dataValues.timestampsEpochSecs[i - 1];
+                            intervals.add(interval);
+                        }
+                        mismatchDescription.appendValue(intervals.toArray());
+                        mismatchDescription.appendText(")");
+                    }
+                }
+                mismatchDescription.appendText(", valuesMatch=").appendValue(valuesMatcher.matches(dataValues.values));
+            }
         };
     }
 
@@ -123,7 +155,7 @@ public class AbstractFMIResponseParsingTest {
         try {
             Method parseMethod = Client.class.getDeclaredMethod("parseMultiPointCoverageXml", String.class);
             parseMethod.setAccessible(true);
-            return (FMIResponse) parseMethod.invoke(client, content);
+            return Objects.requireNonNull((FMIResponse) parseMethod.invoke(client, content));
         } catch (InvocationTargetException e) {
             throw e.getTargetException();
         } catch (Exception e) {
@@ -137,9 +169,9 @@ public class AbstractFMIResponseParsingTest {
     @SuppressWarnings("unchecked")
     protected Set<Location> parseStations(String content) {
         try {
-            Method parseMethod = Client.class.getDeclaredMethod("parseStations", String.class);
+            Method parseMethod = Objects.requireNonNull(Client.class.getDeclaredMethod("parseStations", String.class));
             parseMethod.setAccessible(true);
-            return (Set<Location>) parseMethod.invoke(client, content);
+            return Objects.requireNonNull((Set<Location>) parseMethod.invoke(client, content));
         } catch (InvocationTargetException e) {
             throw new RuntimeException(e.getTargetException());
         } catch (Exception e) {

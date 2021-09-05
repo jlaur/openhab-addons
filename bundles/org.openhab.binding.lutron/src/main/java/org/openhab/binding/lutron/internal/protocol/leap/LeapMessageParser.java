@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,6 +14,7 @@ package org.openhab.binding.lutron.internal.protocol.leap;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -75,7 +76,7 @@ public class LeapMessageParser {
         logger.trace("Received message: {}", msg);
 
         try {
-            JsonObject message = (JsonObject) new JsonParser().parse(msg);
+            JsonObject message = (JsonObject) JsonParser.parseString(msg);
 
             if (!message.has("CommuniqueType")) {
                 logger.debug("No CommuniqueType found in message: {}", msg);
@@ -212,6 +213,7 @@ public class LeapMessageParser {
         try {
             if (messageBody.has(memberName)) {
                 JsonObject jsonObject = messageBody.get(memberName).getAsJsonObject();
+                @Nullable
                 T obj = gson.fromJson(jsonObject, type);
                 return obj;
             } else {
@@ -233,7 +235,7 @@ public class LeapMessageParser {
 
                 for (JsonElement element : jsonArray) {
                     JsonObject jsonObject = element.getAsJsonObject();
-                    T obj = gson.fromJson(jsonObject, type);
+                    T obj = Objects.requireNonNull(gson.fromJson(jsonObject, type));
                     objList.add(obj);
                 }
                 return objList;

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -16,6 +16,7 @@ import static org.openhab.binding.miio.internal.MiIoBindingConstants.BINDING_ID;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -53,6 +54,12 @@ public class MiIoBasicChannel {
     @SerializedName("type")
     @Expose
     private @Nullable String type;
+    @SerializedName("unit")
+    @Expose
+    private @Nullable String unit;
+    @SerializedName("stateDescription")
+    @Expose
+    private @Nullable StateDescriptionDTO stateDescription;
     @SerializedName("refresh")
     @Expose
     private @Nullable Boolean refresh;
@@ -61,13 +68,19 @@ public class MiIoBasicChannel {
     private @Nullable String channelCustomRefreshCommand;
     @SerializedName("transformation")
     @Expose
-    private @Nullable String transfortmation;
+    private @Nullable String transformation;
     @SerializedName("ChannelGroup")
     @Expose
     private @Nullable String channelGroup;
     @SerializedName("actions")
     @Expose
     private @Nullable List<MiIoDeviceAction> miIoDeviceActions = new ArrayList<>();
+    @SerializedName("category")
+    @Expose
+    private @Nullable String category;
+    @SerializedName("tags")
+    @Expose
+    private @Nullable LinkedHashSet<String> tags;
     @SerializedName("readmeComment")
     @Expose
     private @Nullable String readmeComment;
@@ -77,7 +90,7 @@ public class MiIoBasicChannel {
         return (property != null) ? property : "";
     }
 
-    public void setProperty(String property) {
+    public void setProperty(@Nullable String property) {
         this.property = property;
     }
 
@@ -90,7 +103,7 @@ public class MiIoBasicChannel {
         }
     }
 
-    public void setSiid(Integer siid) {
+    public void setSiid(@Nullable Integer siid) {
         this.siid = siid;
     }
 
@@ -103,16 +116,12 @@ public class MiIoBasicChannel {
         }
     }
 
-    public void setPiid(Integer piid) {
+    public void setPiid(@Nullable Integer piid) {
         this.piid = piid;
     }
 
     public boolean isMiOt() {
-        if (piid != null && siid != null && (getPiid() != 0 || getSiid() != 0)) {
-            return true;
-        } else {
-            return false;
-        }
+        return (piid != null && siid != null && (getPiid() != 0 || getSiid() != 0));
     }
 
     public String getFriendlyName() {
@@ -120,7 +129,7 @@ public class MiIoBasicChannel {
         return (fn == null || type == null || fn.isEmpty()) ? getChannel() : fn;
     }
 
-    public void setFriendlyName(String friendlyName) {
+    public void setFriendlyName(@Nullable String friendlyName) {
         this.friendlyName = friendlyName;
     }
 
@@ -129,7 +138,7 @@ public class MiIoBasicChannel {
         return channel != null ? channel : "";
     }
 
-    public void setChannel(String channel) {
+    public void setChannel(@Nullable String channel) {
         this.channel = channel;
     }
 
@@ -142,7 +151,7 @@ public class MiIoBasicChannel {
         }
     }
 
-    public void setChannelType(String channelType) {
+    public void setChannelType(@Nullable String channelType) {
         this.channelType = channelType;
     }
 
@@ -151,16 +160,33 @@ public class MiIoBasicChannel {
         return type != null ? type : "";
     }
 
-    public void setType(String type) {
+    public void setType(@Nullable String type) {
         this.type = type;
+    }
+
+    public String getUnit() {
+        final @Nullable String unit = this.unit;
+        return unit != null ? unit : "";
+    }
+
+    public void setUnit(@Nullable String unit) {
+        this.unit = unit;
+    }
+
+    public @Nullable StateDescriptionDTO getStateDescription() {
+        return stateDescription;
+    }
+
+    public void setStateDescription(@Nullable StateDescriptionDTO stateDescription) {
+        this.stateDescription = stateDescription;
     }
 
     public Boolean getRefresh() {
         final @Nullable Boolean rf = refresh;
-        return rf != null && rf.booleanValue() && !getProperty().isEmpty();
+        return rf != null && rf.booleanValue();
     }
 
-    public void setRefresh(Boolean refresh) {
+    public void setRefresh(@Nullable Boolean refresh) {
         this.refresh = refresh;
     }
 
@@ -169,7 +195,7 @@ public class MiIoBasicChannel {
         return channelCustomRefreshCommand != null ? channelCustomRefreshCommand : "";
     }
 
-    public void setChannelCustomRefreshCommand(String channelCustomRefreshCommand) {
+    public void setChannelCustomRefreshCommand(@Nullable String channelCustomRefreshCommand) {
         this.channelCustomRefreshCommand = channelCustomRefreshCommand;
     }
 
@@ -178,7 +204,7 @@ public class MiIoBasicChannel {
         return channelGroup != null ? channelGroup : "";
     }
 
-    public void setChannelGroup(String channelGroup) {
+    public void setChannelGroup(@Nullable String channelGroup) {
         this.channelGroup = channelGroup;
     }
 
@@ -191,12 +217,28 @@ public class MiIoBasicChannel {
         this.miIoDeviceActions = miIoDeviceActions;
     }
 
-    public @Nullable String getTransfortmation() {
-        return transfortmation;
+    public @Nullable String getTransformation() {
+        return transformation;
     }
 
-    public void setTransfortmation(String transfortmation) {
-        this.transfortmation = transfortmation;
+    public void setTransformation(@Nullable String transformation) {
+        this.transformation = transformation;
+    }
+
+    public @Nullable String getCategory() {
+        return category;
+    }
+
+    public void setCategory(@Nullable String category) {
+        this.category = category;
+    }
+
+    public @Nullable LinkedHashSet<String> getTags() {
+        return tags;
+    }
+
+    public void setTags(@Nullable LinkedHashSet<String> tags) {
+        this.tags = tags;
     }
 
     public String getReadmeComment() {
@@ -204,7 +246,7 @@ public class MiIoBasicChannel {
         return (readmeComment != null) ? readmeComment : "";
     }
 
-    public void setReadmeComment(String readmeComment) {
+    public void setReadmeComment(@Nullable String readmeComment) {
         this.readmeComment = readmeComment;
     }
 

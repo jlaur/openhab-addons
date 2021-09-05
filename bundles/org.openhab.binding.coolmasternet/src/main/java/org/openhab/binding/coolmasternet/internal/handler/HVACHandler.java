@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -53,14 +53,14 @@ public class HVACHandler extends BaseThingHandler {
      * speed, but the protocol's fan command (and matching binding command) use
      * single-letter abbreviations.
      */
-    private static final Map<String, @Nullable String> FAN_NUM_TO_STR;
+    private static final Map<String, String> FAN_NUM_TO_STR;
 
     /**
      * The CoolMasterNet query command returns numbers 0-5 for operation modes,
      * but these don't map to any mode you can set on the device, so we use this
      * lookup table.
      */
-    private static final Map<String, @Nullable String> MODE_NUM_TO_STR;
+    private static final Map<String, String> MODE_NUM_TO_STR;
 
     static {
         FAN_NUM_TO_STR = new HashMap<>();
@@ -136,7 +136,7 @@ public class HVACHandler extends BaseThingHandler {
                     if (command instanceof RefreshType) {
                         final String currentTemp = query(controller, "a");
                         if (currentTemp != null) {
-                            final Integer temp = new Integer(currentTemp);
+                            final Integer temp = Integer.parseInt(currentTemp);
                             final QuantityType<?> value = new QuantityType<>(temp, controller.getUnit());
                             updateState(CURRENT_TEMP, value);
                         }
@@ -157,7 +157,7 @@ public class HVACHandler extends BaseThingHandler {
                     if (command instanceof RefreshType) {
                         final String setTemp = query(controller, "t");
                         if (setTemp != null) {
-                            final Integer temp = new Integer(setTemp);
+                            final Integer temp = Integer.parseInt(setTemp);
                             final QuantityType<?> value = new QuantityType<>(temp, controller.getUnit());
                             updateState(SET_TEMP, value);
                         }

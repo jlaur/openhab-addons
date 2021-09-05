@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -84,7 +84,6 @@ public class SmartherApiConnector {
 
     private final Logger logger = LoggerFactory.getLogger(SmartherApiConnector.class);
 
-    private final JsonParser parser = new JsonParser();
     private final HttpClient httpClient;
     private final ScheduledExecutorService scheduler;
 
@@ -197,7 +196,8 @@ public class SmartherApiConnector {
                     }
                 }
             } catch (ExecutionException e) {
-                future.completeExceptionally(e.getCause());
+                Throwable cause = e.getCause();
+                future.completeExceptionally(cause != null ? cause : e);
             } catch (SmartherGatewayException e) {
                 future.completeExceptionally(e);
             } catch (RuntimeException | TimeoutException e) {
@@ -304,7 +304,7 @@ public class SmartherApiConnector {
         private String processErrorState(ContentResponse response)
                 throws SmartherTokenExpiredException, SmartherAuthorizationException, SmartherInvalidResponseException {
             try {
-                final JsonElement element = parser.parse(response.getContentAsString());
+                final JsonElement element = JsonParser.parseString(response.getContentAsString());
 
                 if (element.isJsonObject()) {
                     final JsonObject object = element.getAsJsonObject();

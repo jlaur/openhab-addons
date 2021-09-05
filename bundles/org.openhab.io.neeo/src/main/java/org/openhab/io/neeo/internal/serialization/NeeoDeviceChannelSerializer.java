@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -15,9 +15,7 @@ package org.openhab.io.neeo.internal.serialization;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.core.items.Item;
@@ -77,12 +75,7 @@ public class NeeoDeviceChannelSerializer
     }
 
     @Override
-    public JsonElement serialize(NeeoDeviceChannel chnl, @Nullable Type type,
-            @Nullable JsonSerializationContext jsonContext) {
-        Objects.requireNonNull(chnl, "chnl cannot be null");
-        Objects.requireNonNull(type, "type cannot be null");
-        Objects.requireNonNull(jsonContext, "jsonContext cannot be null");
-
+    public JsonElement serialize(NeeoDeviceChannel chnl, Type type, JsonSerializationContext jsonContext) {
         final JsonObject jo = new JsonObject();
 
         jo.add("kind", jsonContext.serialize(chnl.getKind()));
@@ -105,12 +98,13 @@ public class NeeoDeviceChannelSerializer
                 final Item item = localContext.getItemRegistry().getItem(chnl.getItemName());
                 itemType = item.getType();
 
-                if (StringUtils.isNotEmpty(item.getLabel())) {
-                    itemLabel = item.getLabel();
+                String label = item.getLabel();
+                if (label != null && !label.isEmpty()) {
+                    itemLabel = label;
                 }
 
                 for (Class<? extends Command> cmd : item.getAcceptedCommandTypes()) {
-                    if (!StringUtils.equalsIgnoreCase(cmd.getSimpleName(), "refreshtype")) {
+                    if (!cmd.getSimpleName().equalsIgnoreCase("refreshtype")) {
                         commandTypes.add(cmd.getSimpleName().toLowerCase());
                     }
                 }
@@ -133,7 +127,7 @@ public class NeeoDeviceChannelSerializer
                 itemType = "N/A";
             }
 
-            if (StringUtils.isNotEmpty(itemLabel)) {
+            if (!itemLabel.isEmpty()) {
                 switch (chnl.getSubType()) {
                     case HUE:
                         itemType += " (Hue)";
@@ -169,12 +163,8 @@ public class NeeoDeviceChannelSerializer
     }
 
     @Override
-    public NeeoDeviceChannel deserialize(@Nullable JsonElement elm, @Nullable Type type,
-            @Nullable JsonDeserializationContext context) throws JsonParseException {
-        Objects.requireNonNull(elm, "elm cannot be null");
-        Objects.requireNonNull(type, "type cannot be null");
-        Objects.requireNonNull(context, "context cannot be null");
-
+    public @Nullable NeeoDeviceChannel deserialize(JsonElement elm, Type type, JsonDeserializationContext context)
+            throws JsonParseException {
         if (!(elm instanceof JsonObject)) {
             throw new JsonParseException("Element not an instance of JsonObject: " + elm);
         }
@@ -182,7 +172,7 @@ public class NeeoDeviceChannelSerializer
         final JsonObject jo = (JsonObject) elm;
         final String itemName = NeeoUtil.getString(jo, "itemName");
 
-        if (itemName == null || StringUtils.isEmpty(itemName)) {
+        if (itemName == null || itemName.isEmpty()) {
             throw new JsonParseException("Element requires an itemName attribute: " + elm);
         }
 
@@ -211,19 +201,17 @@ public class NeeoDeviceChannelSerializer
                 final boolean labelVisible = jo.has("labelVisible") ? jo.get("labelVisible").getAsBoolean() : true;
 
                 return new NeeoDeviceChannelText(kind, itemName, channelNbr, capType, itemSubType,
-                        label == null || StringUtils.isEmpty(label) ? NeeoUtil.NOTAVAILABLE : label, value, range,
-                        labelVisible);
+                        label == null || label.isEmpty() ? NeeoUtil.NOTAVAILABLE : label, value, range, labelVisible);
             } else if (capType == NeeoCapabilityType.DIRECTORY) {
                 final NeeoDeviceChannelDirectoryListItem[] listItems = jo.has("listItems")
                         ? context.deserialize(jo.get("listItems"), NeeoDeviceChannelDirectoryListItem[].class)
                         : new NeeoDeviceChannelDirectoryListItem[0];
 
                 return new NeeoDeviceChannelDirectory(kind, itemName, channelNbr, capType, itemSubType,
-                        label == null || StringUtils.isEmpty(label) ? NeeoUtil.NOTAVAILABLE : label, value, range,
-                        listItems);
+                        label == null || label.isEmpty() ? NeeoUtil.NOTAVAILABLE : label, value, range, listItems);
             } else {
                 return new NeeoDeviceChannel(kind, itemName, channelNbr, capType, itemSubType,
-                        label == null || StringUtils.isEmpty(label) ? NeeoUtil.NOTAVAILABLE : label, value, range);
+                        label == null || label.isEmpty() ? NeeoUtil.NOTAVAILABLE : label, value, range);
             }
         } catch (NullPointerException | IllegalArgumentException e) {
             throw new JsonParseException(e);

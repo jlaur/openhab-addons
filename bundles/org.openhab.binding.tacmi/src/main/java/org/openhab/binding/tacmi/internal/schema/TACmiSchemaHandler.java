@@ -1,5 +1,5 @@
 /**
- * Copyright (c) 2010-2020 Contributors to the openHAB project
+ * Copyright (c) 2010-2021 Contributors to the openHAB project
  *
  * See the NOTICE file(s) distributed with this work for additional
  * information.
@@ -14,6 +14,7 @@ package org.openhab.binding.tacmi.internal.schema;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,7 +37,6 @@ import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpMethod;
-import org.eclipse.jetty.util.B64Code;
 import org.openhab.binding.tacmi.internal.TACmiChannelTypeProvider;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
@@ -66,7 +66,7 @@ public class TACmiSchemaHandler extends BaseThingHandler {
 
     private final HttpClient httpClient;
     private final TACmiChannelTypeProvider channelTypeProvider;
-    private final Map<String, @Nullable ApiPageEntry> entries = new HashMap<>();
+    private final Map<String, ApiPageEntry> entries = new HashMap<>();
     private boolean online;
     private @Nullable String serverBase;
     private @Nullable URI schemaApiPage;
@@ -109,8 +109,8 @@ public class TACmiSchemaHandler extends BaseThingHandler {
         this.online = false;
         updateStatus(ThingStatus.UNKNOWN);
 
-        this.authHeader = "Basic "
-                + B64Code.encode(config.username + ":" + config.password, StandardCharsets.ISO_8859_1);
+        this.authHeader = "Basic " + Base64.getEncoder()
+                .encodeToString((config.username + ":" + config.password).getBytes(StandardCharsets.ISO_8859_1));
 
         final String serverBase = "http://" + config.host + "/";
         this.serverBase = serverBase;
@@ -152,8 +152,8 @@ public class TACmiSchemaHandler extends BaseThingHandler {
             responseString = response.getContentAsString();
         }
 
-        if (logger.isDebugEnabled()) {
-            logger.debug("Response body was: {} ", responseString);
+        if (logger.isTraceEnabled()) {
+            logger.trace("Response body was: {} ", responseString);
         }
 
         final ISimpleMarkupParser parser = new SimpleMarkupParser(this.noRestrictions);
@@ -170,9 +170,9 @@ public class TACmiSchemaHandler extends BaseThingHandler {
             final ApiPageParser pp = parsePage(schemaApiPage,
                     new ApiPageParser(this, entries, this.channelTypeProvider));
 
-            if (pp.isConfigChanged()) {
+            final List<Channel> channels = pp.getChannels();
+            if (pp.isConfigChanged() || channels.size() != this.getThing().getChannels().size()) {
                 // we have to update our channels...
-                final List<Channel> channels = pp.getChannels();
                 final ThingBuilder thingBuilder = editThing();
                 thingBuilder.withChannels(channels);
                 updateThing(thingBuilder.build());
@@ -250,6 +250,17 @@ public class TACmiSchemaHandler extends BaseThingHandler {
                     return;
                 }
                 break;
+            case NUMERIC_FORM:
+                ChangerX2Entry cx2en = e.changerX2Entry;
+                if (cx2en != null) {
+                    reqUpdate = prepareRequest(buildUri("INCLUDE/change.cgi?changeadrx2=" + cx2en.address
+                            + "&changetox2=" + command.format("%.2f")));
+                    reqUpdate.header(HttpHeader.REFERER, this.serverBase + "schema.html"); // required...
+                } else {
+                    logger.debug("Got command for uninitalized channel {}: {}", channelUID, command);
+                    return;
+                }
+                break;
             case READ_ONLY_NUMERIC:
             case READ_ONLY_STATE:
             case READ_ONLY_SWITCH:
@@ -260,6 +271,7 @@ public class TACmiSchemaHandler extends BaseThingHandler {
                 return;
         }
         try {
+            e.setLastCommandTS(System.currentTimeMillis());
             ContentResponse res = reqUpdate.send();
             if (res.getStatus() == 200) {
                 // update ok, we update the state

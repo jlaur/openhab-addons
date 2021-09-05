@@ -12,12 +12,15 @@
 				"channelType": "power",
 				"type": "Switch",
 				"refresh": true,
-				"ChannelGroup": "",
 				"actions": [
 					{
 						"command": "set_power",
 						"parameterType": "ONOFF"
 					}
+				],
+				"category": "switch",
+				"tags": [
+					"Switch"
 				]
 			},
 			{
@@ -27,7 +30,6 @@
 				"channelType": "powerUsage",
 				"type": "Number",
 				"refresh": true,
-				"ChannelGroup": "",
 				"actions": [
 					{
 						"parameterType": "EMPTY"
@@ -41,7 +43,6 @@
 				"channelType": "led",
 				"type": "Switch",
 				"refresh": true,
-				"ChannelGroup": "",
 				"actions": [
 					{
 						"command": "set_wifi_led",
@@ -55,7 +56,6 @@
 				"channel": "power_price",
 				"type": "Number",
 				"refresh": true,
-				"ChannelGroup": "",
 				"actions": [
 					{
 						"command": "set_power_price",
@@ -70,17 +70,48 @@
 				"channelType": "current",
 				"type": "Number",
 				"refresh": true,
-				"ChannelGroup": "",
 				"actions": []
 			},
 			{
 				"property": "temperature",
 				"friendlyName": "Temperature",
 				"channel": "temperature",
-				"channelType": "temperature",
+				"type": "Number:Temperature",
+				"unit": "CELSIUS",
+				"stateDescription": {
+					"pattern": "%.1f %unit%",
+					"readOnly": true
+				},
+				"refresh": true,
+				"actions": [],
+				"category": "temperature",
+				"tags": [
+					"Measurement",
+					"Temperature"
+				]
+			},
+			{
+				"property": "lp_autooff",
+				"friendlyName": "Low Power Auto Off",
+				"channel": "lp_autooff",
 				"type": "Number",
 				"refresh": true,
-				"ChannelGroup": "",
+				"actions": []
+			},
+			{
+				"property": "lp_autooff_delay",
+				"friendlyName": "Low Power Limit Time",
+				"channel": "lp_autooff_delay",
+				"type": "Number",
+				"refresh": true,
+				"actions": []
+			},
+			{
+				"property": "lp_threshold",
+				"friendlyName": "Low Power Threshold",
+				"channel": "lp_threshold",
+				"type": "Number",
+				"refresh": true,
 				"actions": []
 			}
 		]
