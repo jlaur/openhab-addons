@@ -7,19 +7,19 @@
 	<!-- Fridge -->
 	<thing-type id="fridge">
 		<supported-bridge-type-refs>
-			<bridge-type-ref id="xgw3000" />
+			<bridge-type-ref id="xgw3000"/>
 		</supported-bridge-type-refs>
 
 		<label>Fridge</label>
 		<description>This is a Miele@home compatible fridge</description>
 
 		<channels>
-			<channel id="state" typeId="state" />
-			<channel id="supercool" typeId="supercool" />
-			<channel id="current" typeId="current" />
-			<channel id="target" typeId="target" />
-			<channel id="door" typeId="door" />
-			<channel id="start" typeId="switch" />
+			<channel id="state" typeId="state"/>
+			<channel id="supercool" typeId="supercool"/>
+			<channel id="current" typeId="current"/>
+			<channel id="target" typeId="target"/>
+			<channel id="door" typeId="door"/>
+			<channel id="start" typeId="switch"/>
 		</channels>
 
 		<config-description>
@@ -31,7 +31,7 @@
 				<label>Protocol</label>
 				<description>The protocol used to communicate with the appliance</description>
 				<required>false</required>
-                <default>ZigBee</default>
+				<default>ZigBee</default>
 				<options>
 					<option value="WiFi">WiFi</option>
 					<option value="ZigBee">ZigBee</option>
