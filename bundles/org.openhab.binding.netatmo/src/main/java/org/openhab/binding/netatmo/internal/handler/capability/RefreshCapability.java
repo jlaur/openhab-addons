@@ -38,7 +38,6 @@ import org.slf4j.LoggerFactory;
 public class RefreshCapability extends Capability {
     private static final Duration DEFAULT_DELAY = Duration.of(20, SECONDS);
     private static final Duration PROBING_INTERVAL = Duration.of(120, SECONDS);
-    private static final Duration OFFLINE_INTERVAL = Duration.of(15, MINUTES);
 
     private final Logger logger = LoggerFactory.getLogger(RefreshCapability.class);
 
@@ -82,18 +81,16 @@ public class RefreshCapability extends Capability {
     private void proceedWithUpdate() {
         handler.proceedWithUpdate();
         long delay;
-        if (!ThingStatus.ONLINE.equals(handler.getThing().getStatus())) {
-            logger.debug("Module is not ONLINE; special refresh interval is used");
-            delay = OFFLINE_INTERVAL.toSeconds();
-            if (probing()) {
-                dataTimeStamp0 = Instant.MIN;
-            }
+        if (!ThingStatus.ONLINE.equals(thing.getStatus())) {
+            logger.debug("Module is not ONLINE; refresh stopped");
+            dataTimeStamp0 = Instant.MIN;
+            delay = 0;
         } else {
             delay = refreshConfigured ? dataValidity.getSeconds()
                     : (probing() ? PROBING_INTERVAL : dataValidity.minus(dataAge()).plus(DEFAULT_DELAY)).toSeconds();
+            delay = delay < 2 ? PROBING_INTERVAL.toSeconds() : delay;
+            logger.debug("Module refreshed, next one in {}s", delay);
         }
-        delay = delay < 2 ? PROBING_INTERVAL.toSeconds() : delay;
-        logger.debug("Module refreshed, next one in {}s", delay);
         freeJobAndReschedule(delay);
     }
 

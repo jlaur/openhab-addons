@@ -20,8 +20,6 @@ import org.openhab.binding.netatmo.internal.api.NetatmoException;
 import org.openhab.binding.netatmo.internal.api.WeatherApi;
 import org.openhab.binding.netatmo.internal.api.dto.NAObject;
 import org.openhab.binding.netatmo.internal.handler.CommonInterface;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * {@link WeatherCapability} give the ability to read weather station API
@@ -31,7 +29,6 @@ import org.slf4j.LoggerFactory;
  */
 @NonNullByDefault
 public class WeatherCapability extends CacheWeatherCapability {
-    private final Logger logger = LoggerFactory.getLogger(WeatherCapability.class);
 
     public WeatherCapability(CommonInterface handler) {
         super(handler, Duration.ofSeconds(2));
@@ -42,7 +39,7 @@ public class WeatherCapability extends CacheWeatherCapability {
         try {
             return List.of(owned ? api.getOwnedStationData(handler.getId()) : api.getStationData(handler.getId()));
         } catch (NetatmoException e) {
-            logger.warn("Error retrieving weather data '{}' : {}", handler.getId(), e.getMessage());
+            statusReason = "Error retrieving weather data '%s' : %s".formatted(handler.getId(), e.getMessage());
         }
         return List.of();
     }
