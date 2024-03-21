@@ -364,6 +364,7 @@ public class ApiBridgeHandler extends BaseBridgeHandler {
             }
             throw exception;
         } catch (InterruptedException | TimeoutException | ExecutionException e) {
+            logger.trace("Request send error", e);
             if (retryCount > 0) {
                 logger.debug("Request error, retry counter: {}", retryCount);
                 return executeUri(uri, method, clazz, payload, contentType, retryCount - 1);
