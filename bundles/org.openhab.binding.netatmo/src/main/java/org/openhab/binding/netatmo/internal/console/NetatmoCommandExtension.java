@@ -59,6 +59,15 @@ public class NetatmoCommandExtension extends AbstractConsoleCommandExtension imp
 
     @Override
     public void execute(String[] args, Console console) {
+        if (args.length == 2 && "sim".equals(args[0])) {
+            for (Thing thing : thingRegistry.getAll()) {
+                ThingHandler thingHandler = thing.getHandler();
+                if (thingHandler instanceof ApiBridgeHandler bridgeHandler) {
+                    bridgeHandler.addSimulatedEvent(args[1]);
+                }
+            }
+            return;
+        }
         if (args.length == 1 && SHOW_IDS.equals(args[0])) {
             this.console = console;
             for (Thing thing : thingRegistry.getAll()) {

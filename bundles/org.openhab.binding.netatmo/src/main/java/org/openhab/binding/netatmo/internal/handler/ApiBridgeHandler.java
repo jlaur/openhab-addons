@@ -23,9 +23,11 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -133,6 +135,12 @@ public class ApiBridgeHandler extends BaseBridgeHandler {
         requestCountChannelUID = new ChannelUID(thing.getUID(), GROUP_MONITORING, CHANNEL_REQUEST_COUNT);
     }
 
+    private List<String> simulatedEvents = new ArrayList<>();
+
+    public void addSimulatedEvent(String event) {
+        simulatedEvents.add(event);
+    }
+
     @Override
     public void initialize() {
         logger.debug("Initializing Netatmo API bridge handler.");
@@ -204,6 +212,12 @@ public class ApiBridgeHandler extends BaseBridgeHandler {
                 grantServlet.ifPresent(servlet -> servlet.dispose());
                 grantServlet = Optional.empty();
             } else {
+                if (simulatedEvents.remove("oauth")) {
+                    throw new OAuthException("Simulated OAuth failure");
+                }
+                if (simulatedEvents.remove("oauthio")) {
+                    throw new IOException("Simulated OAuth IO failure");
+                }
                 accessTokenResponse = oAuthClientService.getAccessTokenResponse();
             }
         } catch (OAuthException | OAuthResponseException e) {
@@ -337,7 +351,15 @@ public class ApiBridgeHandler extends BaseBridgeHandler {
                     String.join(", ", request.getHeaders().stream().map(HttpField::toString).toList()));
             ContentResponse response = request.send();
 
-            Code statusCode = HttpStatus.getCode(response.getStatus());
+            Code statusCode;
+            if (simulatedEvents.remove("http503")) {
+                statusCode = Code.SERVICE_UNAVAILABLE;
+            } else if (simulatedEvents.remove("http429")) {
+                statusCode = Code.TOO_MANY_REQUESTS;
+            } else {
+                statusCode = HttpStatus.getCode(response.getStatus());
+            }
+
             String responseBody = new String(response.getContent(), StandardCharsets.UTF_8);
             logger.trace(" -returned: code {} body {}", statusCode, responseBody);
 
