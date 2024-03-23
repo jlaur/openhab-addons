@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -38,6 +39,8 @@ import org.slf4j.LoggerFactory;
 public class RefreshCapability extends Capability {
     private static final Duration DEFAULT_DELAY = Duration.of(20, SECONDS);
     private static final Duration PROBING_INTERVAL = Duration.of(120, SECONDS);
+    private static final Set<ThingStatus> ACTIVE_STATUSES = Set.of(ThingStatus.UNKNOWN, ThingStatus.INITIALIZING,
+            ThingStatus.ONLINE);
 
     private final Logger logger = LoggerFactory.getLogger(RefreshCapability.class);
 
@@ -81,8 +84,8 @@ public class RefreshCapability extends Capability {
     private void proceedWithUpdate() {
         handler.proceedWithUpdate();
         long delay;
-        if (!ThingStatus.ONLINE.equals(thing.getStatus())) {
-            logger.debug("Module is not ONLINE; refresh stopped");
+        if (!ACTIVE_STATUSES.contains(thing.getStatus())) {
+            logger.debug("Module {} is not active, refresh stopped", thingUID);
             dataTimeStamp0 = Instant.MIN;
             delay = 0;
         } else {
@@ -97,20 +100,20 @@ public class RefreshCapability extends Capability {
     @Override
     protected void updateNAThing(NAThing newData) {
         super.updateNAThing(newData);
-        newData.getLastSeen().map(ZonedDateTime::toInstant).ifPresent(tsInstant -> {
+        newData.getLastSeen().map(ZonedDateTime::toInstant).ifPresent(lastSeen -> {
             if (probing()) {
                 if (Instant.MIN.equals(dataTimeStamp0)) {
-                    dataTimeStamp0 = tsInstant;
+                    dataTimeStamp0 = lastSeen;
                     logger.debug("First data timestamp is {}", dataTimeStamp0);
-                } else if (tsInstant.isAfter(dataTimeStamp0)) {
-                    dataValidity = Duration.between(dataTimeStamp0, tsInstant);
+                } else if (lastSeen.isAfter(dataTimeStamp0)) {
+                    dataValidity = Duration.between(dataTimeStamp0, lastSeen);
                     refreshConfigured = true;
                     logger.debug("Data validity period identified to be {}", dataValidity);
                 } else {
                     logger.debug("Data validity period not yet found, data timestamp unchanged");
                 }
             }
-            dataTimeStamp = tsInstant;
+            dataTimeStamp = lastSeen;
         });
     }
 
