@@ -13,9 +13,11 @@
 package org.openhab.binding.energidataservice.internal.api;
 
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 
 /**
  * Filter for the DatahubPricelist dataset.
@@ -68,5 +70,23 @@ public class DatahubTariffFilter {
 
     public DateQueryParameter getEnd() {
         return end;
+    }
+
+    @Override
+    public boolean equals(@Nullable Object o) {
+        if (o == this) {
+            return true;
+        }
+        if (!(o instanceof DatahubTariffFilter other)) {
+            return false;
+        }
+
+        return chargeTypeCodes.equals(other.chargeTypeCodes) && notes.equals(other.notes) && start.equals(other.start)
+                && end.equals(other.end);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(chargeTypeCodes, notes, start, end);
     }
 }

@@ -14,6 +14,7 @@ package org.openhab.binding.energidataservice.internal.api;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.Objects;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -66,6 +67,24 @@ public class DateQueryParameter {
             }
         }
         return "null";
+    }
+
+    @Override
+    public boolean equals(@Nullable Object o) {
+        if (o == this) {
+            return true;
+        }
+        if (!(o instanceof DateQueryParameter other)) {
+            return false;
+        }
+
+        return Objects.equals(date, other.date) && Objects.equals(offset, other.offset)
+                && Objects.equals(dateType, other.dateType);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(date, offset, dateType);
     }
 
     public boolean isEmpty() {
