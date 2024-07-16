@@ -44,6 +44,7 @@ import org.eclipse.jetty.http.HttpStatus;
 import org.openhab.binding.energidataservice.internal.ApiController;
 import org.openhab.binding.energidataservice.internal.CacheManager;
 import org.openhab.binding.energidataservice.internal.DatahubTariff;
+import org.openhab.binding.energidataservice.internal.ElectricityPriceListener;
 import org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants;
 import org.openhab.binding.energidataservice.internal.PriceListParser;
 import org.openhab.binding.energidataservice.internal.action.EnergiDataServiceActions;
@@ -61,6 +62,7 @@ import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.config.DatahubPriceConfiguration;
 import org.openhab.binding.energidataservice.internal.config.EnergiDataServiceConfiguration;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
+import org.openhab.binding.energidataservice.internal.provider.ElectricityPriceProvider;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
 import org.openhab.binding.energidataservice.internal.retry.RetryStrategy;
 import org.openhab.core.i18n.TimeZoneProvider;
@@ -90,7 +92,7 @@ import org.slf4j.LoggerFactory;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class EnergiDataServiceHandler extends BaseThingHandler {
+public class EnergiDataServiceHandler extends BaseThingHandler implements ElectricityPriceListener {
 
     private static final Duration emissionPrognosisJobInterval = Duration.ofMinutes(15);
     private static final Duration emissionRealtimeJobInterval = Duration.ofMinutes(5);
@@ -98,6 +100,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
     private final Logger logger = LoggerFactory.getLogger(EnergiDataServiceHandler.class);
     private final TimeZoneProvider timeZoneProvider;
     private final ApiController apiController;
+    private final ElectricityPriceProvider electricityPriceProvider;
     private final CacheManager cacheManager;
 
     private EnergiDataServiceConfiguration config;
@@ -108,10 +111,12 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
     private @Nullable ScheduledFuture<?> refreshEmissionRealtimeFuture;
     private @Nullable ScheduledFuture<?> priceUpdateFuture;
 
-    public EnergiDataServiceHandler(Thing thing, HttpClient httpClient, TimeZoneProvider timeZoneProvider) {
+    public EnergiDataServiceHandler(Thing thing, HttpClient httpClient, TimeZoneProvider timeZoneProvider,
+            ElectricityPriceProvider electricityPriceProvider) {
         super(thing);
         this.timeZoneProvider = timeZoneProvider;
         this.apiController = new ApiController(httpClient, timeZoneProvider);
+        this.electricityPriceProvider = electricityPriceProvider;
         this.cacheManager = new CacheManager();
 
         // Default configuration
@@ -126,6 +131,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
 
         String channelId = channelUID.getId();
         if (ELECTRICITY_CHANNELS.contains(channelId)) {
+            // TODO: Clean cache in ElectricityPriceProvider and trigger refresh
             refreshElectricityPrices();
         } else if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelId)) {
             rescheduleEmissionPrognosisJob();
@@ -159,7 +165,11 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
 
         updateStatus(ThingStatus.UNKNOWN);
 
-        refreshPriceFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS);
+        refreshPriceFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS); // FIXME: Remove
+
+        if (isLinked(CHANNEL_SPOT_PRICE)) {
+            electricityPriceProvider.subscribeToSpotPrices(this, config.priceArea, config.getCurrency());
+        }
 
         if (isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
             rescheduleEmissionPrognosisJob();
@@ -171,6 +181,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
 
     @Override
     public void dispose() {
+        electricityPriceProvider.unsubscribeFromSpotprices(this);
         ScheduledFuture<?> refreshPriceFuture = this.refreshPriceFuture;
         if (refreshPriceFuture != null) {
             refreshPriceFuture.cancel(true);
@@ -202,9 +213,22 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
 
     @Override
     public void channelLinked(ChannelUID channelUID) {
-        super.channelLinked(channelUID);
+        if (!CHANNEL_SPOT_PRICE.equals(channelUID.getId())) {
+            // Do not trigger REFRESH command for spot price, we will trigger
+            // a state update ourselves through ElectricityPriceProvider.
+            super.channelLinked(channelUID);
+        }
 
-        if (!"DK1".equals(config.priceArea) && !"DK2".equals(config.priceArea)
+        if (CHANNEL_SPOT_PRICE.equals(channelUID.getId())) {
+            try {
+                electricityPriceProvider.subscribeToSpotPrices(this, config.priceArea, config.getCurrency());
+            } catch (IllegalStateException e) {
+                // FIXME: Avoid this situation
+                logger.debug("Ooops", e);
+
+                electricityPriceProvider.triggerSpotPriceUpdate();
+            }
+        } else if (!"DK1".equals(config.priceArea) && !"DK2".equals(config.priceArea)
                 && (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelUID.getId())
                         || CHANNEL_CO2_EMISSION_REALTIME.contains(channelUID.getId()))) {
             logger.warn("Item linked to channel '{}', but price area {} is not supported for this channel",
@@ -216,7 +240,11 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
     public void channelUnlinked(ChannelUID channelUID) {
         super.channelUnlinked(channelUID);
 
-        if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelUID.getId()) && !isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
+        if (CHANNEL_SPOT_PRICE.equals(channelUID.getId()) && !isLinked(CHANNEL_SPOT_PRICE)) {
+            logger.debug("No more items linked to channel '{}', stop spot price subscription", channelUID.getId());
+            electricityPriceProvider.unsubscribeFromSpotprices(this);
+        } else if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelUID.getId())
+                && !isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
             logger.debug("No more items linked to channel '{}', stopping emission prognosis refresh job",
                     channelUID.getId());
             ScheduledFuture<?> refreshEmissionPrognosisFuture = this.refreshEmissionPrognosisFuture;
@@ -236,9 +264,37 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
         }
     }
 
+    @Override
+    public void onDayAheadAvailable() {
+        triggerChannel(CHANNEL_EVENT, EVENT_DAY_AHEAD_AVAILABLE);
+    }
+
+    @Override
+    public void onCurrentSpotPrice(@Nullable BigDecimal price, Currency currency) {
+        updateStatus(ThingStatus.ONLINE);
+        updatePriceState(CHANNEL_SPOT_PRICE, price, currency);
+    }
+
+    @Override
+    public void onSpotPrices(Map<Instant, BigDecimal> spotPrices, Currency currency) {
+        updateStatus(ThingStatus.ONLINE);
+        updatePriceTimeSeries(CHANNEL_SPOT_PRICE, spotPrices, currency, false);
+    }
+
+    @Override
+    public void onPropertiesUpdated(Map<String, String> properties) {
+        updateProperties(properties);
+    }
+
+    @Override
+    public void onCommunicationError(@Nullable String description) {
+        updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, description);
+    }
+
     private void refreshElectricityPrices() {
         RetryStrategy retryPolicy;
         try {
+
             boolean spotPricesDownloaded = false;
             if (isLinked(CHANNEL_SPOT_PRICE)) {
                 spotPricesDownloaded = downloadSpotPrices();
@@ -261,7 +317,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
                 if (numberOfFutureSpotPrices >= 13 || (numberOfFutureSpotPrices == 12
                         && now.isAfter(DAILY_REFRESH_TIME_CET.minusHours(1)) && now.isBefore(DAILY_REFRESH_TIME_CET))) {
                     if (spotPricesDownloaded) {
-                        triggerChannel(CHANNEL_EVENT, EVENT_DAY_AHEAD_AVAILABLE);
+                        // triggerChannel(CHANNEL_EVENT, EVENT_DAY_AHEAD_AVAILABLE);
                     }
                     retryPolicy = RetryPolicyFactory.atFixedTime(DAILY_REFRESH_TIME_CET, NORD_POOL_TIMEZONE);
                 } else {
@@ -471,7 +527,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
     private void updatePrices() {
         cacheManager.cleanup();
 
-        updateCurrentSpotPrice();
+        // updateCurrentSpotPrice();
         Arrays.stream(DatahubTariff.values())
                 .forEach(tariff -> updateCurrentTariff(tariff.getChannelId(), cacheManager.getTariff(tariff)));
 
@@ -527,6 +583,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
         Map<String, String> properties = editProperties();
         try {
             Currency currency = config.getCurrency();
+            // FIXME: Use ElectricityPriceProvider
             ElspotpriceRecord[] spotPriceRecords = apiController.getSpotPrices(config.priceArea, currency,
                     DateQueryParameter.of(startDate), DateQueryParameter.of(endDate.plusDays(1)), properties);
             boolean isDKK = EnergiDataServiceBindingConstants.CURRENCY_DKK.equals(currency);
@@ -585,7 +642,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler {
     }
 
     private void updateElectricityTimeSeriesFromCache() {
-        updatePriceTimeSeries(CHANNEL_SPOT_PRICE, cacheManager.getSpotPrices(), config.getCurrency(), false);
+        // updatePriceTimeSeries(CHANNEL_SPOT_PRICE, cacheManager.getSpotPrices(), config.getCurrency(), false);
 
         for (DatahubTariff datahubTariff : DatahubTariff.values()) {
             String channelId = datahubTariff.getChannelId();
