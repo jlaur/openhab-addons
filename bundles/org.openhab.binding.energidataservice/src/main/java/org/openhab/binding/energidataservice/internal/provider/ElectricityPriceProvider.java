@@ -112,10 +112,6 @@ public class ElectricityPriceProvider {
         }
     }
 
-    private class Subscription {
-        protected CacheManager cacheManager = new CacheManager();
-    }
-
     private class SpotPriceSubscription extends Subscription {
         private String priceArea;
         private Currency currency;

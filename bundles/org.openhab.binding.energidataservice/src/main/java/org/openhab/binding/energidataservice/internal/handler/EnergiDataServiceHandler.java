@@ -106,6 +106,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
     private EnergiDataServiceConfiguration config;
     private RetryStrategy retryPolicy = RetryPolicyFactory.initial();
     private boolean realtimeEmissionsFetchedFirstTime = false;
+    private boolean isSubscribedToSpotPrices = false;
     private @Nullable ScheduledFuture<?> refreshPriceFuture;
     private @Nullable ScheduledFuture<?> refreshEmissionPrognosisFuture;
     private @Nullable ScheduledFuture<?> refreshEmissionRealtimeFuture;
@@ -169,6 +170,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
         if (isLinked(CHANNEL_SPOT_PRICE)) {
             electricityPriceProvider.subscribeToSpotPrices(this, config.priceArea, config.getCurrency());
+            isSubscribedToSpotPrices = true;
         }
 
         if (isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
@@ -181,7 +183,11 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
     @Override
     public void dispose() {
-        electricityPriceProvider.unsubscribeFromSpotprices(this);
+        if (isSubscribedToSpotPrices) {
+            electricityPriceProvider.unsubscribeFromSpotprices(this);
+            isSubscribedToSpotPrices = false;
+        }
+
         ScheduledFuture<?> refreshPriceFuture = this.refreshPriceFuture;
         if (refreshPriceFuture != null) {
             refreshPriceFuture.cancel(true);
@@ -220,12 +226,10 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
         }
 
         if (CHANNEL_SPOT_PRICE.equals(channelUID.getId())) {
-            try {
+            if (!isSubscribedToSpotPrices) {
                 electricityPriceProvider.subscribeToSpotPrices(this, config.priceArea, config.getCurrency());
-            } catch (IllegalStateException e) {
-                // FIXME: Avoid this situation
-                logger.debug("Ooops", e);
-
+                isSubscribedToSpotPrices = true;
+            } else {
                 electricityPriceProvider.triggerSpotPriceUpdate();
             }
         } else if (!"DK1".equals(config.priceArea) && !"DK2".equals(config.priceArea)
@@ -243,6 +247,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
         if (CHANNEL_SPOT_PRICE.equals(channelUID.getId()) && !isLinked(CHANNEL_SPOT_PRICE)) {
             logger.debug("No more items linked to channel '{}', stop spot price subscription", channelUID.getId());
             electricityPriceProvider.unsubscribeFromSpotprices(this);
+            isSubscribedToSpotPrices = false;
         } else if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelUID.getId())
                 && !isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
             logger.debug("No more items linked to channel '{}', stopping emission prognosis refresh job",
