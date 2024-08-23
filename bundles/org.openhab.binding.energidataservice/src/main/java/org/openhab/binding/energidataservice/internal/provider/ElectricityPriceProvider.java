@@ -28,8 +28,8 @@ import java.util.Currency;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -72,7 +72,7 @@ public class ElectricityPriceProvider {
     private final ScheduledExecutorService scheduler = ThreadPoolManager.getScheduledPool("thingHandler");
     private final TimeZoneProvider timeZoneProvider;
     private final ApiController apiController;
-    private final Map<ElectricityPriceListener, Subscriber> subscribers = new HashMap<>();
+    private final Map<ElectricityPriceListener, Subscriber> subscribers = new ConcurrentHashMap<>();
     private final Set<Subscription> subscriptions = new HashSet<>();
 
     private @Nullable ScheduledFuture<?> refreshFuture;
@@ -109,60 +109,6 @@ public class ElectricityPriceProvider {
 
         public boolean addSubscription(Subscription subscription) {
             return subscriptions.add(subscription);
-        }
-    }
-
-    private class SpotPriceSubscription extends Subscription {
-        private String priceArea;
-        private Currency currency;
-
-        public SpotPriceSubscription(String priceArea, Currency currency) {
-            this.priceArea = priceArea;
-            this.currency = currency;
-        }
-
-        @Override
-        public boolean equals(@Nullable Object o) {
-            if (o == this) {
-                return true;
-            }
-            if (!(o instanceof SpotPriceSubscription other)) {
-                return false;
-            }
-
-            return this.priceArea.equals(other.priceArea) && this.currency.equals(other.currency);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(priceArea, currency);
-        }
-    }
-
-    private class DatahubPriceSubscription extends Subscription {
-        private GlobalLocationNumber globalLocationNumber;
-        private DatahubTariffFilter filter;
-
-        public DatahubPriceSubscription(GlobalLocationNumber globalLocationNumber, DatahubTariffFilter filter) {
-            this.globalLocationNumber = globalLocationNumber;
-            this.filter = filter;
-        }
-
-        @Override
-        public boolean equals(@Nullable Object o) {
-            if (o == this) {
-                return true;
-            }
-            if (!(o instanceof DatahubPriceSubscription other)) {
-                return false;
-            }
-
-            return this.globalLocationNumber.equals(other.globalLocationNumber) && this.filter.equals(other.filter);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(globalLocationNumber, filter);
         }
     }
 
@@ -342,9 +288,9 @@ public class ElectricityPriceProvider {
         }
         Map<String, String> properties = new HashMap<>();
         try {
-            ElspotpriceRecord[] spotPriceRecords = apiController.getSpotPrices(subscription.priceArea,
-                    subscription.currency, start, DateQueryParameter.EMPTY, properties);
-            subscription.cacheManager.putSpotPrices(spotPriceRecords, subscription.currency);
+            ElspotpriceRecord[] spotPriceRecords = apiController.getSpotPrices(subscription.getPriceArea(),
+                    subscription.getCurrency(), start, DateQueryParameter.EMPTY, properties);
+            subscription.cacheManager.putSpotPrices(spotPriceRecords, subscription.getCurrency());
         } finally {
             getListenersForSubscription(subscription).forEach(listener -> listener.onPropertiesUpdated(properties));
         }
@@ -352,8 +298,8 @@ public class ElectricityPriceProvider {
     }
 
     private void publishSpotPricesFromCache(SpotPriceSubscription subscription) {
-        getListenersForSubscription(subscription).forEach(
-                listener -> listener.onSpotPrices(subscription.cacheManager.getSpotPrices(), subscription.currency));
+        getListenersForSubscription(subscription).forEach(listener -> listener
+                .onSpotPrices(subscription.cacheManager.getSpotPrices(), subscription.getCurrency()));
     }
 
     private void updateAllPrices() {
@@ -378,7 +324,7 @@ public class ElectricityPriceProvider {
     private void publishCurrentSpotPriceFromCache(SpotPriceSubscription subscription) {
         BigDecimal spotPrice = subscription.cacheManager.getSpotPrice();
         getListenersForSubscription(subscription)
-                .forEach(listener -> listener.onCurrentSpotPrice(spotPrice, subscription.currency));
+                .forEach(listener -> listener.onCurrentSpotPrice(spotPrice, subscription.getCurrency()));
     }
 
     private void cancelPriceUpdateJobWhenNoSubscribers() {
