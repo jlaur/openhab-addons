@@ -50,11 +50,20 @@ public class SpotPriceSubscription extends Subscription {
         return Objects.hash(priceArea, currency);
     }
 
+    @Override
+    public String toString() {
+        return "Subscription: PriceArea=" + priceArea + ", Currency=" + currency;
+    }
+
     public String getPriceArea() {
         return priceArea;
     }
 
     public Currency getCurrency() {
         return currency;
+    }
+
+    public static SpotPriceSubscription of(String priceArea, Currency currency) {
+        return new SpotPriceSubscription(priceArea, currency);
     }
 }

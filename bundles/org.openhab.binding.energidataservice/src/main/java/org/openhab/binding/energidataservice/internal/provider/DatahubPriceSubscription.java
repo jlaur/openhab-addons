@@ -50,4 +50,14 @@ public class DatahubPriceSubscription extends Subscription {
     public int hashCode() {
         return Objects.hash(globalLocationNumber, filter);
     }
+
+    @Override
+    public String toString() {
+        // FIXME: Provide toString for DatahubTariffFilter
+        return "Subscription: GLN=" + globalLocationNumber + ", Filter=" + filter;
+    }
+
+    public static DatahubPriceSubscription of(GlobalLocationNumber globalLocationNumber, DatahubTariffFilter filter) {
+        return new DatahubPriceSubscription(globalLocationNumber, filter);
+    }
 }

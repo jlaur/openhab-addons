@@ -24,16 +24,13 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.Currency;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Stream;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -41,10 +38,8 @@ import org.eclipse.jetty.http.HttpStatus;
 import org.openhab.binding.energidataservice.internal.ApiController;
 import org.openhab.binding.energidataservice.internal.CacheManager;
 import org.openhab.binding.energidataservice.internal.ElectricityPriceListener;
-import org.openhab.binding.energidataservice.internal.api.DatahubTariffFilter;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameter;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameterType;
-import org.openhab.binding.energidataservice.internal.api.GlobalLocationNumber;
 import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
@@ -72,45 +67,12 @@ public class ElectricityPriceProvider {
     private final ScheduledExecutorService scheduler = ThreadPoolManager.getScheduledPool("thingHandler");
     private final TimeZoneProvider timeZoneProvider;
     private final ApiController apiController;
-    private final Map<ElectricityPriceListener, Subscriber> subscribers = new ConcurrentHashMap<>();
-    private final Set<Subscription> subscriptions = new HashSet<>();
+    private final Map<ElectricityPriceListener, Set<Subscription>> listenerToSubscriptions = new ConcurrentHashMap<>();
+    private final Map<Subscription, Set<ElectricityPriceListener>> subscriptionToListeners = new ConcurrentHashMap<>();
 
     private @Nullable ScheduledFuture<?> refreshFuture;
     private @Nullable ScheduledFuture<?> priceUpdateFuture;
     private RetryStrategy retryPolicy = RetryPolicyFactory.initial();
-
-    private class Subscriber {
-        private ElectricityPriceListener listener;
-        private Set<Subscription> subscriptions = new HashSet<>();
-
-        public Subscriber(ElectricityPriceListener listener) {
-            this.listener = listener;
-        }
-
-        public Set<Subscription> getSubscriptions() {
-            return subscriptions;
-        }
-
-        public boolean hasSubscription(Subscription subscription) {
-            return subscriptions.contains(subscription);
-        }
-
-        public boolean hasSubscriptionOfSameType(Subscription subscription) {
-            return subscriptions.stream().anyMatch(s -> s.getClass().equals(subscription.getClass()));
-        }
-
-        public boolean hasAnySubscriptions() {
-            return !subscribers.isEmpty();
-        }
-
-        public boolean removeSubscription(Subscription subscription) {
-            return subscriptions.remove(subscription);
-        }
-
-        public boolean addSubscription(Subscription subscription) {
-            return subscriptions.add(subscription);
-        }
-    }
 
     @Activate
     public ElectricityPriceProvider(final @Reference HttpClientFactory httpClientFactory,
@@ -119,95 +81,79 @@ public class ElectricityPriceProvider {
         this.apiController = new ApiController(httpClientFactory.getCommonHttpClient(), timeZoneProvider);
     }
 
-    public void subscribeToSpotPrices(ElectricityPriceListener listener, String priceArea, Currency currency) {
-        Subscriber subscriber = subscribers.getOrDefault(listener, new Subscriber(listener));
-        subscribers.put(listener, subscriber);
+    public void subscribe(ElectricityPriceListener listener, Subscription subscription) {
+        Set<Subscription> subscriptionsForListener = listenerToSubscriptions.computeIfAbsent(listener,
+                k -> ConcurrentHashMap.newKeySet());
 
-        SpotPriceSubscription spotPriceSubscriptionNew = new SpotPriceSubscription(priceArea, currency);
-        if (subscriber.hasSubscription(spotPriceSubscriptionNew)) {
-            throw new IllegalStateException("Duplicate listener registration for " + listener.getClass().getName());
+        if (subscriptionsForListener.contains(subscription)) {
+            throw new IllegalStateException(
+                    "Duplicate listener registration for " + listener.getClass().getName() + ": " + subscription);
         }
 
-        if (subscriptions.add(spotPriceSubscriptionNew)) {
+        subscriptionsForListener.add(subscription);
+
+        boolean isFirstSubscription = subscriptionToListeners.isEmpty();
+        subscriptionToListeners.computeIfAbsent(subscription, k -> ConcurrentHashMap.newKeySet()).add(listener);
+
+        if (isFirstSubscription) {
             logger.trace("First subscriber, start job");
-            // First subscription: New cache + schedule job
-            subscriber.addSubscription(spotPriceSubscriptionNew);
             refreshFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS);
-        } else {
-            logger.trace("New subscriber, existing subscription -> publish from cache");
-            // Existing subscriptions: Publish from existing cache
-            // triggerSpotPriceUpdate();
-            for (Subscription subscription : subscriptions) {
-                if (subscription.equals(spotPriceSubscriptionNew)
-                        && subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-                    subscriber.addSubscription(spotPriceSubscription);
-                    publishCurrentSpotPriceFromCache(spotPriceSubscription);
-                    publishSpotPricesFromCache(spotPriceSubscription);
-                    break;
-                }
-            }
+        } else if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
+            // FIXME: Support datahub subscription as well
+            publishCurrentSpotPriceFromCache(spotPriceSubscription);
+            publishSpotPricesFromCache(spotPriceSubscription);
         }
     }
 
-    public void subscribeToDatahubPrices(ElectricityPriceListener listener, GlobalLocationNumber globalLocationNumber,
-            DatahubTariffFilter filter) {
-        Subscriber subscriber = subscribers.getOrDefault(listener, new Subscriber(listener));
-        subscribers.put(listener, subscriber);
+    public void unsubscribe(ElectricityPriceListener listener, Subscription subscription) {
+        Set<Subscription> listenerSubscriptions = listenerToSubscriptions.get(listener);
 
-        DatahubPriceSubscription datahubSubscriptionNew = new DatahubPriceSubscription(globalLocationNumber, filter);
-        if (subscriber.hasSubscription(datahubSubscriptionNew)) {
-            throw new IllegalStateException("Duplicate listener registration for " + listener.getClass().getName());
-        }
-    }
-
-    // FIXME: This will not allow multiple spot price subscriptions for same listener
-    public void unsubscribeFromSpotprices(ElectricityPriceListener listener) {
-        Subscriber subscriber = subscribers.get(listener);
-        if (subscriber == null) {
-            throw new IllegalStateException("No active listener registration for " + listener.getClass().getName());
+        if (listenerSubscriptions == null || !listenerSubscriptions.contains(subscription)) {
+            throw new IllegalArgumentException(
+                    "Listener is not subscribed to the specified subscription: " + subscription);
         }
 
-        Set<Subscription> subscriptions = subscriber.getSubscriptions();
-        SpotPriceSubscription spotPriceSubscriptionToRemove = null;
-        for (Subscription subscription : subscriptions) {
-            // FIXME: This will not allow multiple spot price subscriptions for same listener
-            // only first subscription is removed
-            if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-                spotPriceSubscriptionToRemove = spotPriceSubscription;
-                break;
+        listenerSubscriptions.remove(subscription);
+
+        // If the listener has no more subscriptions, remove the listener from the map
+        if (listenerSubscriptions.isEmpty()) {
+            listenerToSubscriptions.remove(listener);
+        }
+
+        Set<ElectricityPriceListener> listenersForSubscription = subscriptionToListeners.get(subscription);
+
+        if (listenersForSubscription != null) {
+            // Remove the listener from the subscription's set
+            listenersForSubscription.remove(listener);
+
+            // If the subscription has no more listeners, remove the subscription from the map
+            if (listenersForSubscription.isEmpty()) {
+                subscriptionToListeners.remove(subscription);
             }
         }
-        if (spotPriceSubscriptionToRemove == null) {
-            throw new IllegalStateException("No active spot price subscription for " + listener.getClass().getName());
-        }
 
-        logger.trace("unsubscribeFromSpotprices -> checking {} subscribers", subscribers.size());
-        boolean isLastSubscription = true;
-        for (Subscriber otherSubscriber : subscribers.values()) {
-            if (!otherSubscriber.equals(subscriber) && otherSubscriber.hasSubscription(spotPriceSubscriptionToRemove)) {
-                isLastSubscription = false;
-                break;
-            }
-        }
-        if (isLastSubscription) {
-            subscriptions.remove(spotPriceSubscriptionToRemove);
-
-            logger.trace("Last subscription removed -> stopping refresh future");
+        if (subscriptionToListeners.isEmpty()) {
+            logger.trace("Last subscriber, stop job");
             ScheduledFuture<?> refreshFuture = this.refreshFuture;
             if (refreshFuture != null) {
                 refreshFuture.cancel(true);
                 this.refreshFuture = null;
             }
         }
-        subscriber.removeSubscription(spotPriceSubscriptionToRemove);
-        if (!subscriber.hasAnySubscriptions()) {
-            subscribers.remove(listener);
+    }
+
+    public void unsubscribe(ElectricityPriceListener listener) {
+        Set<Subscription> listenerSubscriptions = listenerToSubscriptions.get(listener);
+        if (listenerSubscriptions == null) {
+            return;
         }
-        cancelPriceUpdateJobWhenNoSubscribers();
+        for (Subscription subscription : listenerSubscriptions) {
+            unsubscribe(listener, subscription);
+        }
     }
 
     public void triggerSpotPriceUpdate() {
-        for (Subscription subscription : subscriptions) {
+        for (Subscription subscription : subscriptionToListeners.keySet()) {
             if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
                 publishCurrentSpotPriceFromCache(spotPriceSubscription);
                 publishSpotPricesFromCache(spotPriceSubscription);
@@ -217,7 +163,7 @@ public class ElectricityPriceProvider {
 
     private void refreshElectricityPrices() {
         logger.trace("refreshElectricityPrices");
-        for (Subscription subscription : subscriptions) {
+        for (Subscription subscription : subscriptionToListeners.keySet()) {
             if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
                 refreshSpotPrices(spotPriceSubscription);
             }
@@ -238,11 +184,8 @@ public class ElectricityPriceProvider {
             if (numberOfFutureSpotPrices >= 13 || (numberOfFutureSpotPrices == 12
                     && now.isAfter(DAILY_REFRESH_TIME_CET.minusHours(1)) && now.isBefore(DAILY_REFRESH_TIME_CET))) {
                 if (spotPricesDownloaded) {
-                    for (Subscriber subscriber : subscribers.values()) {
-                        if (subscriber.hasSubscription(subscription)) {
-                            subscriber.listener.onDayAheadAvailable();
-                        }
-                    }
+                    subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
+                            .forEach(listener -> listener.onDayAheadAvailable());
                 }
                 retryPolicy = RetryPolicyFactory.atFixedTime(DAILY_REFRESH_TIME_CET, NORD_POOL_TIMEZONE);
             } else {
@@ -251,13 +194,10 @@ public class ElectricityPriceProvider {
             }
         } catch (DataServiceException e) {
             if (e.getHttpStatus() != 0) {
-                for (Subscriber subscriber : subscribers.values()) {
-                    if (subscriber.hasSubscription(subscription)) {
-                        subscriber.listener.onCommunicationError(HttpStatus.getCode(e.getHttpStatus()).getMessage());
-                    }
-                }
+                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()).forEach(
+                        listener -> listener.onCommunicationError(HttpStatus.getCode(e.getHttpStatus()).getMessage()));
             } else {
-                getListenersForSubscription(subscription)
+                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
                         .forEach(listener -> listener.onCommunicationError(e.getMessage()));
             }
             if (e.getCause() != null) {
@@ -292,22 +232,20 @@ public class ElectricityPriceProvider {
                     subscription.getCurrency(), start, DateQueryParameter.EMPTY, properties);
             subscription.cacheManager.putSpotPrices(spotPriceRecords, subscription.getCurrency());
         } finally {
-            getListenersForSubscription(subscription).forEach(listener -> listener.onPropertiesUpdated(properties));
+            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
+                    .forEach(listener -> listener.onPropertiesUpdated(properties));
         }
         return true;
     }
 
     private void publishSpotPricesFromCache(SpotPriceSubscription subscription) {
-        getListenersForSubscription(subscription).forEach(listener -> listener
+        subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()).forEach(listener -> listener
                 .onSpotPrices(subscription.cacheManager.getSpotPrices(), subscription.getCurrency()));
     }
 
     private void updateAllPrices() {
-        for (Subscription subscription : subscriptions) {
-            if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-                updatePrices(spotPriceSubscription);
-            }
-        }
+        subscriptionToListeners.keySet().stream().filter(SpotPriceSubscription.class::isInstance)
+                .map(SpotPriceSubscription.class::cast).forEach(this::updatePrices);
         reschedulePriceUpdateJob();
     }
 
@@ -316,26 +254,10 @@ public class ElectricityPriceProvider {
         publishCurrentSpotPriceFromCache(subscription);
     }
 
-    private Stream<ElectricityPriceListener> getListenersForSubscription(Subscription subscription) {
-        return subscribers.values().stream().filter(subscriber -> subscriber.hasSubscription(subscription))
-                .map(subscriber -> subscriber.listener);
-    }
-
     private void publishCurrentSpotPriceFromCache(SpotPriceSubscription subscription) {
         BigDecimal spotPrice = subscription.cacheManager.getSpotPrice();
-        getListenersForSubscription(subscription)
+        subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
                 .forEach(listener -> listener.onCurrentSpotPrice(spotPrice, subscription.getCurrency()));
-    }
-
-    private void cancelPriceUpdateJobWhenNoSubscribers() {
-        if (subscribers.isEmpty()) {
-            logger.trace("cancelPriceUpdateJobWhenNoSubscribers -> no subscribers");
-            ScheduledFuture<?> priceUpdateJob = this.priceUpdateFuture;
-            if (priceUpdateJob != null) {
-                priceUpdateJob.cancel(true);
-                this.priceUpdateFuture = null;
-            }
-        }
     }
 
     private void reschedulePriceUpdateJob() {
@@ -372,9 +294,7 @@ public class ElectricityPriceProvider {
         String nextCall = LocalDateTime.ofInstant(timeOfNextRefresh, timeZoneProvider.getTimeZone())
                 .truncatedTo(ChronoUnit.SECONDS).format(formatter);
         Map<String, String> propertyMap = Map.of(PROPERTY_NEXT_CALL, nextCall);
-        for (Subscriber subscriber : subscribers.values()) {
-            subscriber.listener.onPropertiesUpdated(propertyMap);
-        }
+        listenerToSubscriptions.keySet().forEach(listener -> listener.onPropertiesUpdated(propertyMap));
 
         if (refreshJob != null) {
             refreshJob.cancel(true);

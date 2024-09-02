@@ -63,6 +63,7 @@ import org.openhab.binding.energidataservice.internal.config.DatahubPriceConfigu
 import org.openhab.binding.energidataservice.internal.config.EnergiDataServiceConfiguration;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.provider.ElectricityPriceProvider;
+import org.openhab.binding.energidataservice.internal.provider.SpotPriceSubscription;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
 import org.openhab.binding.energidataservice.internal.retry.RetryStrategy;
 import org.openhab.core.i18n.TimeZoneProvider;
@@ -169,7 +170,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
         refreshPriceFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS); // FIXME: Remove
 
         if (isLinked(CHANNEL_SPOT_PRICE)) {
-            electricityPriceProvider.subscribeToSpotPrices(this, config.priceArea, config.getCurrency());
+            electricityPriceProvider.subscribe(this, SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
             isSubscribedToSpotPrices = true;
         }
 
@@ -183,10 +184,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
     @Override
     public void dispose() {
-        if (isSubscribedToSpotPrices) {
-            electricityPriceProvider.unsubscribeFromSpotprices(this);
-            isSubscribedToSpotPrices = false;
-        }
+        electricityPriceProvider.unsubscribe(this);
 
         ScheduledFuture<?> refreshPriceFuture = this.refreshPriceFuture;
         if (refreshPriceFuture != null) {
@@ -227,7 +225,8 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
         if (CHANNEL_SPOT_PRICE.equals(channelUID.getId())) {
             if (!isSubscribedToSpotPrices) {
-                electricityPriceProvider.subscribeToSpotPrices(this, config.priceArea, config.getCurrency());
+                electricityPriceProvider.subscribe(this,
+                        SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
                 isSubscribedToSpotPrices = true;
             } else {
                 electricityPriceProvider.triggerSpotPriceUpdate();
@@ -246,7 +245,8 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
         if (CHANNEL_SPOT_PRICE.equals(channelUID.getId()) && !isLinked(CHANNEL_SPOT_PRICE)) {
             logger.debug("No more items linked to channel '{}', stop spot price subscription", channelUID.getId());
-            electricityPriceProvider.unsubscribeFromSpotprices(this);
+            electricityPriceProvider.unsubscribe(this,
+                    SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
             isSubscribedToSpotPrices = false;
         } else if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelUID.getId())
                 && !isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
