@@ -287,6 +287,18 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
     }
 
     @Override
+    public void onCurrentTariff(DatahubTariff datahubTariff, @Nullable BigDecimal tariff) {
+        updateStatus(ThingStatus.ONLINE);
+        updatePriceState(datahubTariff.getChannelId(), tariff, CURRENCY_DKK);
+    }
+
+    @Override
+    public void onTariffs(DatahubTariff datahubTariff, Map<Instant, BigDecimal> tariffs) {
+        updateStatus(ThingStatus.ONLINE);
+        updatePriceTimeSeries(datahubTariff.getChannelId(), tariffs, CURRENCY_DKK, true);
+    }
+
+    @Override
     public void onPropertiesUpdated(Map<String, String> properties) {
         updateProperties(properties);
     }

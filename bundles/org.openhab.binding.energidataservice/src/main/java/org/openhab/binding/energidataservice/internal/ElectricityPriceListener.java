@@ -36,5 +36,9 @@ public interface ElectricityPriceListener {
 
     void onSpotPrices(Map<Instant, BigDecimal> spotPrices, Currency currency);
 
+    void onCurrentTariff(DatahubTariff datahubTariff, @Nullable BigDecimal tariff);
+
+    void onTariffs(DatahubTariff datahubTariff, Map<Instant, BigDecimal> tariffs);
+
     void onCommunicationError(@Nullable String description);
 }

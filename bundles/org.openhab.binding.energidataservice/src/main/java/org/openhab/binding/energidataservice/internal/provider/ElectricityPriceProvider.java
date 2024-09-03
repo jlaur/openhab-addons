@@ -26,6 +26,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
@@ -37,6 +38,7 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jetty.http.HttpStatus;
 import org.openhab.binding.energidataservice.internal.ApiController;
 import org.openhab.binding.energidataservice.internal.CacheManager;
+import org.openhab.binding.energidataservice.internal.DatahubTariff;
 import org.openhab.binding.energidataservice.internal.ElectricityPriceListener;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameter;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameterType;
@@ -82,8 +84,8 @@ public class ElectricityPriceProvider {
     }
 
     public void subscribe(ElectricityPriceListener listener, Subscription subscription) {
-        Set<Subscription> subscriptionsForListener = listenerToSubscriptions.computeIfAbsent(listener,
-                k -> ConcurrentHashMap.newKeySet());
+        Set<Subscription> subscriptionsForListener = Objects
+                .requireNonNull(listenerToSubscriptions.computeIfAbsent(listener, k -> ConcurrentHashMap.newKeySet()));
 
         if (subscriptionsForListener.contains(subscription)) {
             throw new IllegalStateException(
@@ -93,15 +95,17 @@ public class ElectricityPriceProvider {
         subscriptionsForListener.add(subscription);
 
         boolean isFirstSubscription = subscriptionToListeners.isEmpty();
-        subscriptionToListeners.computeIfAbsent(subscription, k -> ConcurrentHashMap.newKeySet()).add(listener);
+        Objects.requireNonNull(
+                subscriptionToListeners.computeIfAbsent(subscription, k -> ConcurrentHashMap.newKeySet()))
+                .add(listener);
 
         if (isFirstSubscription) {
             logger.trace("First subscriber, start job");
             refreshFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS);
         } else if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
             // FIXME: Support datahub subscription as well
-            publishCurrentSpotPriceFromCache(spotPriceSubscription);
-            publishSpotPricesFromCache(spotPriceSubscription);
+            publishCurrentPriceFromCache(spotPriceSubscription);
+            publishPricesFromCache(spotPriceSubscription);
         }
     }
 
@@ -155,8 +159,8 @@ public class ElectricityPriceProvider {
     public void triggerSpotPriceUpdate() {
         for (Subscription subscription : subscriptionToListeners.keySet()) {
             if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-                publishCurrentSpotPriceFromCache(spotPriceSubscription);
-                publishSpotPricesFromCache(spotPriceSubscription);
+                publishCurrentPriceFromCache(spotPriceSubscription);
+                publishPricesFromCache(spotPriceSubscription);
             }
         }
     }
@@ -176,7 +180,7 @@ public class ElectricityPriceProvider {
             boolean spotPricesDownloaded = downloadSpotPrices(subscription);
 
             updatePrices(subscription);
-            publishSpotPricesFromCache(subscription);
+            publishPricesFromCache(subscription);
 
             long numberOfFutureSpotPrices = subscription.cacheManager.getNumberOfFutureSpotPrices();
             LocalTime now = LocalTime.now(NORD_POOL_TIMEZONE);
@@ -238,26 +242,38 @@ public class ElectricityPriceProvider {
         return true;
     }
 
-    private void publishSpotPricesFromCache(SpotPriceSubscription subscription) {
-        subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()).forEach(listener -> listener
-                .onSpotPrices(subscription.cacheManager.getSpotPrices(), subscription.getCurrency()));
+    private void publishPricesFromCache(Subscription subscription) {
+        if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
+            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
+                    .forEach(listener -> listener.onSpotPrices(subscription.cacheManager.getSpotPrices(),
+                            spotPriceSubscription.getCurrency()));
+        } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
+            DatahubTariff datahubTariff = datahubPriceSubscription.getDatahubTariff();
+            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()).forEach(
+                    listener -> listener.onTariffs(datahubTariff, subscription.cacheManager.getTariffs(datahubTariff)));
+        }
     }
 
     private void updateAllPrices() {
-        subscriptionToListeners.keySet().stream().filter(SpotPriceSubscription.class::isInstance)
-                .map(SpotPriceSubscription.class::cast).forEach(this::updatePrices);
+        subscriptionToListeners.keySet().stream().forEach(this::updatePrices);
         reschedulePriceUpdateJob();
     }
 
-    private void updatePrices(SpotPriceSubscription subscription) {
+    private void updatePrices(Subscription subscription) {
         subscription.cacheManager.cleanup();
-        publishCurrentSpotPriceFromCache(subscription);
+        publishCurrentPriceFromCache(subscription);
     }
 
-    private void publishCurrentSpotPriceFromCache(SpotPriceSubscription subscription) {
-        BigDecimal spotPrice = subscription.cacheManager.getSpotPrice();
-        subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                .forEach(listener -> listener.onCurrentSpotPrice(spotPrice, subscription.getCurrency()));
+    private void publishCurrentPriceFromCache(Subscription subscription) {
+        if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
+            BigDecimal spotPrice = subscription.cacheManager.getSpotPrice();
+            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
+                    .forEach(listener -> listener.onCurrentSpotPrice(spotPrice, spotPriceSubscription.getCurrency()));
+        } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
+            BigDecimal tariff = subscription.cacheManager.getTariff(datahubPriceSubscription.getDatahubTariff());
+            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
+                    .forEach(listener -> listener.onCurrentTariff(datahubPriceSubscription.getDatahubTariff(), tariff));
+        }
     }
 
     private void reschedulePriceUpdateJob() {

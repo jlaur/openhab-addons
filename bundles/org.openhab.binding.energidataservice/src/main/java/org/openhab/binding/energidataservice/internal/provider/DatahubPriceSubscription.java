@@ -16,6 +16,7 @@ import java.util.Objects;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.energidataservice.internal.DatahubTariff;
 import org.openhab.binding.energidataservice.internal.api.DatahubTariffFilter;
 import org.openhab.binding.energidataservice.internal.api.GlobalLocationNumber;
 
@@ -26,10 +27,13 @@ import org.openhab.binding.energidataservice.internal.api.GlobalLocationNumber;
  */
 @NonNullByDefault
 public class DatahubPriceSubscription extends Subscription {
+    private DatahubTariff datahubTariff;
     private GlobalLocationNumber globalLocationNumber;
     private DatahubTariffFilter filter;
 
-    public DatahubPriceSubscription(GlobalLocationNumber globalLocationNumber, DatahubTariffFilter filter) {
+    public DatahubPriceSubscription(DatahubTariff datahubTariff, GlobalLocationNumber globalLocationNumber,
+            DatahubTariffFilter filter) {
+        this.datahubTariff = datahubTariff;
         this.globalLocationNumber = globalLocationNumber;
         this.filter = filter;
     }
@@ -57,7 +61,20 @@ public class DatahubPriceSubscription extends Subscription {
         return "Subscription: GLN=" + globalLocationNumber + ", Filter=" + filter;
     }
 
-    public static DatahubPriceSubscription of(GlobalLocationNumber globalLocationNumber, DatahubTariffFilter filter) {
-        return new DatahubPriceSubscription(globalLocationNumber, filter);
+    public DatahubTariff getDatahubTariff() {
+        return datahubTariff;
+    }
+
+    public GlobalLocationNumber getGlobalLocationNumber() {
+        return globalLocationNumber;
+    }
+
+    public DatahubTariffFilter getFilter() {
+        return filter;
+    }
+
+    public static DatahubPriceSubscription of(DatahubTariff datahubTariff, GlobalLocationNumber globalLocationNumber,
+            DatahubTariffFilter filter) {
+        return new DatahubPriceSubscription(datahubTariff, globalLocationNumber, filter);
     }
 }
