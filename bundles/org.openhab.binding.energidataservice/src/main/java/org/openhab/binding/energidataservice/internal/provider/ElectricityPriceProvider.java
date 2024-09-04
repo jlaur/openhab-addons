@@ -24,8 +24,11 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -40,8 +43,11 @@ import org.openhab.binding.energidataservice.internal.ApiController;
 import org.openhab.binding.energidataservice.internal.CacheManager;
 import org.openhab.binding.energidataservice.internal.DatahubTariff;
 import org.openhab.binding.energidataservice.internal.ElectricityPriceListener;
+import org.openhab.binding.energidataservice.internal.api.ChargeType;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameter;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameterType;
+import org.openhab.binding.energidataservice.internal.api.GlobalLocationNumber;
+import org.openhab.binding.energidataservice.internal.api.dto.DatahubPricelistRecord;
 import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
@@ -165,44 +171,63 @@ public class ElectricityPriceProvider {
         }
     }
 
+    // TODO: Figure out how to refactor this method to support datahub prices as well,
+    // and different variations (subscriptions). Since we have only one shared scheduler,
+    // we might want to keep it that way and loop through subscriptions inside this method.
+    // There is clearly a part responsible for downloading and publishing prices (first part),
+    // and another part responsible for validation, error handling and rescheduling based on
+    // on this.
     private void refreshElectricityPrices() {
-        logger.trace("refreshElectricityPrices");
-        for (Subscription subscription : subscriptionToListeners.keySet()) {
-            if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-                refreshSpotPrices(spotPriceSubscription);
-            }
-        }
-    }
-
-    private void refreshSpotPrices(SpotPriceSubscription subscription) {
         RetryStrategy retryPolicy;
         try {
-            boolean spotPricesDownloaded = downloadSpotPrices(subscription);
+            Set<ElectricityPriceListener> spotPricesUpdatedListeners = new HashSet<>();
+            boolean spotPricesSubscribed = false;
+            long numberOfFutureSpotPrices = 0;
 
-            updatePrices(subscription);
-            publishPricesFromCache(subscription);
-
-            long numberOfFutureSpotPrices = subscription.cacheManager.getNumberOfFutureSpotPrices();
-            LocalTime now = LocalTime.now(NORD_POOL_TIMEZONE);
-
-            if (numberOfFutureSpotPrices >= 13 || (numberOfFutureSpotPrices == 12
-                    && now.isAfter(DAILY_REFRESH_TIME_CET.minusHours(1)) && now.isBefore(DAILY_REFRESH_TIME_CET))) {
-                if (spotPricesDownloaded) {
-                    subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                            .forEach(listener -> listener.onDayAheadAvailable());
+            for (Entry<Subscription, Set<ElectricityPriceListener>> subscriptionListener : subscriptionToListeners
+                    .entrySet()) {
+                Subscription subscription = subscriptionListener.getKey();
+                if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
+                    spotPricesSubscribed = true;
+                    if (downloadSpotPrices(spotPriceSubscription)) {
+                        spotPricesUpdatedListeners.addAll(
+                                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()));
+                    }
+                    long numberOfFutureSpotPricesForSubscription = subscription.cacheManager
+                            .getNumberOfFutureSpotPrices();
+                    if (numberOfFutureSpotPrices == 0
+                            || numberOfFutureSpotPricesForSubscription < numberOfFutureSpotPrices) {
+                        numberOfFutureSpotPrices = numberOfFutureSpotPricesForSubscription;
+                    }
+                } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
+                    downloadTariffs(datahubPriceSubscription);
                 }
-                retryPolicy = RetryPolicyFactory.atFixedTime(DAILY_REFRESH_TIME_CET, NORD_POOL_TIMEZONE);
+                updatePrices(subscription);
+                publishPricesFromCache(subscription);
+            }
+
+            reschedulePriceUpdateJob();
+
+            if (spotPricesSubscribed) {
+                LocalTime now = LocalTime.now(NORD_POOL_TIMEZONE);
+
+                if (numberOfFutureSpotPrices >= 13 || (numberOfFutureSpotPrices == 12
+                        && now.isAfter(DAILY_REFRESH_TIME_CET.minusHours(1)) && now.isBefore(DAILY_REFRESH_TIME_CET))) {
+                    spotPricesUpdatedListeners.forEach(listener -> listener.onDayAheadAvailable());
+                    retryPolicy = RetryPolicyFactory.atFixedTime(DAILY_REFRESH_TIME_CET, NORD_POOL_TIMEZONE);
+                } else {
+                    logger.warn("Spot prices are not available, retry scheduled (see details in Thing properties)");
+                    retryPolicy = RetryPolicyFactory.whenExpectedSpotPriceDataMissing();
+                }
             } else {
-                logger.warn("Spot prices are not available, retry scheduled (see details in Thing properties)");
-                retryPolicy = RetryPolicyFactory.whenExpectedSpotPriceDataMissing();
+                retryPolicy = RetryPolicyFactory.atFixedTime(LocalTime.MIDNIGHT, timeZoneProvider.getTimeZone());
             }
         } catch (DataServiceException e) {
             if (e.getHttpStatus() != 0) {
-                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()).forEach(
+                listenerToSubscriptions.keySet().forEach(
                         listener -> listener.onCommunicationError(HttpStatus.getCode(e.getHttpStatus()).getMessage()));
             } else {
-                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                        .forEach(listener -> listener.onCommunicationError(e.getMessage()));
+                listenerToSubscriptions.keySet().forEach(listener -> listener.onCommunicationError(e.getMessage()));
             }
             if (e.getCause() != null) {
                 logger.debug("Error retrieving prices", e);
@@ -240,6 +265,33 @@ public class ElectricityPriceProvider {
                     .forEach(listener -> listener.onPropertiesUpdated(properties));
         }
         return true;
+    }
+
+    private void downloadTariffs(DatahubPriceSubscription subscription)
+            throws InterruptedException, DataServiceException {
+        GlobalLocationNumber globalLocationNumber = subscription.getGlobalLocationNumber();
+        if (globalLocationNumber.isEmpty()) {
+            return;
+        }
+        DatahubTariff datahubTariff = subscription.getDatahubTariff();
+        if (subscription.cacheManager.areTariffsValidTomorrow(datahubTariff)) {
+            logger.debug("Cached tariffs of type {} still valid, skipping download.", datahubTariff);
+            subscription.cacheManager.updateTariffs(datahubTariff);
+        } else {
+            subscription.cacheManager.putTariffs(datahubTariff, downloadPriceLists(subscription));
+        }
+    }
+
+    private Collection<DatahubPricelistRecord> downloadPriceLists(DatahubPriceSubscription subscription)
+            throws InterruptedException, DataServiceException {
+        Map<String, String> properties = new HashMap<>();
+        try {
+            return apiController.getDatahubPriceLists(subscription.getGlobalLocationNumber(), ChargeType.Tariff,
+                    subscription.getFilter(), properties);
+        } finally {
+            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
+                    .forEach(listener -> listener.onPropertiesUpdated(properties));
+        }
     }
 
     private void publishPricesFromCache(Subscription subscription) {

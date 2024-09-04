@@ -34,6 +34,8 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import javax.measure.Unit;
 
@@ -62,6 +64,7 @@ import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.config.DatahubPriceConfiguration;
 import org.openhab.binding.energidataservice.internal.config.EnergiDataServiceConfiguration;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
+import org.openhab.binding.energidataservice.internal.provider.DatahubPriceSubscription;
 import org.openhab.binding.energidataservice.internal.provider.ElectricityPriceProvider;
 import org.openhab.binding.energidataservice.internal.provider.SpotPriceSubscription;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
@@ -167,11 +170,19 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
         updateStatus(ThingStatus.UNKNOWN);
 
-        refreshPriceFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS); // FIXME: Remove
+        // refreshPriceFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS); // FIXME:
+        // Remove
 
         if (isLinked(CHANNEL_SPOT_PRICE)) {
             electricityPriceProvider.subscribe(this, SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
             isSubscribedToSpotPrices = true;
+        }
+
+        for (DatahubTariff datahubTariff : DatahubTariff.values()) {
+            if (isLinked(datahubTariff.getChannelId())) {
+                electricityPriceProvider.subscribe(this, DatahubPriceSubscription.of(datahubTariff,
+                        getGlobalLocationNumber(datahubTariff), getDatahubTariffFilter(datahubTariff)));
+            }
         }
 
         if (isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
@@ -186,11 +197,14 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
     public void dispose() {
         electricityPriceProvider.unsubscribe(this);
 
-        ScheduledFuture<?> refreshPriceFuture = this.refreshPriceFuture;
-        if (refreshPriceFuture != null) {
-            refreshPriceFuture.cancel(true);
-            this.refreshPriceFuture = null;
-        }
+        /*
+         * ScheduledFuture<?> refreshPriceFuture = this.refreshPriceFuture;
+         * if (refreshPriceFuture != null) {
+         * refreshPriceFuture.cancel(true);
+         * this.refreshPriceFuture = null;
+         * }
+         */
+
         ScheduledFuture<?> refreshEmissionPrognosisFuture = this.refreshEmissionPrognosisFuture;
         if (refreshEmissionPrognosisFuture != null) {
             refreshEmissionPrognosisFuture.cancel(true);
@@ -217,11 +231,16 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
     @Override
     public void channelLinked(ChannelUID channelUID) {
-        if (!CHANNEL_SPOT_PRICE.equals(channelUID.getId())) {
-            // Do not trigger REFRESH command for spot price, we will trigger
+        if (!ELECTRICITY_CHANNELS.contains(channelUID.getId())) {
+            // Do not trigger REFRESH command for electricity price channels, we will trigger
             // a state update ourselves through ElectricityPriceProvider.
             super.channelLinked(channelUID);
         }
+
+        Map<String, DatahubTariff> channelIdToDatahubTariff = Arrays.stream(DatahubTariff.values())
+                .collect(Collectors.toMap(DatahubTariff::getChannelId, Function.identity()));
+
+        DatahubTariff tariff = channelIdToDatahubTariff.get(channelUID.getId());
 
         if (CHANNEL_SPOT_PRICE.equals(channelUID.getId())) {
             if (!isSubscribedToSpotPrices) {
@@ -231,6 +250,10 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
             } else {
                 electricityPriceProvider.triggerSpotPriceUpdate();
             }
+        } else if (tariff != null) {
+            // FIXME: Avoid resubscriptions when same channel is linked more than once.
+            electricityPriceProvider.subscribe(this, DatahubPriceSubscription.of(tariff,
+                    getGlobalLocationNumber(tariff), getDatahubTariffFilter(tariff)));
         } else if (!"DK1".equals(config.priceArea) && !"DK2".equals(config.priceArea)
                 && (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelUID.getId())
                         || CHANNEL_CO2_EMISSION_REALTIME.contains(channelUID.getId()))) {
@@ -243,6 +266,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
     public void channelUnlinked(ChannelUID channelUID) {
         super.channelUnlinked(channelUID);
 
+        // TODO: Add support for tariff channels
         if (CHANNEL_SPOT_PRICE.equals(channelUID.getId()) && !isLinked(CHANNEL_SPOT_PRICE)) {
             logger.debug("No more items linked to channel '{}', stop spot price subscription", channelUID.getId());
             electricityPriceProvider.unsubscribe(this,
@@ -544,7 +568,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
     private void updatePrices() {
         cacheManager.cleanup();
 
-        // updateCurrentSpotPrice();
+        updateCurrentSpotPrice();
         Arrays.stream(DatahubTariff.values())
                 .forEach(tariff -> updateCurrentTariff(tariff.getChannelId(), cacheManager.getTariff(tariff)));
 
