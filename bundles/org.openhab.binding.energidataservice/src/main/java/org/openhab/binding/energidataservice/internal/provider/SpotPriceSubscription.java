@@ -52,7 +52,7 @@ public class SpotPriceSubscription extends Subscription {
 
     @Override
     public String toString() {
-        return "Subscription: PriceArea=" + priceArea + ", Currency=" + currency;
+        return "[Subscription: PriceArea=" + priceArea + ", Currency=" + currency + "]";
     }
 
     public String getPriceArea() {

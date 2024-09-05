@@ -57,8 +57,7 @@ public class DatahubPriceSubscription extends Subscription {
 
     @Override
     public String toString() {
-        // FIXME: Provide toString for DatahubTariffFilter
-        return "Subscription: GLN=" + globalLocationNumber + ", Filter=" + filter;
+        return "[Subscription: GLN=" + globalLocationNumber + ", Filter=" + filter + "]";
     }
 
     public DatahubTariff getDatahubTariff() {

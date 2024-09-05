@@ -89,4 +89,9 @@ public class DatahubTariffFilter {
     public int hashCode() {
         return Objects.hash(chargeTypeCodes, notes, start, end);
     }
+
+    @Override
+    public String toString() {
+        return chargeTypeCodes.toString() + "," + notes.toString() + "," + start + "," + end;
+    }
 }

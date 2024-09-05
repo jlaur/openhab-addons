@@ -162,6 +162,9 @@ public class ElectricityPriceProvider {
         }
     }
 
+    // FIXME: This will trigger updates for all listeners, perhaps
+    // the handler should instead just get the prices and update channel itself rather
+    // than triggering callback.
     public void triggerSpotPriceUpdate() {
         for (Subscription subscription : subscriptionToListeners.keySet()) {
             if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
@@ -169,6 +172,15 @@ public class ElectricityPriceProvider {
                 publishPricesFromCache(spotPriceSubscription);
             }
         }
+    }
+
+    public void triggerTariffUpdate(DatahubTariff tariff) {
+        subscriptionToListeners.keySet().stream().filter(DatahubPriceSubscription.class::isInstance)
+                .map(DatahubPriceSubscription.class::cast)
+                .filter(subscription -> subscription.getDatahubTariff().equals(tariff)).forEach(subscription -> {
+                    publishCurrentPriceFromCache(subscription);
+                    publishPricesFromCache(subscription);
+                });
     }
 
     // TODO: Figure out how to refactor this method to support datahub prices as well,
