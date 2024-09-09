@@ -62,6 +62,9 @@ public class EnergiDataServiceBindingConstants {
             CHANNEL_SYSTEM_TARIFF, CHANNEL_TRANSMISSION_GRID_TARIFF, CHANNEL_ELECTRICITY_TAX,
             CHANNEL_REDUCED_ELECTRICITY_TAX);
 
+    public static final Set<String> CO2_EMISSION_CHANNELS = Set.of(CHANNEL_CO2_EMISSION_PROGNOSIS,
+            CHANNEL_CO2_EMISSION_REALTIME);
+
     // List of all properties
     public static final String PROPERTY_REMAINING_CALLS = "remainingCalls";
     public static final String PROPERTY_TOTAL_CALLS = "totalCalls";

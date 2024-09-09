@@ -172,21 +172,22 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
             return;
         }
 
-        updateStatus(ThingStatus.UNKNOWN);
-
-        // refreshPriceFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS); // FIXME:
-        // Remove
+        if (ELECTRICITY_CHANNELS.stream().anyMatch(this::isLinked)
+                || CO2_EMISSION_CHANNELS.stream().anyMatch(this::isLinked)) {
+            updateStatus(ThingStatus.UNKNOWN);
+        } else {
+            updateStatus(ThingStatus.ONLINE);
+            return;
+        }
 
         if (isLinked(CHANNEL_SPOT_PRICE)) {
             subscribe(SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
         }
 
-        for (DatahubTariff datahubTariff : DatahubTariff.values()) {
-            if (isLinked(datahubTariff.getChannelId())) {
-                subscribe(DatahubPriceSubscription.of(datahubTariff, getGlobalLocationNumber(datahubTariff),
-                        getDatahubTariffFilter(datahubTariff)));
-            }
-        }
+        Arrays.stream(DatahubTariff.values()).filter(tariff -> isLinked(tariff.getChannelId()))
+                .map(tariff -> DatahubPriceSubscription.of(tariff, getGlobalLocationNumber(tariff),
+                        getDatahubTariffFilter(tariff)))
+                .forEach(this::subscribe);
 
         if (isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
             rescheduleEmissionPrognosisJob();
@@ -200,14 +201,6 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
     public void dispose() {
         electricityPriceProvider.unsubscribe(this);
 
-        /*
-         * ScheduledFuture<?> refreshPriceFuture = this.refreshPriceFuture;
-         * if (refreshPriceFuture != null) {
-         * refreshPriceFuture.cancel(true);
-         * this.refreshPriceFuture = null;
-         * }
-         */
-
         ScheduledFuture<?> refreshEmissionPrognosisFuture = this.refreshEmissionPrognosisFuture;
         if (refreshEmissionPrognosisFuture != null) {
             refreshEmissionPrognosisFuture.cancel(true);
@@ -217,11 +210,6 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
         if (refreshEmissionRealtimeFuture != null) {
             refreshEmissionRealtimeFuture.cancel(true);
             this.refreshEmissionRealtimeFuture = null;
-        }
-        ScheduledFuture<?> priceUpdateFuture = this.priceUpdateFuture;
-        if (priceUpdateFuture != null) {
-            priceUpdateFuture.cancel(true);
-            this.priceUpdateFuture = null;
         }
 
         cacheManager.clear();
@@ -234,7 +222,8 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
     @Override
     public void channelLinked(ChannelUID channelUID) {
-        if (!ELECTRICITY_CHANNELS.contains(channelUID.getId())) {
+        String channelId = channelUID.getId();
+        if (!ELECTRICITY_CHANNELS.contains(channelId)) {
             // Do not trigger REFRESH command for electricity price channels, we will trigger
             // a state update ourselves through ElectricityPriceProvider.
             super.channelLinked(channelUID);
@@ -242,20 +231,15 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
         DatahubTariff tariff = CHANNEL_ID_TO_DATAHUB_TARIFF.get(channelUID.getId());
 
-        if (CHANNEL_SPOT_PRICE.equals(channelUID.getId())) {
-            if (!subscribe(SpotPriceSubscription.of(config.priceArea, config.getCurrency()))) {
-                electricityPriceProvider.triggerSpotPriceUpdate();
-            }
+        if (CHANNEL_SPOT_PRICE.equals(channelId)) {
+            subscribe(SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
         } else if (tariff != null) {
-            if (!subscribe(DatahubPriceSubscription.of(tariff, getGlobalLocationNumber(tariff),
-                    getDatahubTariffFilter(tariff)))) {
-                electricityPriceProvider.triggerTariffUpdate(tariff);
-            }
+            subscribe(DatahubPriceSubscription.of(tariff, getGlobalLocationNumber(tariff),
+                    getDatahubTariffFilter(tariff)));
         } else if (!"DK1".equals(config.priceArea) && !"DK2".equals(config.priceArea)
-                && (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelUID.getId())
-                        || CHANNEL_CO2_EMISSION_REALTIME.contains(channelUID.getId()))) {
-            logger.warn("Item linked to channel '{}', but price area {} is not supported for this channel",
-                    channelUID.getId(), config.priceArea);
+                && CO2_EMISSION_CHANNELS.contains(channelId)) {
+            logger.warn("Item linked to channel '{}', but price area {} is not supported for this channel", channelId,
+                    config.priceArea);
         }
     }
 
@@ -270,7 +254,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
         } else if (CHANNEL_ID_TO_DATAHUB_TARIFF.keySet().contains(channelId) && !isLinked(channelId)) {
             DatahubTariff tariff = CHANNEL_ID_TO_DATAHUB_TARIFF.get(channelId);
             if (tariff != null) {
-                logger.debug("No more items linked to channel '{}', stop tariff {} subscription", channelId, tariff);
+                logger.debug("No more items linked to channel '{}', stop {} subscription", channelId, tariff);
                 unsubscribe(DatahubPriceSubscription.of(tariff, getGlobalLocationNumber(tariff),
                         getDatahubTariffFilter(tariff)));
             }
@@ -330,22 +314,18 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
         updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.OFFLINE.COMMUNICATION_ERROR, description);
     }
 
-    private boolean subscribe(Subscription subscription) {
+    private void subscribe(Subscription subscription) {
         if (subscriptions.add(subscription)) {
             electricityPriceProvider.subscribe(this, subscription);
-            return true;
+        } else {
+            electricityPriceProvider.triggerUpdate(subscription);
         }
-
-        return false;
     }
 
-    private boolean unsubscribe(Subscription subscription) {
+    private void unsubscribe(Subscription subscription) {
         if (subscriptions.remove(subscription)) {
             electricityPriceProvider.unsubscribe(this, subscription);
-            return true;
         }
-
-        return false;
     }
 
     private void refreshElectricityPrices() {

@@ -108,10 +108,8 @@ public class ElectricityPriceProvider {
         if (isFirstSubscription) {
             logger.trace("First subscriber, start job");
             refreshFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS);
-        } else if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-            // FIXME: Support datahub subscription as well
-            publishCurrentPriceFromCache(spotPriceSubscription);
-            publishPricesFromCache(spotPriceSubscription);
+        } else {
+            triggerUpdate(subscription);
         }
     }
 
@@ -125,7 +123,6 @@ public class ElectricityPriceProvider {
 
         listenerSubscriptions.remove(subscription);
 
-        // If the listener has no more subscriptions, remove the listener from the map
         if (listenerSubscriptions.isEmpty()) {
             listenerToSubscriptions.remove(listener);
         }
@@ -133,21 +130,25 @@ public class ElectricityPriceProvider {
         Set<ElectricityPriceListener> listenersForSubscription = subscriptionToListeners.get(subscription);
 
         if (listenersForSubscription != null) {
-            // Remove the listener from the subscription's set
             listenersForSubscription.remove(listener);
 
-            // If the subscription has no more listeners, remove the subscription from the map
             if (listenersForSubscription.isEmpty()) {
                 subscriptionToListeners.remove(subscription);
             }
         }
 
         if (subscriptionToListeners.isEmpty()) {
-            logger.trace("Last subscriber, stop job");
+            logger.trace("Last subscriber, stop jobs");
             ScheduledFuture<?> refreshFuture = this.refreshFuture;
             if (refreshFuture != null) {
                 refreshFuture.cancel(true);
                 this.refreshFuture = null;
+            }
+
+            ScheduledFuture<?> priceUpdateFuture = this.priceUpdateFuture;
+            if (priceUpdateFuture != null) {
+                priceUpdateFuture.cancel(true);
+                this.priceUpdateFuture = null;
             }
         }
     }
@@ -162,33 +163,11 @@ public class ElectricityPriceProvider {
         }
     }
 
-    // FIXME: This will trigger updates for all listeners, perhaps
-    // the handler should instead just get the prices and update channel itself rather
-    // than triggering callback.
-    public void triggerSpotPriceUpdate() {
-        for (Subscription subscription : subscriptionToListeners.keySet()) {
-            if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-                publishCurrentPriceFromCache(spotPriceSubscription);
-                publishPricesFromCache(spotPriceSubscription);
-            }
-        }
+    public void triggerUpdate(Subscription subscription) {
+        publishCurrentPriceFromCache(subscription);
+        publishPricesFromCache(subscription);
     }
 
-    public void triggerTariffUpdate(DatahubTariff tariff) {
-        subscriptionToListeners.keySet().stream().filter(DatahubPriceSubscription.class::isInstance)
-                .map(DatahubPriceSubscription.class::cast)
-                .filter(subscription -> subscription.getDatahubTariff().equals(tariff)).forEach(subscription -> {
-                    publishCurrentPriceFromCache(subscription);
-                    publishPricesFromCache(subscription);
-                });
-    }
-
-    // TODO: Figure out how to refactor this method to support datahub prices as well,
-    // and different variations (subscriptions). Since we have only one shared scheduler,
-    // we might want to keep it that way and loop through subscriptions inside this method.
-    // There is clearly a part responsible for downloading and publishing prices (first part),
-    // and another part responsible for validation, error handling and rescheduling based on
-    // on this.
     private void refreshElectricityPrices() {
         RetryStrategy retryPolicy;
         try {
@@ -215,7 +194,6 @@ public class ElectricityPriceProvider {
                     downloadTariffs(datahubPriceSubscription);
                 }
                 updatePrices(subscription);
-                publishPricesFromCache(subscription);
             }
 
             reschedulePriceUpdateJob();
@@ -318,7 +296,7 @@ public class ElectricityPriceProvider {
         }
     }
 
-    private void updateAllPrices() {
+    private void updatePricesForAllSubscriptions() {
         subscriptionToListeners.keySet().stream().forEach(this::updatePrices);
         reschedulePriceUpdateJob();
     }
@@ -352,7 +330,7 @@ public class ElectricityPriceProvider {
         Instant now = Instant.now();
         long millisUntilNextClockHour = Duration
                 .between(now, now.plus(1, ChronoUnit.HOURS).truncatedTo(ChronoUnit.HOURS)).toMillis() + 1;
-        this.priceUpdateFuture = scheduler.schedule(this::updateAllPrices, millisUntilNextClockHour,
+        this.priceUpdateFuture = scheduler.schedule(this::updatePricesForAllSubscriptions, millisUntilNextClockHour,
                 TimeUnit.MILLISECONDS);
         logger.debug("Price update job rescheduled in {} milliseconds", millisUntilNextClockHour);
     }
