@@ -32,9 +32,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -52,9 +50,9 @@ import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
 import org.openhab.binding.energidataservice.internal.retry.RetryStrategy;
-import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.io.net.http.HttpClientFactory;
+import org.openhab.core.scheduler.Scheduler;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
@@ -72,8 +70,8 @@ import org.slf4j.LoggerFactory;
 public class ElectricityPriceProvider {
 
     private final Logger logger = LoggerFactory.getLogger(ElectricityPriceProvider.class);
-    private final ScheduledExecutorService scheduler = ThreadPoolManager.getScheduledPool("thingHandler");
     private final TimeZoneProvider timeZoneProvider;
+    private final Scheduler scheduler;
     private final ApiController apiController;
     private final Map<ElectricityPriceListener, Set<Subscription>> listenerToSubscriptions = new ConcurrentHashMap<>();
     private final Map<Subscription, Set<ElectricityPriceListener>> subscriptionToListeners = new ConcurrentHashMap<>();
@@ -84,8 +82,9 @@ public class ElectricityPriceProvider {
     private RetryStrategy retryPolicy = RetryPolicyFactory.initial();
 
     @Activate
-    public ElectricityPriceProvider(final @Reference HttpClientFactory httpClientFactory,
-            final @Reference TimeZoneProvider timeZoneProvider) {
+    public ElectricityPriceProvider(final @Reference Scheduler scheduler,
+            final @Reference HttpClientFactory httpClientFactory, final @Reference TimeZoneProvider timeZoneProvider) {
+        this.scheduler = scheduler;
         this.timeZoneProvider = timeZoneProvider;
         this.apiController = new ApiController(httpClientFactory.getCommonHttpClient(), timeZoneProvider);
     }
@@ -109,7 +108,7 @@ public class ElectricityPriceProvider {
 
         if (isFirstSubscription) {
             logger.trace("First subscriber, start job");
-            refreshFuture = scheduler.schedule(this::refreshElectricityPrices, 0, TimeUnit.SECONDS);
+            refreshFuture = scheduler.at(this::refreshElectricityPrices, Instant.now());
         } else {
             triggerUpdate(subscription);
         }
@@ -339,12 +338,9 @@ public class ElectricityPriceProvider {
             this.priceUpdateFuture = null;
         }
 
-        Instant now = Instant.now();
-        long millisUntilNextClockHour = Duration
-                .between(now, now.plus(1, ChronoUnit.HOURS).truncatedTo(ChronoUnit.HOURS)).toMillis() + 1;
-        this.priceUpdateFuture = scheduler.schedule(this::updatePricesForAllSubscriptions, millisUntilNextClockHour,
-                TimeUnit.MILLISECONDS);
-        logger.debug("Price update job rescheduled in {} milliseconds", millisUntilNextClockHour);
+        Instant nextUpdate = Instant.now().plus(1, ChronoUnit.HOURS).truncatedTo(ChronoUnit.HOURS);
+        this.priceUpdateFuture = scheduler.at(this::updatePricesForAllSubscriptions, nextUpdate);
+        logger.debug("Price update job rescheduled at {}", nextUpdate);
     }
 
     private void reschedulePriceRefreshJob(RetryStrategy retryPolicy) {
@@ -357,8 +353,7 @@ public class ElectricityPriceProvider {
 
         long secondsUntilNextRefresh = this.retryPolicy.getDuration().getSeconds();
         Instant timeOfNextRefresh = Instant.now().plusSeconds(secondsUntilNextRefresh);
-        this.refreshFuture = scheduler.schedule(this::refreshElectricityPrices, secondsUntilNextRefresh,
-                TimeUnit.SECONDS);
+        this.refreshFuture = scheduler.at(this::refreshElectricityPrices, timeOfNextRefresh);
         logger.debug("Price refresh job rescheduled in {} seconds: {}", secondsUntilNextRefresh, timeOfNextRefresh);
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern(PROPERTY_DATETIME_FORMAT);
         String nextCall = LocalDateTime.ofInstant(timeOfNextRefresh, timeZoneProvider.getTimeZone())
