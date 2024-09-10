@@ -77,6 +77,7 @@ public class ElectricityPriceProvider {
     private final ApiController apiController;
     private final Map<ElectricityPriceListener, Set<Subscription>> listenerToSubscriptions = new ConcurrentHashMap<>();
     private final Map<Subscription, Set<ElectricityPriceListener>> subscriptionToListeners = new ConcurrentHashMap<>();
+    private final Map<Subscription, CacheManager> subscriptionCaches = new ConcurrentHashMap<>();
 
     private @Nullable ScheduledFuture<?> refreshFuture;
     private @Nullable ScheduledFuture<?> priceUpdateFuture;
@@ -104,6 +105,7 @@ public class ElectricityPriceProvider {
         Objects.requireNonNull(
                 subscriptionToListeners.computeIfAbsent(subscription, k -> ConcurrentHashMap.newKeySet()))
                 .add(listener);
+        subscriptionCaches.putIfAbsent(subscription, new CacheManager());
 
         if (isFirstSubscription) {
             logger.trace("First subscriber, start job");
@@ -134,6 +136,7 @@ public class ElectricityPriceProvider {
 
             if (listenersForSubscription.isEmpty()) {
                 subscriptionToListeners.remove(subscription);
+                subscriptionCaches.remove(subscription);
             }
         }
 
@@ -168,6 +171,10 @@ public class ElectricityPriceProvider {
         publishPricesFromCache(subscription);
     }
 
+    private CacheManager getCacheManager(Subscription subscription) {
+        return Objects.requireNonNullElse(subscriptionCaches.get(subscription), new CacheManager());
+    }
+
     private void refreshElectricityPrices() {
         RetryStrategy retryPolicy;
         try {
@@ -184,7 +191,7 @@ public class ElectricityPriceProvider {
                         spotPricesUpdatedListeners.addAll(
                                 subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()));
                     }
-                    long numberOfFutureSpotPricesForSubscription = subscription.cacheManager
+                    long numberOfFutureSpotPricesForSubscription = getCacheManager(subscription)
                             .getNumberOfFutureSpotPrices();
                     if (numberOfFutureSpotPrices == 0
                             || numberOfFutureSpotPricesForSubscription < numberOfFutureSpotPrices) {
@@ -234,12 +241,13 @@ public class ElectricityPriceProvider {
 
     private boolean downloadSpotPrices(SpotPriceSubscription subscription)
             throws InterruptedException, DataServiceException {
-        if (subscription.cacheManager.areSpotPricesFullyCached()) {
+        CacheManager cacheManager = getCacheManager(subscription);
+        if (cacheManager.areSpotPricesFullyCached()) {
             logger.debug("Cached spot prices still valid, skipping download.");
             return false;
         }
         DateQueryParameter start;
-        if (subscription.cacheManager.areHistoricSpotPricesCached()) {
+        if (cacheManager.areHistoricSpotPricesCached()) {
             start = DateQueryParameter.of(DateQueryParameterType.UTC_NOW);
         } else {
             start = DateQueryParameter.of(DateQueryParameterType.UTC_NOW,
@@ -249,7 +257,7 @@ public class ElectricityPriceProvider {
         try {
             ElspotpriceRecord[] spotPriceRecords = apiController.getSpotPrices(subscription.getPriceArea(),
                     subscription.getCurrency(), start, DateQueryParameter.EMPTY, properties);
-            subscription.cacheManager.putSpotPrices(spotPriceRecords, subscription.getCurrency());
+            cacheManager.putSpotPrices(spotPriceRecords, subscription.getCurrency());
         } finally {
             subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
                     .forEach(listener -> listener.onPropertiesUpdated(properties));
@@ -264,11 +272,12 @@ public class ElectricityPriceProvider {
             return;
         }
         DatahubTariff datahubTariff = subscription.getDatahubTariff();
-        if (subscription.cacheManager.areTariffsValidTomorrow(datahubTariff)) {
+        CacheManager cacheManager = getCacheManager(subscription);
+        if (cacheManager.areTariffsValidTomorrow(datahubTariff)) {
             logger.debug("Cached tariffs of type {} still valid, skipping download.", datahubTariff);
-            subscription.cacheManager.updateTariffs(datahubTariff);
+            cacheManager.updateTariffs(datahubTariff);
         } else {
-            subscription.cacheManager.putTariffs(datahubTariff, downloadPriceLists(subscription));
+            cacheManager.putTariffs(datahubTariff, downloadPriceLists(subscription));
         }
     }
 
@@ -285,14 +294,16 @@ public class ElectricityPriceProvider {
     }
 
     private void publishPricesFromCache(Subscription subscription) {
+        CacheManager cacheManager = getCacheManager(subscription);
+
         if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
             subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                    .forEach(listener -> listener.onSpotPrices(subscription.cacheManager.getSpotPrices(),
+                    .forEach(listener -> listener.onSpotPrices(cacheManager.getSpotPrices(),
                             spotPriceSubscription.getCurrency()));
         } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
             DatahubTariff datahubTariff = datahubPriceSubscription.getDatahubTariff();
-            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()).forEach(
-                    listener -> listener.onTariffs(datahubTariff, subscription.cacheManager.getTariffs(datahubTariff)));
+            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
+                    .forEach(listener -> listener.onTariffs(datahubTariff, cacheManager.getTariffs(datahubTariff)));
         }
     }
 
@@ -302,24 +313,25 @@ public class ElectricityPriceProvider {
     }
 
     private void updatePrices(Subscription subscription) {
-        subscription.cacheManager.cleanup();
+        getCacheManager(subscription).cleanup();
         publishCurrentPriceFromCache(subscription);
     }
 
     private void publishCurrentPriceFromCache(Subscription subscription) {
+        CacheManager cacheManager = getCacheManager(subscription);
+
         if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-            BigDecimal spotPrice = subscription.cacheManager.getSpotPrice();
+            BigDecimal spotPrice = cacheManager.getSpotPrice();
             subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
                     .forEach(listener -> listener.onCurrentSpotPrice(spotPrice, spotPriceSubscription.getCurrency()));
         } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
-            BigDecimal tariff = subscription.cacheManager.getTariff(datahubPriceSubscription.getDatahubTariff());
+            BigDecimal tariff = cacheManager.getTariff(datahubPriceSubscription.getDatahubTariff());
             subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
                     .forEach(listener -> listener.onCurrentTariff(datahubPriceSubscription.getDatahubTariff(), tariff));
         }
     }
 
     private void reschedulePriceUpdateJob() {
-        logger.trace("reschedulePriceUpdateJob");
         ScheduledFuture<?> priceUpdateJob = this.priceUpdateFuture;
         if (priceUpdateJob != null) {
             // Do not interrupt ourselves.

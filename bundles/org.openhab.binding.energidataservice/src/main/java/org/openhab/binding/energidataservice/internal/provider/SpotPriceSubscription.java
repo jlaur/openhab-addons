@@ -25,10 +25,10 @@ import org.eclipse.jdt.annotation.Nullable;
  */
 @NonNullByDefault
 public class SpotPriceSubscription extends Subscription {
-    private String priceArea;
-    private Currency currency;
+    private final String priceArea;
+    private final Currency currency;
 
-    public SpotPriceSubscription(String priceArea, Currency currency) {
+    private SpotPriceSubscription(String priceArea, Currency currency) {
         this.priceArea = priceArea;
         this.currency = currency;
     }

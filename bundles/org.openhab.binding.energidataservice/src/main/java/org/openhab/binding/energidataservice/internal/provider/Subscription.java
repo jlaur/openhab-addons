@@ -13,7 +13,6 @@
 package org.openhab.binding.energidataservice.internal.provider;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.energidataservice.internal.CacheManager;
 
 /**
  * Abstract class for subscription.
@@ -22,5 +21,4 @@ import org.openhab.binding.energidataservice.internal.CacheManager;
  */
 @NonNullByDefault
 public abstract class Subscription {
-    protected CacheManager cacheManager = new CacheManager();
 }

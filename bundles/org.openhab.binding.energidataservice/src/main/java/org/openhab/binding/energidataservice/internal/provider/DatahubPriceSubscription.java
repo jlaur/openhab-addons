@@ -27,11 +27,11 @@ import org.openhab.binding.energidataservice.internal.api.GlobalLocationNumber;
  */
 @NonNullByDefault
 public class DatahubPriceSubscription extends Subscription {
-    private DatahubTariff datahubTariff;
-    private GlobalLocationNumber globalLocationNumber;
-    private DatahubTariffFilter filter;
+    private final DatahubTariff datahubTariff;
+    private final GlobalLocationNumber globalLocationNumber;
+    private final DatahubTariffFilter filter;
 
-    public DatahubPriceSubscription(DatahubTariff datahubTariff, GlobalLocationNumber globalLocationNumber,
+    private DatahubPriceSubscription(DatahubTariff datahubTariff, GlobalLocationNumber globalLocationNumber,
             DatahubTariffFilter filter) {
         this.datahubTariff = datahubTariff;
         this.globalLocationNumber = globalLocationNumber;
