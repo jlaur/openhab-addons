@@ -94,7 +94,7 @@ public class ElectricityPriceProvider {
                 .requireNonNull(listenerToSubscriptions.computeIfAbsent(listener, k -> ConcurrentHashMap.newKeySet()));
 
         if (subscriptionsForListener.contains(subscription)) {
-            throw new IllegalStateException(
+            throw new IllegalArgumentException(
                     "Duplicate listener registration for " + listener.getClass().getName() + ": " + subscription);
         }
 
