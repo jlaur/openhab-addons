@@ -200,6 +200,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
     @Override
     public void dispose() {
         electricityPriceProvider.unsubscribe(this);
+        subscriptions.clear();
 
         ScheduledFuture<?> refreshEmissionPrognosisFuture = this.refreshEmissionPrognosisFuture;
         if (refreshEmissionPrognosisFuture != null) {
