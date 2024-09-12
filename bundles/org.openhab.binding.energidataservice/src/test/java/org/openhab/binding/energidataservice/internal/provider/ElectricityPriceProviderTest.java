@@ -90,16 +90,23 @@ public class ElectricityPriceProviderTest {
     }
 
     @Test
-    void subscribeSecondSubscriptionDoesNotScheduleRefreshJob() {
+    void subscribeSecondSubscriptionReschedulesRefreshJob() {
         provider.subscribe(listener1, SpotPriceSubscription.of("DK1", Currency.getInstance("DKK")));
         provider.subscribe(listener1, SpotPriceSubscription.of("DK1", Currency.getInstance("EUR")));
-        verify(scheduler, times(1)).at(any(SchedulerRunnable.class), any(Instant.class));
+        verify(scheduler, times(2)).at(any(SchedulerRunnable.class), any(Instant.class));
     }
 
     @Test
-    void subscribeSecondSubscriptionFromOtherListenerDoesNotScheduleRefreshJob() {
+    void subscribeSecondSubscriptionFromOtherListenerReschedulesRefreshJob() {
         provider.subscribe(listener1, SpotPriceSubscription.of("DK1", Currency.getInstance("DKK")));
         provider.subscribe(listener2, SpotPriceSubscription.of("DK1", Currency.getInstance("EUR")));
+        verify(scheduler, times(2)).at(any(SchedulerRunnable.class), any(Instant.class));
+    }
+
+    @Test
+    void subscribeSecondSameSubscriptionFromOtherListenerDoesNotScheduleRefreshJob() {
+        provider.subscribe(listener1, SpotPriceSubscription.of("DK1", Currency.getInstance("DKK")));
+        provider.subscribe(listener2, SpotPriceSubscription.of("DK1", Currency.getInstance("DKK")));
         verify(scheduler, times(1)).at(any(SchedulerRunnable.class), any(Instant.class));
     }
 

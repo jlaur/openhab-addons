@@ -229,7 +229,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
             super.channelLinked(channelUID);
         }
 
-        DatahubTariff tariff = CHANNEL_ID_TO_DATAHUB_TARIFF.get(channelUID.getId());
+        DatahubTariff tariff = CHANNEL_ID_TO_DATAHUB_TARIFF.get(channelId);
 
         if (CHANNEL_SPOT_PRICE.equals(channelId)) {
             subscribe(SpotPriceSubscription.of(config.priceArea, config.getCurrency()));

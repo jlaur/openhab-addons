@@ -100,15 +100,15 @@ public class ElectricityPriceProvider {
 
         subscriptionsForListener.add(subscription);
 
-        boolean isFirstSubscription = subscriptionToListeners.isEmpty();
         Objects.requireNonNull(
                 subscriptionToListeners.computeIfAbsent(subscription, k -> ConcurrentHashMap.newKeySet()))
                 .add(listener);
-        subscriptionCaches.putIfAbsent(subscription, new CacheManager());
-
-        if (isFirstSubscription) {
-            logger.trace("First subscriber, start job");
-            refreshFuture = scheduler.at(this::refreshElectricityPrices, Instant.now());
+        if (subscriptionCaches.putIfAbsent(subscription, new CacheManager()) == null) {
+            ScheduledFuture<?> refreshFuture = this.refreshFuture;
+            if (refreshFuture != null) {
+                refreshFuture.cancel(true);
+            }
+            this.refreshFuture = scheduler.at(this::refreshElectricityPrices, Instant.now());
         } else {
             triggerUpdate(subscription);
         }
