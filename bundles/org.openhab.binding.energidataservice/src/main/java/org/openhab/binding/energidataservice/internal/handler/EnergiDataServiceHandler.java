@@ -140,8 +140,8 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
 
         String channelId = channelUID.getId();
         if (ELECTRICITY_CHANNELS.contains(channelId)) {
-            // TODO: Clean cache in ElectricityPriceProvider and trigger refresh
-            refreshElectricityPrices();
+            // Request already cached results to be republished.
+            electricityPriceProvider.triggerUpdate(getChannelSubscription(channelId));
         } else if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelId)) {
             rescheduleEmissionPrognosisJob();
         } else if (CHANNEL_CO2_EMISSION_REALTIME.equals(channelId)) {
@@ -327,6 +327,20 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
         if (subscriptions.remove(subscription)) {
             electricityPriceProvider.unsubscribe(this, subscription);
         }
+    }
+
+    private Subscription getChannelSubscription(String channelId) {
+        if (CHANNEL_SPOT_PRICE.equals(channelId)) {
+            return SpotPriceSubscription.of(config.priceArea, config.getCurrency());
+        } else {
+            DatahubTariff tariff = CHANNEL_ID_TO_DATAHUB_TARIFF.get(channelId);
+
+            if (tariff != null) {
+                return DatahubPriceSubscription.of(tariff, getGlobalLocationNumber(tariff),
+                        getDatahubTariffFilter(tariff));
+            }
+        }
+        throw new IllegalArgumentException("Could not create subscription for channel id " + channelId);
     }
 
     private void refreshElectricityPrices() {
