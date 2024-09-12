@@ -100,10 +100,19 @@ public class ElectricityPriceProvider {
 
         subscriptionsForListener.add(subscription);
 
-        Objects.requireNonNull(
-                subscriptionToListeners.computeIfAbsent(subscription, k -> ConcurrentHashMap.newKeySet()))
-                .add(listener);
-        if (subscriptionCaches.putIfAbsent(subscription, new CacheManager()) == null) {
+        Set<ElectricityPriceListener> listenersForSubscription = subscriptionToListeners.get(subscription);
+        boolean isFirstDistinctSubscription = false;
+        if (listenersForSubscription == null) {
+            isFirstDistinctSubscription = true;
+            listenersForSubscription = ConcurrentHashMap.newKeySet();
+            subscriptionToListeners.put(subscription, listenersForSubscription);
+        }
+
+        listenersForSubscription.add(listener);
+
+        subscriptionCaches.putIfAbsent(subscription, new CacheManager());
+
+        if (isFirstDistinctSubscription) {
             ScheduledFuture<?> refreshFuture = this.refreshFuture;
             if (refreshFuture != null) {
                 refreshFuture.cancel(true);
@@ -238,6 +247,20 @@ public class ElectricityPriceProvider {
         reschedulePriceRefreshJob(retryPolicy);
     }
 
+    public Map<Instant, BigDecimal> getSpotPrices(SpotPriceSubscription subscription)
+            throws InterruptedException, DataServiceException {
+        downloadSpotPrices(subscription);
+
+        return getCacheManager(subscription).getSpotPrices();
+    }
+
+    public Map<Instant, BigDecimal> getTariffs(DatahubPriceSubscription subscription)
+            throws InterruptedException, DataServiceException {
+        downloadTariffs(subscription);
+
+        return getCacheManager(subscription).getTariffs(subscription.getDatahubTariff());
+    }
+
     private boolean downloadSpotPrices(SpotPriceSubscription subscription)
             throws InterruptedException, DataServiceException {
         CacheManager cacheManager = getCacheManager(subscription);
@@ -308,6 +331,12 @@ public class ElectricityPriceProvider {
 
     private void updatePricesForAllSubscriptions() {
         subscriptionToListeners.keySet().stream().forEach(this::updatePrices);
+
+        // Clean up caches not directly related to listener subscriptions, e.g. from Thing
+        // actions when having no linked channels.
+        subscriptionCaches.entrySet().stream().filter(entry -> !subscriptionToListeners.containsKey(entry.getKey()))
+                .forEach(entry -> entry.getValue().cleanup());
+
         reschedulePriceUpdateJob();
     }
 

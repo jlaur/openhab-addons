@@ -728,7 +728,8 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
      */
     public Map<Instant, BigDecimal> getSpotPrices() {
         try {
-            downloadSpotPrices();
+            return electricityPriceProvider
+                    .getSpotPrices(SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
         } catch (DataServiceException e) {
             if (logger.isDebugEnabled()) {
                 logger.warn("Error retrieving spot prices", e);
@@ -739,7 +740,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
             Thread.currentThread().interrupt();
         }
 
-        return cacheManager.getSpotPrices();
+        return Map.of();
     }
 
     /**
@@ -750,7 +751,8 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
      */
     public Map<Instant, BigDecimal> getTariffs(DatahubTariff datahubTariff) {
         try {
-            downloadTariffs(datahubTariff);
+            return electricityPriceProvider.getTariffs(DatahubPriceSubscription.of(datahubTariff,
+                    getGlobalLocationNumber(datahubTariff), getDatahubTariffFilter(datahubTariff)));
         } catch (DataServiceException e) {
             if (logger.isDebugEnabled()) {
                 logger.warn("Error retrieving tariffs", e);
@@ -761,7 +763,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler implements Electr
             Thread.currentThread().interrupt();
         }
 
-        return cacheManager.getTariffs(datahubTariff);
+        return Map.of();
     }
 
     /**
