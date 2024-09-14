@@ -174,7 +174,7 @@ public class ElectricityPriceProvider {
         }
     }
 
-    public void triggerUpdate(Subscription subscription) {
+    private void triggerUpdate(Subscription subscription) {
         publishCurrentPriceFromCache(subscription);
         publishPricesFromCache(subscription);
     }
@@ -247,18 +247,18 @@ public class ElectricityPriceProvider {
         reschedulePriceRefreshJob(retryPolicy);
     }
 
-    public Map<Instant, BigDecimal> getSpotPrices(SpotPriceSubscription subscription)
+    public Map<Instant, BigDecimal> getPrices(Subscription subscription)
             throws InterruptedException, DataServiceException {
-        downloadSpotPrices(subscription);
+        if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
+            downloadSpotPrices(spotPriceSubscription);
 
-        return getCacheManager(subscription).getSpotPrices();
-    }
+            return getCacheManager(subscription).getSpotPrices();
+        } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
+            downloadTariffs(datahubPriceSubscription);
 
-    public Map<Instant, BigDecimal> getTariffs(DatahubPriceSubscription subscription)
-            throws InterruptedException, DataServiceException {
-        downloadTariffs(subscription);
-
-        return getCacheManager(subscription).getTariffs(subscription.getDatahubTariff());
+            return getCacheManager(subscription).getTariffs(datahubPriceSubscription.getDatahubTariff());
+        }
+        throw new IllegalArgumentException("Subscription " + subscription + " is not supported");
     }
 
     private boolean downloadSpotPrices(SpotPriceSubscription subscription)
@@ -343,6 +343,26 @@ public class ElectricityPriceProvider {
     private void updatePrices(Subscription subscription) {
         getCacheManager(subscription).cleanup();
         publishCurrentPriceFromCache(subscription);
+    }
+
+    public @Nullable BigDecimal getCurrentPriceIfCached(Subscription subscription) {
+        CacheManager cacheManager = getCacheManager(subscription);
+        if (subscription instanceof SpotPriceSubscription) {
+            return cacheManager.getSpotPrice();
+        } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
+            return cacheManager.getTariff(datahubPriceSubscription.getDatahubTariff());
+        }
+        throw new IllegalArgumentException("Subscription " + subscription + " is not supported");
+    }
+
+    public Map<Instant, BigDecimal> getPricesIfCached(Subscription subscription) {
+        CacheManager cacheManager = getCacheManager(subscription);
+        if (subscription instanceof SpotPriceSubscription) {
+            return cacheManager.getSpotPrices();
+        } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
+            return cacheManager.getTariffs(datahubPriceSubscription.getDatahubTariff());
+        }
+        throw new IllegalArgumentException("Subscription " + subscription + " is not supported");
     }
 
     private void publishCurrentPriceFromCache(Subscription subscription) {
