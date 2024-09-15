@@ -55,13 +55,14 @@ import org.openhab.core.io.net.http.HttpClientFactory;
 import org.openhab.core.scheduler.Scheduler;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * The {@link ElectricityPriceProvider} is responsible for fetching electricity
- * prices and providing them to listeners.
+ * prices and providing them to subscribed listeners.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -87,6 +88,11 @@ public class ElectricityPriceProvider {
         this.scheduler = scheduler;
         this.timeZoneProvider = timeZoneProvider;
         this.apiController = new ApiController(httpClientFactory.getCommonHttpClient(), timeZoneProvider);
+    }
+
+    @Deactivate
+    public void deactivate() {
+        stopJobs();
     }
 
     public void subscribe(ElectricityPriceListener listener, Subscription subscription) {
@@ -151,17 +157,7 @@ public class ElectricityPriceProvider {
 
         if (subscriptionToListeners.isEmpty()) {
             logger.trace("Last subscriber, stop jobs");
-            ScheduledFuture<?> refreshFuture = this.refreshFuture;
-            if (refreshFuture != null) {
-                refreshFuture.cancel(true);
-                this.refreshFuture = null;
-            }
-
-            ScheduledFuture<?> priceUpdateFuture = this.priceUpdateFuture;
-            if (priceUpdateFuture != null) {
-                priceUpdateFuture.cancel(true);
-                this.priceUpdateFuture = null;
-            }
+            stopJobs();
         }
     }
 
@@ -172,6 +168,20 @@ public class ElectricityPriceProvider {
         }
         for (Subscription subscription : listenerSubscriptions) {
             unsubscribe(listener, subscription);
+        }
+    }
+
+    private void stopJobs() {
+        ScheduledFuture<?> refreshFuture = this.refreshFuture;
+        if (refreshFuture != null) {
+            refreshFuture.cancel(true);
+            this.refreshFuture = null;
+        }
+
+        ScheduledFuture<?> priceUpdateFuture = this.priceUpdateFuture;
+        if (priceUpdateFuture != null) {
+            priceUpdateFuture.cancel(true);
+            this.priceUpdateFuture = null;
         }
     }
 
