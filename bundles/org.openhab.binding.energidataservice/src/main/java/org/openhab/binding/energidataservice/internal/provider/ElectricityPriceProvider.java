@@ -119,7 +119,8 @@ public class ElectricityPriceProvider {
             }
             this.refreshFuture = scheduler.at(this::refreshElectricityPrices, Instant.now());
         } else {
-            triggerUpdate(subscription);
+            publishCurrentPriceFromCache(subscription, Set.of(listener));
+            publishPricesFromCache(subscription, Set.of(listener));
         }
     }
 
@@ -174,11 +175,6 @@ public class ElectricityPriceProvider {
         }
     }
 
-    private void triggerUpdate(Subscription subscription) {
-        publishCurrentPriceFromCache(subscription);
-        publishPricesFromCache(subscription);
-    }
-
     private CacheManager getCacheManager(Subscription subscription) {
         return Objects.requireNonNullElse(subscriptionCaches.get(subscription), new CacheManager());
     }
@@ -193,11 +189,12 @@ public class ElectricityPriceProvider {
             for (Entry<Subscription, Set<ElectricityPriceListener>> subscriptionListener : subscriptionToListeners
                     .entrySet()) {
                 Subscription subscription = subscriptionListener.getKey();
+                Set<ElectricityPriceListener> listeners = subscriptionListener.getValue();
+
                 if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
                     spotPricesSubscribed = true;
                     if (downloadSpotPrices(spotPriceSubscription)) {
-                        spotPricesUpdatedListeners.addAll(
-                                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()));
+                        spotPricesUpdatedListeners.addAll(listeners);
                     }
                     long numberOfFutureSpotPricesForSubscription = getCacheManager(subscription)
                             .getNumberOfFutureSpotPrices();
@@ -208,7 +205,8 @@ public class ElectricityPriceProvider {
                 } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
                     downloadTariffs(datahubPriceSubscription);
                 }
-                updatePrices(subscription);
+                updateCurrentPrices(subscription);
+                publishPricesFromCache(subscription, listeners);
             }
 
             reschedulePriceUpdateJob();
@@ -315,34 +313,35 @@ public class ElectricityPriceProvider {
         }
     }
 
-    private void publishPricesFromCache(Subscription subscription) {
+    private void publishPricesFromCache(Subscription subscription, Set<ElectricityPriceListener> listeners) {
         CacheManager cacheManager = getCacheManager(subscription);
 
         if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
-            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                    .forEach(listener -> listener.onSpotPrices(cacheManager.getSpotPrices(),
-                            spotPriceSubscription.getCurrency()));
+            listeners.forEach(listener -> listener.onSpotPrices(cacheManager.getSpotPrices(),
+                    spotPriceSubscription.getCurrency()));
         } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
             DatahubTariff datahubTariff = datahubPriceSubscription.getDatahubTariff();
-            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                    .forEach(listener -> listener.onTariffs(datahubTariff, cacheManager.getTariffs(datahubTariff)));
+            listeners.forEach(listener -> listener.onTariffs(datahubTariff, cacheManager.getTariffs(datahubTariff)));
         }
     }
 
     private void updatePricesForAllSubscriptions() {
-        subscriptionToListeners.keySet().stream().forEach(this::updatePrices);
+        subscriptionToListeners.keySet().stream().forEach(this::updateCurrentPrices);
 
         // Clean up caches not directly related to listener subscriptions, e.g. from Thing
         // actions when having no linked channels.
         subscriptionCaches.entrySet().stream().filter(entry -> !subscriptionToListeners.containsKey(entry.getKey()))
                 .forEach(entry -> entry.getValue().cleanup());
 
+        // FIXME: Delete empty cache objects
+
         reschedulePriceUpdateJob();
     }
 
-    private void updatePrices(Subscription subscription) {
+    private void updateCurrentPrices(Subscription subscription) {
         getCacheManager(subscription).cleanup();
-        publishCurrentPriceFromCache(subscription);
+        publishCurrentPriceFromCache(subscription,
+                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()));
     }
 
     public @Nullable BigDecimal getCurrentPriceIfCached(Subscription subscription) {
@@ -365,17 +364,16 @@ public class ElectricityPriceProvider {
         throw new IllegalArgumentException("Subscription " + subscription + " is not supported");
     }
 
-    private void publishCurrentPriceFromCache(Subscription subscription) {
+    private void publishCurrentPriceFromCache(Subscription subscription, Set<ElectricityPriceListener> listeners) {
         CacheManager cacheManager = getCacheManager(subscription);
 
         if (subscription instanceof SpotPriceSubscription spotPriceSubscription) {
             BigDecimal spotPrice = cacheManager.getSpotPrice();
-            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                    .forEach(listener -> listener.onCurrentSpotPrice(spotPrice, spotPriceSubscription.getCurrency()));
+            listeners.forEach(listener -> listener.onCurrentSpotPrice(spotPrice, spotPriceSubscription.getCurrency()));
         } else if (subscription instanceof DatahubPriceSubscription datahubPriceSubscription) {
-            BigDecimal tariff = cacheManager.getTariff(datahubPriceSubscription.getDatahubTariff());
-            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                    .forEach(listener -> listener.onCurrentTariff(datahubPriceSubscription.getDatahubTariff(), tariff));
+            DatahubTariff datahubTariff = datahubPriceSubscription.getDatahubTariff();
+            BigDecimal tariff = cacheManager.getTariff(datahubTariff);
+            listeners.forEach(listener -> listener.onCurrentTariff(datahubTariff, tariff));
         }
     }
 
