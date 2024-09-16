@@ -36,7 +36,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.openhab.binding.energidataservice.internal.DatahubTariff;
-import org.openhab.binding.energidataservice.internal.ElectricityPriceListener;
+import org.openhab.binding.energidataservice.internal.provider.listener.ElectricityPriceListener;
 import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.io.net.http.HttpClientFactory;
 import org.openhab.core.scheduler.ScheduledCompletableFuture;

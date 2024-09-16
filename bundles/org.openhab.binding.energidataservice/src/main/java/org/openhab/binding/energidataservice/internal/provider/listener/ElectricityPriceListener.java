@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.energidataservice.internal;
+package org.openhab.binding.energidataservice.internal.provider.listener;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -19,6 +19,7 @@ import java.util.Map;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.energidataservice.internal.DatahubTariff;
 
 /**
  * {@link ElectricityPriceListener} provides an interface for receiving
@@ -27,10 +28,8 @@ import org.eclipse.jdt.annotation.Nullable;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public interface ElectricityPriceListener {
+public interface ElectricityPriceListener extends SubscriptionListener {
     void onDayAheadAvailable();
-
-    void onPropertiesUpdated(Map<String, String> properties);
 
     void onCurrentSpotPrice(@Nullable BigDecimal price, Currency currency);
 
@@ -39,6 +38,4 @@ public interface ElectricityPriceListener {
     void onCurrentTariff(DatahubTariff datahubTariff, @Nullable BigDecimal tariff);
 
     void onTariffs(DatahubTariff datahubTariff, Map<Instant, BigDecimal> tariffs);
-
-    void onCommunicationError(@Nullable String description);
 }

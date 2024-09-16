@@ -12,10 +12,7 @@
  */
 package org.openhab.binding.energidataservice.internal.provider;
 
-import static org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants.DAILY_REFRESH_TIME_CET;
-import static org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants.NORD_POOL_TIMEZONE;
-import static org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants.PROPERTY_DATETIME_FORMAT;
-import static org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants.PROPERTY_NEXT_CALL;
+import static org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants.*;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -40,7 +37,6 @@ import org.eclipse.jetty.http.HttpStatus;
 import org.openhab.binding.energidataservice.internal.ApiController;
 import org.openhab.binding.energidataservice.internal.CacheManager;
 import org.openhab.binding.energidataservice.internal.DatahubTariff;
-import org.openhab.binding.energidataservice.internal.ElectricityPriceListener;
 import org.openhab.binding.energidataservice.internal.api.ChargeType;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameter;
 import org.openhab.binding.energidataservice.internal.api.DateQueryParameterType;
@@ -48,6 +44,7 @@ import org.openhab.binding.energidataservice.internal.api.GlobalLocationNumber;
 import org.openhab.binding.energidataservice.internal.api.dto.DatahubPricelistRecord;
 import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
+import org.openhab.binding.energidataservice.internal.provider.listener.ElectricityPriceListener;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
 import org.openhab.binding.energidataservice.internal.retry.RetryStrategy;
 import org.openhab.core.i18n.TimeZoneProvider;
@@ -68,14 +65,12 @@ import org.slf4j.LoggerFactory;
  */
 @NonNullByDefault
 @Component(service = ElectricityPriceProvider.class)
-public class ElectricityPriceProvider {
+public class ElectricityPriceProvider extends AbstractProvider<ElectricityPriceListener> {
 
     private final Logger logger = LoggerFactory.getLogger(ElectricityPriceProvider.class);
     private final TimeZoneProvider timeZoneProvider;
     private final Scheduler scheduler;
     private final ApiController apiController;
-    private final Map<ElectricityPriceListener, Set<Subscription>> listenerToSubscriptions = new ConcurrentHashMap<>();
-    private final Map<Subscription, Set<ElectricityPriceListener>> subscriptionToListeners = new ConcurrentHashMap<>();
     private final Map<Subscription, CacheManager> subscriptionCaches = new ConcurrentHashMap<>();
 
     private @Nullable ScheduledFuture<?> refreshFuture;
@@ -96,25 +91,7 @@ public class ElectricityPriceProvider {
     }
 
     public void subscribe(ElectricityPriceListener listener, Subscription subscription) {
-        Set<Subscription> subscriptionsForListener = Objects
-                .requireNonNull(listenerToSubscriptions.computeIfAbsent(listener, k -> ConcurrentHashMap.newKeySet()));
-
-        if (subscriptionsForListener.contains(subscription)) {
-            throw new IllegalArgumentException(
-                    "Duplicate listener registration for " + listener.getClass().getName() + ": " + subscription);
-        }
-
-        subscriptionsForListener.add(subscription);
-
-        Set<ElectricityPriceListener> listenersForSubscription = subscriptionToListeners.get(subscription);
-        boolean isFirstDistinctSubscription = false;
-        if (listenersForSubscription == null) {
-            isFirstDistinctSubscription = true;
-            listenersForSubscription = ConcurrentHashMap.newKeySet();
-            subscriptionToListeners.put(subscription, listenersForSubscription);
-        }
-
-        listenersForSubscription.add(listener);
+        boolean isFirstDistinctSubscription = subscribeInternal(listener, subscription);
 
         subscriptionCaches.putIfAbsent(subscription, new CacheManager());
 
@@ -131,43 +108,14 @@ public class ElectricityPriceProvider {
     }
 
     public void unsubscribe(ElectricityPriceListener listener, Subscription subscription) {
-        Set<Subscription> listenerSubscriptions = listenerToSubscriptions.get(listener);
-
-        if (listenerSubscriptions == null || !listenerSubscriptions.contains(subscription)) {
-            throw new IllegalArgumentException(
-                    "Listener is not subscribed to the specified subscription: " + subscription);
-        }
-
-        listenerSubscriptions.remove(subscription);
-
-        if (listenerSubscriptions.isEmpty()) {
-            listenerToSubscriptions.remove(listener);
-        }
-
-        Set<ElectricityPriceListener> listenersForSubscription = subscriptionToListeners.get(subscription);
-
-        if (listenersForSubscription != null) {
-            listenersForSubscription.remove(listener);
-
-            if (listenersForSubscription.isEmpty()) {
-                subscriptionToListeners.remove(subscription);
-                subscriptionCaches.remove(subscription);
-            }
+        boolean isLastDistinctSubscription = unsubscribeInternal(listener, subscription);
+        if (isLastDistinctSubscription) {
+            subscriptionCaches.remove(subscription);
         }
 
         if (subscriptionToListeners.isEmpty()) {
             logger.trace("Last subscriber, stop jobs");
             stopJobs();
-        }
-    }
-
-    public void unsubscribe(ElectricityPriceListener listener) {
-        Set<Subscription> listenerSubscriptions = listenerToSubscriptions.get(listener);
-        if (listenerSubscriptions == null) {
-            return;
-        }
-        for (Subscription subscription : listenerSubscriptions) {
-            unsubscribe(listener, subscription);
         }
     }
 
