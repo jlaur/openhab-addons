@@ -542,7 +542,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
      */
     public Map<Instant, BigDecimal> getSpotPrices() {
         try {
-            return electricityPriceProvider.getPrices(SpotPriceSubscription.of(config.priceArea, config.getCurrency()));
+            return electricityPriceProvider.getPrices(getChannelSubscription(CHANNEL_SPOT_PRICE));
         } catch (DataServiceException e) {
             if (logger.isDebugEnabled()) {
                 logger.warn("Error retrieving spot prices", e);

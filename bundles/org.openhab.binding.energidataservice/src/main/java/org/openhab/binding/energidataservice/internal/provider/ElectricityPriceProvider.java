@@ -298,8 +298,6 @@ public class ElectricityPriceProvider extends AbstractProvider<ElectricityPriceL
         subscriptionCaches.entrySet().stream().filter(entry -> !subscriptionToListeners.containsKey(entry.getKey()))
                 .forEach(entry -> entry.getValue().cleanup());
 
-        // FIXME: Delete empty cache objects
-
         reschedulePriceUpdateJob();
     }
 
