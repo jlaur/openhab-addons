@@ -94,4 +94,8 @@ public abstract class AbstractProvider<L extends SubscriptionListener> {
             unsubscribeInternal(listener, subscription);
         }
     }
+
+    protected Set<L> getListeners(Subscription subscription) {
+        return subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet());
+    }
 }

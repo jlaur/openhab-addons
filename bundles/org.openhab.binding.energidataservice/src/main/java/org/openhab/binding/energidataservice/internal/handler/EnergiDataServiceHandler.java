@@ -175,11 +175,9 @@ public class EnergiDataServiceHandler extends BaseThingHandler
                         getDatahubTariffFilter(tariff)))
                 .forEach(this::subscribe);
 
-        if (isLinked(CHANNEL_CO2_EMISSION_PROGNOSIS)) {
-            subscribe(getChannelSubscription(CHANNEL_CO2_EMISSION_PROGNOSIS));
-        }
-        if (isLinked(CHANNEL_CO2_EMISSION_REALTIME)) {
-            subscribe(getChannelSubscription(CHANNEL_CO2_EMISSION_REALTIME));
+        if ("DK1".equals(config.priceArea) || "DK2".equals(config.priceArea)) {
+            CO2_EMISSION_CHANNELS.stream().filter(this::isLinked)
+                    .forEach(channelId -> subscribe(getChannelSubscription(channelId)));
         }
     }
 

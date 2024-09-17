@@ -18,7 +18,6 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -79,6 +78,11 @@ public class Co2EmissionProvider extends AbstractProvider<Co2EmissionListener> {
     public void subscribe(Co2EmissionListener listener, Subscription subscription) {
         if (!(subscription instanceof Co2EmissionSubscription co2EmissionSubscription)) {
             throw new IllegalArgumentException(subscription.getClass().getName() + " is not supported");
+        }
+        if (!"DK1".equals(co2EmissionSubscription.getPriceArea())
+                && !"DK2".equals(co2EmissionSubscription.getPriceArea())) {
+            // Dataset is only for Denmark.
+            throw new IllegalArgumentException("Only price areas DK1 and DK2 are supported");
         }
         subscribeInternal(listener, subscription);
 
@@ -155,18 +159,18 @@ public class Co2EmissionProvider extends AbstractProvider<Co2EmissionListener> {
     private void refreshCo2Emission(Co2EmissionSubscription.Type type) {
         try {
             for (Subscription subscription : subscriptionToListeners.keySet()) {
-                if (!(subscription instanceof Co2EmissionSubscription co2EmissionSubscription)) {
+                if (!(subscription instanceof Co2EmissionSubscription co2EmissionSubscription)
+                        || co2EmissionSubscription.getType() != type) {
                     continue;
                 }
-                if (co2EmissionSubscription.getType() != type) {
-                    continue;
-                }
-                if (co2EmissionSubscription.getType() == Co2EmissionSubscription.Type.Prognosis) {
-                    updateCo2Emissions(co2EmissionSubscription,
-                            DateQueryParameter.of(DateQueryParameterType.UTC_NOW, Duration.ofMinutes(-5)));
-                } else {
-                    updateCo2Emissions(co2EmissionSubscription, DateQueryParameter.of(DateQueryParameterType.UTC_NOW,
-                            realtimeEmissionsFetchedFirstTime ? Duration.ofMinutes(-5) : Duration.ofHours(-24)));
+
+                updateCo2Emissions(co2EmissionSubscription,
+                        DateQueryParameter.of(DateQueryParameterType.UTC_NOW,
+                                realtimeEmissionsFetchedFirstTime || type == Co2EmissionSubscription.Type.Prognosis
+                                        ? Duration.ofMinutes(-5)
+                                        : Duration.ofHours(-24)));
+
+                if (type == Co2EmissionSubscription.Type.Realtime) {
                     realtimeEmissionsFetchedFirstTime = true;
                 }
             }
@@ -178,7 +182,7 @@ public class Co2EmissionProvider extends AbstractProvider<Co2EmissionListener> {
                 listenerToSubscriptions.keySet().forEach(listener -> listener.onCommunicationError(e.getMessage()));
             }
             if (e.getCause() != null) {
-                logger.debug("Error retrieving CO2 emission prognosis", e);
+                logger.debug("Error retrieving CO2 emissions", e);
             }
         } catch (InterruptedException e) {
             logger.debug("Emission refresh job {} interrupted", type);
@@ -189,16 +193,11 @@ public class Co2EmissionProvider extends AbstractProvider<Co2EmissionListener> {
 
     private void updateCo2Emissions(Co2EmissionSubscription subscription, DateQueryParameter dateQueryParameter)
             throws InterruptedException, DataServiceException {
-        if (!"DK1".equals(subscription.getPriceArea()) && !"DK2".equals(subscription.getPriceArea())) {
-            // Dataset is only for Denmark.
-            return;
-        }
         Dataset dataset = subscription.getType().getDataset();
         Map<String, String> properties = new HashMap<>();
         CO2EmissionRecord[] emissionRecords = apiController.getCo2Emissions(dataset, subscription.getPriceArea(),
                 dateQueryParameter, properties);
-        Set<Co2EmissionListener> listeners = subscriptionToListeners.getOrDefault(subscription,
-                ConcurrentHashMap.newKeySet());
+        Set<Co2EmissionListener> listeners = getListeners(subscription);
         listeners.forEach(listener -> listener.onPropertiesUpdated(properties));
 
         Instant now = Instant.now();

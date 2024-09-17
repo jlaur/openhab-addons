@@ -244,8 +244,7 @@ public class ElectricityPriceProvider extends AbstractProvider<ElectricityPriceL
                     subscription.getCurrency(), start, DateQueryParameter.EMPTY, properties);
             cacheManager.putSpotPrices(spotPriceRecords, subscription.getCurrency());
         } finally {
-            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                    .forEach(listener -> listener.onPropertiesUpdated(properties));
+            getListeners(subscription).forEach(listener -> listener.onPropertiesUpdated(properties));
         }
         return true;
     }
@@ -273,8 +272,7 @@ public class ElectricityPriceProvider extends AbstractProvider<ElectricityPriceL
             return apiController.getDatahubPriceLists(subscription.getGlobalLocationNumber(), ChargeType.Tariff,
                     subscription.getFilter(), properties);
         } finally {
-            subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet())
-                    .forEach(listener -> listener.onPropertiesUpdated(properties));
+            getListeners(subscription).forEach(listener -> listener.onPropertiesUpdated(properties));
         }
     }
 
@@ -303,8 +301,7 @@ public class ElectricityPriceProvider extends AbstractProvider<ElectricityPriceL
 
     private void updateCurrentPrices(Subscription subscription) {
         getCacheManager(subscription).cleanup();
-        publishCurrentPriceFromCache(subscription,
-                subscriptionToListeners.getOrDefault(subscription, ConcurrentHashMap.newKeySet()));
+        publishCurrentPriceFromCache(subscription, getListeners(subscription));
     }
 
     public @Nullable BigDecimal getCurrentPriceIfCached(Subscription subscription) {
