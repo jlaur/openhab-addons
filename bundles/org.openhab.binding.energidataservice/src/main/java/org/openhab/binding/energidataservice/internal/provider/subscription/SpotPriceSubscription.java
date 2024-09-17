@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.energidataservice.internal.provider;
+package org.openhab.binding.energidataservice.internal.provider.subscription;
 
 import java.util.Currency;
 import java.util.Objects;
@@ -24,7 +24,7 @@ import org.eclipse.jdt.annotation.Nullable;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class SpotPriceSubscription extends Subscription {
+public class SpotPriceSubscription implements ElectricityPriceSubscription {
     private final String priceArea;
     private final Currency currency;
 
@@ -52,7 +52,7 @@ public class SpotPriceSubscription extends Subscription {
 
     @Override
     public String toString() {
-        return "[Subscription: PriceArea=" + priceArea + ", Currency=" + currency + "]";
+        return "SpotPriceSubscription: PriceArea=" + priceArea + ", Currency=" + currency;
     }
 
     public String getPriceArea() {

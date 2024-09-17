@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.energidataservice.internal.provider;
+package org.openhab.binding.energidataservice.internal.provider.subscription;
 
 import java.util.Objects;
 
@@ -24,7 +24,7 @@ import org.openhab.binding.energidataservice.internal.api.Dataset;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class Co2EmissionSubscription extends Subscription {
+public class Co2EmissionSubscription implements Subscription {
     private final String priceArea;
     private final Type type;
 
@@ -67,7 +67,7 @@ public class Co2EmissionSubscription extends Subscription {
 
     @Override
     public String toString() {
-        return "[Subscription: PriceArea=" + priceArea + ", Type=" + type + "]";
+        return "Co2EmissionSubscription: PriceArea=" + priceArea + ", Type=" + type;
     }
 
     public String getPriceArea() {

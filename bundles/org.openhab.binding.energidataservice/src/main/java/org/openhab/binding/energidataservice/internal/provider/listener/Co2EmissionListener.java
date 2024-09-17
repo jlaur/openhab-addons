@@ -17,7 +17,7 @@ import java.time.Instant;
 import java.util.Map;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.energidataservice.internal.provider.Co2EmissionSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.Co2EmissionSubscription;
 
 /**
  * {@link Co2EmissionListener} provides an interface for receiving

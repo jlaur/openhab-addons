@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.binding.energidataservice.internal.provider.listener.SubscriptionListener;
+import org.openhab.binding.energidataservice.internal.provider.subscription.Subscription;
 
 /**
  * The {@link AbstractProvider} is responsible for managing subscriptions.

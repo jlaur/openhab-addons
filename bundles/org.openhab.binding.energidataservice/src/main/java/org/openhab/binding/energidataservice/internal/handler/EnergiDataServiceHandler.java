@@ -56,13 +56,14 @@ import org.openhab.binding.energidataservice.internal.config.DatahubPriceConfigu
 import org.openhab.binding.energidataservice.internal.config.EnergiDataServiceConfiguration;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.provider.Co2EmissionProvider;
-import org.openhab.binding.energidataservice.internal.provider.Co2EmissionSubscription;
-import org.openhab.binding.energidataservice.internal.provider.DatahubPriceSubscription;
 import org.openhab.binding.energidataservice.internal.provider.ElectricityPriceProvider;
-import org.openhab.binding.energidataservice.internal.provider.SpotPriceSubscription;
-import org.openhab.binding.energidataservice.internal.provider.Subscription;
 import org.openhab.binding.energidataservice.internal.provider.listener.Co2EmissionListener;
 import org.openhab.binding.energidataservice.internal.provider.listener.ElectricityPriceListener;
+import org.openhab.binding.energidataservice.internal.provider.subscription.Co2EmissionSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.DatahubPriceSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.ElectricityPriceSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.SpotPriceSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.Subscription;
 import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.QuantityType;
@@ -128,10 +129,10 @@ public class EnergiDataServiceHandler extends BaseThingHandler
         if (ELECTRICITY_CHANNELS.contains(channelId)) {
             // Request already cached results to be republished.
             updateChannelFromCache(getChannelSubscription(channelId), channelId);
-        } else if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelId)) {
-            // FIXME
-        } else if (CHANNEL_CO2_EMISSION_REALTIME.equals(channelId)) {
-            // FIXME
+        } else if (CO2_EMISSION_CHANNELS.contains(channelId)) {
+            Subscription subscription = getChannelSubscription(channelId);
+            unsubscribe(subscription);
+            subscribe(subscription);
         }
     }
 
@@ -197,9 +198,9 @@ public class EnergiDataServiceHandler extends BaseThingHandler
     @Override
     public void channelLinked(ChannelUID channelUID) {
         String channelId = channelUID.getId();
-        if (!ELECTRICITY_CHANNELS.contains(channelId)) {
-            // Do not trigger REFRESH command for electricity price channels, we will trigger
-            // a state update ourselves through ElectricityPriceProvider.
+        if (!ELECTRICITY_CHANNELS.contains(channelId) && !CO2_EMISSION_CHANNELS.contains(channelId)) {
+            // Do not trigger REFRESH command for subscription-based channels, we will trigger
+            // a state update ourselves through relevant Provider.
             super.channelLinked(channelUID);
         }
 
@@ -235,18 +236,12 @@ public class EnergiDataServiceHandler extends BaseThingHandler
         super.channelUnlinked(channelUID);
 
         String channelId = channelUID.getId();
-        if (CHANNEL_SPOT_PRICE.equals(channelId) && !isLinked(CHANNEL_SPOT_PRICE)) {
-            logger.debug("No more items linked to channel '{}', stop spot price subscription", channelId);
-        } else if (CHANNEL_ID_TO_DATAHUB_TARIFF.keySet().contains(channelId) && !isLinked(channelId)) {
-            logger.debug("No more items linked to channel '{}', stop tariff subscription", channelId);
-        } else if (CHANNEL_CO2_EMISSION_PROGNOSIS.equals(channelId) && !isLinked(channelId)) {
-            logger.debug("No more items linked to channel '{}', stopping emission prognosis subscription", channelId);
-        } else if (CHANNEL_CO2_EMISSION_REALTIME.equals(channelId) && !isLinked(channelId)) {
-            logger.debug("No more items linked to channel '{}', stopping realtime emission subscription", channelId);
-        } else {
-            return;
+        if ((ELECTRICITY_CHANNELS.contains(channelId) || CO2_EMISSION_CHANNELS.contains(channelId))
+                && !isLinked(channelId)) {
+            Subscription subscription = getChannelSubscription(channelId);
+            logger.debug("No more items linked to channel '{}', stopping {}", channelId, subscription);
+            unsubscribe(getChannelSubscription(channelId));
         }
-        unsubscribe(getChannelSubscription(channelId));
     }
 
     @Override
@@ -308,7 +303,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
 
     private boolean subscribe(Subscription subscription) {
         if (activeSubscriptions.add(subscription)) {
-            if (subscription instanceof SpotPriceSubscription || subscription instanceof DatahubPriceSubscription) {
+            if (subscription instanceof ElectricityPriceSubscription) {
                 electricityPriceProvider.subscribe(this, subscription);
             } else if (subscription instanceof Co2EmissionSubscription) {
                 co2EmissionProvider.subscribe(this, subscription);
@@ -323,7 +318,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
 
     private void unsubscribe(Subscription subscription) {
         if (activeSubscriptions.remove(subscription)) {
-            if (subscription instanceof SpotPriceSubscription || subscription instanceof DatahubPriceSubscription) {
+            if (subscription instanceof ElectricityPriceSubscription) {
                 electricityPriceProvider.unsubscribe(this, subscription);
             } else if (subscription instanceof Co2EmissionSubscription) {
                 co2EmissionProvider.unsubscribe(this, subscription);

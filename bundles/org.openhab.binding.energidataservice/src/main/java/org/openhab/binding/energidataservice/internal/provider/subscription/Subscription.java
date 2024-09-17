@@ -10,15 +10,15 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.energidataservice.internal.provider;
+package org.openhab.binding.energidataservice.internal.provider.subscription;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 
 /**
- * Abstract class for subscription.
+ * Generic interface for subscription.
  *
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public abstract class Subscription {
+public interface Subscription {
 }

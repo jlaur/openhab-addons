@@ -45,6 +45,10 @@ import org.openhab.binding.energidataservice.internal.api.dto.DatahubPricelistRe
 import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.provider.listener.ElectricityPriceListener;
+import org.openhab.binding.energidataservice.internal.provider.subscription.DatahubPriceSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.ElectricityPriceSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.SpotPriceSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.Subscription;
 import org.openhab.binding.energidataservice.internal.retry.RetryPolicyFactory;
 import org.openhab.binding.energidataservice.internal.retry.RetryStrategy;
 import org.openhab.core.i18n.TimeZoneProvider;
@@ -91,6 +95,9 @@ public class ElectricityPriceProvider extends AbstractProvider<ElectricityPriceL
     }
 
     public void subscribe(ElectricityPriceListener listener, Subscription subscription) {
+        if (!(subscription instanceof ElectricityPriceSubscription)) {
+            throw new IllegalArgumentException(subscription.getClass().getName() + " is not supported");
+        }
         boolean isFirstDistinctSubscription = subscribeInternal(listener, subscription);
 
         subscriptionCaches.putIfAbsent(subscription, new CacheManager());

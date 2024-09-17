@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.energidataservice.internal.provider;
+package org.openhab.binding.energidataservice.internal.provider.subscription;
 
 import java.util.Objects;
 
@@ -26,7 +26,7 @@ import org.openhab.binding.energidataservice.internal.api.GlobalLocationNumber;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class DatahubPriceSubscription extends Subscription {
+public class DatahubPriceSubscription implements ElectricityPriceSubscription {
     private final DatahubTariff datahubTariff;
     private final GlobalLocationNumber globalLocationNumber;
     private final DatahubTariffFilter filter;
@@ -57,7 +57,7 @@ public class DatahubPriceSubscription extends Subscription {
 
     @Override
     public String toString() {
-        return "[Subscription: GLN=" + globalLocationNumber + ", Filter=" + filter + "]";
+        return "DatahubPriceSubscription: GLN=" + globalLocationNumber + ", Filter=" + filter;
     }
 
     public DatahubTariff getDatahubTariff() {

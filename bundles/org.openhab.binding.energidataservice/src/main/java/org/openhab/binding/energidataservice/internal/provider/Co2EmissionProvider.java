@@ -31,6 +31,8 @@ import org.openhab.binding.energidataservice.internal.api.DateQueryParameterType
 import org.openhab.binding.energidataservice.internal.api.dto.CO2EmissionRecord;
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.provider.listener.Co2EmissionListener;
+import org.openhab.binding.energidataservice.internal.provider.subscription.Co2EmissionSubscription;
+import org.openhab.binding.energidataservice.internal.provider.subscription.Subscription;
 import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.io.net.http.HttpClientFactory;
 import org.openhab.core.scheduler.PeriodicScheduler;
@@ -75,11 +77,10 @@ public class Co2EmissionProvider extends AbstractProvider<Co2EmissionListener> {
     }
 
     public void subscribe(Co2EmissionListener listener, Subscription subscription) {
-        subscribeInternal(listener, subscription);
-
         if (!(subscription instanceof Co2EmissionSubscription co2EmissionSubscription)) {
-            throw new IllegalArgumentException("Only Co2EmissionSubscription supported");
+            throw new IllegalArgumentException(subscription.getClass().getName() + " is not supported");
         }
+        subscribeInternal(listener, subscription);
 
         if (Co2EmissionSubscription.Type.Prognosis == co2EmissionSubscription.getType()) {
             rescheduleEmissionPrognosisJob();
