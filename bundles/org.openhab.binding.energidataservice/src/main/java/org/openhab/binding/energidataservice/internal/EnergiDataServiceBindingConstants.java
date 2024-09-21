@@ -17,6 +17,8 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Currency;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.core.thing.ChannelUID;
@@ -64,6 +66,9 @@ public class EnergiDataServiceBindingConstants {
 
     public static final Set<String> CO2_EMISSION_CHANNELS = Set.of(CHANNEL_CO2_EMISSION_PROGNOSIS,
             CHANNEL_CO2_EMISSION_REALTIME);
+
+    public static final Set<String> SUBSCRIPTION_CHANNELS = Stream
+            .concat(ELECTRICITY_CHANNELS.stream(), CO2_EMISSION_CHANNELS.stream()).collect(Collectors.toSet());
 
     // List of all properties
     public static final String PROPERTY_REMAINING_CALLS = "remainingCalls";

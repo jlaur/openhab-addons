@@ -160,13 +160,12 @@ public class EnergiDataServiceHandler extends BaseThingHandler
             return;
         }
 
-        if (ELECTRICITY_CHANNELS.stream().anyMatch(this::isLinked)
-                || CO2_EMISSION_CHANNELS.stream().anyMatch(this::isLinked)) {
-            updateStatus(ThingStatus.UNKNOWN);
-        } else {
+        if (!SUBSCRIPTION_CHANNELS.stream().anyMatch(this::isLinked)) {
             updateStatus(ThingStatus.ONLINE);
             return;
         }
+
+        updateStatus(ThingStatus.UNKNOWN);
 
         if (isLinked(CHANNEL_SPOT_PRICE)) {
             subscribe(getChannelSubscription(CHANNEL_SPOT_PRICE));
@@ -198,7 +197,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
     @Override
     public void channelLinked(ChannelUID channelUID) {
         String channelId = channelUID.getId();
-        if (!ELECTRICITY_CHANNELS.contains(channelId) && !CO2_EMISSION_CHANNELS.contains(channelId)) {
+        if (!SUBSCRIPTION_CHANNELS.contains(channelId)) {
             // Do not trigger REFRESH command for subscription-based channels, we will trigger
             // a state update ourselves through relevant provider.
             super.channelLinked(channelUID);
@@ -241,8 +240,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
         super.channelUnlinked(channelUID);
 
         String channelId = channelUID.getId();
-        if ((ELECTRICITY_CHANNELS.contains(channelId) || CO2_EMISSION_CHANNELS.contains(channelId))
-                && !isLinked(channelId)) {
+        if (SUBSCRIPTION_CHANNELS.contains(channelId) && !isLinked(channelId)) {
             Subscription subscription = getChannelSubscription(channelId);
             logger.debug("No more items linked to channel '{}', stopping {}", channelId, subscription);
             unsubscribe(getChannelSubscription(channelId));
