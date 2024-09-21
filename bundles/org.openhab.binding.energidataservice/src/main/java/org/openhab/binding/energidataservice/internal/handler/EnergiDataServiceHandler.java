@@ -38,7 +38,6 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jetty.client.HttpClient;
 import org.openhab.binding.energidataservice.internal.ApiController;
-import org.openhab.binding.energidataservice.internal.CacheManager;
 import org.openhab.binding.energidataservice.internal.DatahubTariff;
 import org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants;
 import org.openhab.binding.energidataservice.internal.PriceListParser;
@@ -57,6 +56,7 @@ import org.openhab.binding.energidataservice.internal.config.EnergiDataServiceCo
 import org.openhab.binding.energidataservice.internal.exception.DataServiceException;
 import org.openhab.binding.energidataservice.internal.provider.Co2EmissionProvider;
 import org.openhab.binding.energidataservice.internal.provider.ElectricityPriceProvider;
+import org.openhab.binding.energidataservice.internal.provider.cache.ElectricityPriceSubscriptionCache;
 import org.openhab.binding.energidataservice.internal.provider.listener.Co2EmissionListener;
 import org.openhab.binding.energidataservice.internal.provider.listener.ElectricityPriceListener;
 import org.openhab.binding.energidataservice.internal.provider.subscription.Co2EmissionSubscription;
@@ -403,8 +403,8 @@ public class EnergiDataServiceHandler extends BaseThingHandler
                     start);
         }
 
-        return new DatahubTariffFilter(filter,
-                DateQueryParameter.of(filter.getStart(), Duration.ofHours(-CacheManager.NUMBER_OF_HISTORIC_HOURS)));
+        return new DatahubTariffFilter(filter, DateQueryParameter.of(filter.getStart(),
+                Duration.ofHours(-ElectricityPriceSubscriptionCache.NUMBER_OF_HISTORIC_HOURS)));
     }
 
     private void updatePriceState(String channelID, @Nullable BigDecimal price, Currency currency) {

@@ -18,10 +18,9 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
-import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants;
 import org.openhab.binding.energidataservice.internal.PriceListParser;
 import org.openhab.binding.energidataservice.internal.api.dto.DatahubPricelistRecord;
 
@@ -34,16 +33,18 @@ import org.openhab.binding.energidataservice.internal.api.dto.DatahubPricelistRe
 public class DatahubPriceSubscriptionCache
         extends ElectricityPriceSubscriptionCache<Collection<DatahubPricelistRecord>> {
 
+    public static final int MAX_CACHE_SIZE = 24 * 2 + NUMBER_OF_HISTORIC_HOURS;
+
     private final PriceListParser priceListParser = new PriceListParser();
 
-    private Collection<DatahubPricelistRecord> datahubRecords = List.of();
+    private Collection<DatahubPricelistRecord> datahubRecords = new CopyOnWriteArrayList<>();
 
     public DatahubPriceSubscriptionCache() {
         this(Clock.systemDefaultZone());
     }
 
     public DatahubPriceSubscriptionCache(Clock clock) {
-        super(clock);
+        super(clock, MAX_CACHE_SIZE);
     }
 
     /**
@@ -57,8 +58,8 @@ public class DatahubPriceSubscriptionCache
         LocalDateTime localHourStart = LocalDateTime.now(clock.withZone(DATAHUB_TIMEZONE))
                 .minus(NUMBER_OF_HISTORIC_HOURS, ChronoUnit.HOURS).truncatedTo(ChronoUnit.HOURS);
 
-        datahubRecords.clear();
-        datahubRecords.addAll(records.stream().filter(r -> !r.validTo().isBefore(localHourStart)).toList());
+        datahubRecords = new CopyOnWriteArrayList<>(
+                records.stream().filter(r -> !r.validTo().isBefore(localHourStart)).toList());
         update();
     }
 
@@ -76,7 +77,7 @@ public class DatahubPriceSubscriptionCache
      * @return true if tariff records for tomorrow are cached
      */
     public boolean areTariffsValidTomorrow() {
-        LocalDateTime localHourStart = LocalDateTime.now(EnergiDataServiceBindingConstants.DATAHUB_TIMEZONE)
+        LocalDateTime localHourStart = LocalDateTime.now(clock.withZone(DATAHUB_TIMEZONE))
                 .truncatedTo(ChronoUnit.HOURS);
         LocalDateTime localMidnight = localHourStart.plusDays(1).truncatedTo(ChronoUnit.DAYS);
 

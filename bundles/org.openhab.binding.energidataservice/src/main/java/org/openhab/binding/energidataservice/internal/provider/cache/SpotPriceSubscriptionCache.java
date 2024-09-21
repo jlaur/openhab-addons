@@ -35,6 +35,8 @@ import org.openhab.binding.energidataservice.internal.provider.subscription.Spot
 @NonNullByDefault
 public class SpotPriceSubscriptionCache extends ElectricityPriceSubscriptionCache<ElspotpriceRecord[]> {
 
+    private static final int MAX_CACHE_SIZE = 24 + 11 + NUMBER_OF_HISTORIC_HOURS;
+
     private final SpotPriceSubscription subscription;
 
     public SpotPriceSubscriptionCache(SpotPriceSubscription subscription) {
@@ -42,7 +44,7 @@ public class SpotPriceSubscriptionCache extends ElectricityPriceSubscriptionCach
     }
 
     public SpotPriceSubscriptionCache(SpotPriceSubscription subscription, Clock clock) {
-        super(clock);
+        super(clock, MAX_CACHE_SIZE);
         this.subscription = subscription;
     }
 

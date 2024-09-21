@@ -35,12 +35,13 @@ public abstract class ElectricityPriceSubscriptionCache<R> implements Subscripti
 
     public static final int NUMBER_OF_HISTORIC_HOURS = 24;
 
-    protected final Map<Instant, BigDecimal> priceMap = new ConcurrentHashMap<>();
+    protected final Map<Instant, BigDecimal> priceMap;
 
     protected final Clock clock;
 
-    protected ElectricityPriceSubscriptionCache(Clock clock) {
+    protected ElectricityPriceSubscriptionCache(Clock clock, int initialCapacity) {
         this.clock = clock.withZone(NORD_POOL_TIMEZONE);
+        this.priceMap = new ConcurrentHashMap<>(initialCapacity);
     }
 
     @Override
