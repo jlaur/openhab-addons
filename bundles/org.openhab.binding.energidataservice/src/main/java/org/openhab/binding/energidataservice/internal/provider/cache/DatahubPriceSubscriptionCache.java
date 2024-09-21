@@ -18,6 +18,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -54,13 +55,17 @@ public class DatahubPriceSubscriptionCache
      * @param records The records as received from Energi Data Service.
      */
     @Override
-    public void put(Collection<DatahubPricelistRecord> records) {
+    public boolean put(Collection<DatahubPricelistRecord> records) {
         LocalDateTime localHourStart = LocalDateTime.now(clock.withZone(DATAHUB_TIMEZONE))
                 .minus(NUMBER_OF_HISTORIC_HOURS, ChronoUnit.HOURS).truncatedTo(ChronoUnit.HOURS);
 
-        datahubRecords = new CopyOnWriteArrayList<>(
-                records.stream().filter(r -> !r.validTo().isBefore(localHourStart)).toList());
+        List<DatahubPricelistRecord> newRecords = records.stream().filter(r -> !r.validTo().isBefore(localHourStart))
+                .toList();
+        boolean recordsAreEqual = datahubRecords.containsAll(newRecords) && newRecords.containsAll(datahubRecords);
+        datahubRecords = new CopyOnWriteArrayList<>(newRecords);
         update();
+
+        return !recordsAreEqual;
     }
 
     /**
@@ -68,7 +73,7 @@ public class DatahubPriceSubscriptionCache
      */
     public void update() {
         priceMap.putAll(priceListParser.toHourly(datahubRecords));
-        cleanup();
+        flush();
     }
 
     /**

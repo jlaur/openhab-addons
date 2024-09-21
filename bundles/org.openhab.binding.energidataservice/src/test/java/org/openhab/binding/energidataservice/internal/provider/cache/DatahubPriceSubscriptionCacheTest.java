@@ -59,7 +59,73 @@ public class DatahubPriceSubscriptionCacheTest {
         assertThat(cache.areTariffsValidTomorrow(), is(false));
     }
 
-    private void populateWithDatahubPrices(DatahubPriceSubscriptionCache cache, LocalDateTime validFrom,
+    @Test
+    void updateCacheIsNotChanged() {
+        Instant now = Instant.parse("2024-09-30T09:22:00Z");
+        LocalDateTime from = LocalDateTime.parse("2024-08-01T00:00:00");
+        LocalDateTime to = LocalDateTime.parse("2024-10-01T00:00:00");
+        Clock clock = Clock.fixed(now, DATAHUB_TIMEZONE);
+        DatahubPriceSubscriptionCache cache = new DatahubPriceSubscriptionCache(clock);
+        populateWithDatahubPrices(cache, from, to);
+        assertThat(populateWithDatahubPrices(cache, from, to), is(false));
+    }
+
+    @Test
+    void updateCacheIsNotChangedSameValue() {
+        Instant now = Instant.parse("2024-09-30T09:22:00Z");
+        LocalDateTime from = LocalDateTime.parse("2024-08-01T00:00:00");
+        LocalDateTime to = LocalDateTime.parse("2024-10-01T00:00:00");
+        Clock clock = Clock.fixed(now, DATAHUB_TIMEZONE);
+        DatahubPriceSubscriptionCache cache = new DatahubPriceSubscriptionCache(clock);
+        populateWithDatahubPrices(cache, from, to);
+
+        from = LocalDateTime.parse("2024-10-01T00:00:00");
+        to = LocalDateTime.parse("2024-11-01T00:00:00");
+        populateWithDatahubPrices(cache, from, to);
+
+        var changedRecords = new ArrayList<DatahubPricelistRecord>();
+        changedRecords.add(new DatahubPricelistRecord(from, to, "CD", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+        assertThat(cache.put(changedRecords), is(false));
+    }
+
+    @Test
+    void updateCacheIsChangedByOneValue() {
+        Instant now = Instant.parse("2024-09-30T09:22:00Z");
+        LocalDateTime from = LocalDateTime.parse("2024-08-01T00:00:00");
+        LocalDateTime to = LocalDateTime.parse("2024-10-01T00:00:00");
+        Clock clock = Clock.fixed(now, DATAHUB_TIMEZONE);
+        DatahubPriceSubscriptionCache cache = new DatahubPriceSubscriptionCache(clock);
+        populateWithDatahubPrices(cache, from, to);
+
+        from = LocalDateTime.parse("2024-10-01T00:00:00");
+        to = LocalDateTime.parse("2024-11-01T00:00:00");
+        populateWithDatahubPrices(cache, from, to);
+
+        var changedRecords = new ArrayList<DatahubPricelistRecord>();
+        changedRecords.add(new DatahubPricelistRecord(from, to, "CD", BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+        assertThat(cache.put(changedRecords), is(true));
+    }
+
+    @Test
+    void updateCacheIsChangedByAdditionalKey() {
+        Instant now = Instant.parse("2024-09-30T09:22:00Z");
+        LocalDateTime from = LocalDateTime.parse("2024-08-01T00:00:00");
+        LocalDateTime to = LocalDateTime.parse("2024-10-01T00:00:00");
+        Clock clock = Clock.fixed(now, DATAHUB_TIMEZONE);
+        DatahubPriceSubscriptionCache cache = new DatahubPriceSubscriptionCache(clock);
+        populateWithDatahubPrices(cache, from, to);
+        assertThat(populateWithDatahubPrices(cache, to, to.plusMonths(1)), is(true));
+    }
+
+    private boolean populateWithDatahubPrices(DatahubPriceSubscriptionCache cache, LocalDateTime validFrom,
             LocalDateTime validTo) {
         var records = new ArrayList<DatahubPricelistRecord>();
         records.add(new DatahubPricelistRecord(validFrom, validTo, "CD", BigDecimal.ZERO, BigDecimal.ZERO,
@@ -67,6 +133,6 @@ public class DatahubPriceSubscriptionCacheTest {
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
                 BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
-        cache.put(records);
+        return cache.put(records);
     }
 }

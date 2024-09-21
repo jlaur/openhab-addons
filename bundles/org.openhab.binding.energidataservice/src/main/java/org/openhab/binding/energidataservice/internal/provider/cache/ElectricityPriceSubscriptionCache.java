@@ -45,7 +45,7 @@ public abstract class ElectricityPriceSubscriptionCache<R> implements Subscripti
     }
 
     @Override
-    public void cleanup() {
+    public void flush() {
         Instant firstHourStart = getFirstHourStart();
         priceMap.entrySet().removeIf(entry -> entry.getKey().isBefore(firstHourStart));
     }

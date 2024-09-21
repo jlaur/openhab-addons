@@ -123,13 +123,65 @@ public class SpotPriceSubscriptionCacheTest {
         assertThat(cache.areHistoricPricesCached(), is(false));
     }
 
-    private void populateWithSpotPrices(SpotPriceSubscriptionCache cache, Instant first, Instant last) {
+    @Test
+    void updateCacheIsNotChanged() {
+        Instant now = Instant.parse("2023-02-07T08:38:47Z");
+        Instant first = Instant.parse("2023-02-06T08:00:00Z");
+        Instant last = Instant.parse("2023-02-07T07:00:00Z");
+        Clock clock = Clock.fixed(now, NORD_POOL_TIMEZONE);
+        SpotPriceSubscriptionCache cache = new SpotPriceSubscriptionCache(SpotPriceSubscription.of("DK1", CURRENCY_DKK),
+                clock);
+        populateWithSpotPrices(cache, first, last);
+        assertThat(populateWithSpotPrices(cache, first, last), is(false));
+    }
+
+    @Test
+    void updateCacheIsNotChangedSameValue() {
+        Instant now = Instant.parse("2023-02-07T08:38:47Z");
+        Instant first = Instant.parse("2023-02-06T08:00:00Z");
+        Instant last = Instant.parse("2023-02-07T07:00:00Z");
+        Clock clock = Clock.fixed(now, NORD_POOL_TIMEZONE);
+        SpotPriceSubscriptionCache cache = new SpotPriceSubscriptionCache(SpotPriceSubscription.of("DK1", CURRENCY_DKK),
+                clock);
+        populateWithSpotPrices(cache, first, last);
+        ElspotpriceRecord[] changedRecords = new ElspotpriceRecord[1];
+        changedRecords[0] = new ElspotpriceRecord(last, BigDecimal.ONE, BigDecimal.ZERO);
+        assertThat(cache.put(changedRecords), is(false));
+    }
+
+    @Test
+    void updateCacheIsChangedByOneValue() {
+        Instant now = Instant.parse("2023-02-07T08:38:47Z");
+        Instant first = Instant.parse("2023-02-06T08:00:00Z");
+        Instant last = Instant.parse("2023-02-07T07:00:00Z");
+        Clock clock = Clock.fixed(now, NORD_POOL_TIMEZONE);
+        SpotPriceSubscriptionCache cache = new SpotPriceSubscriptionCache(SpotPriceSubscription.of("DK1", CURRENCY_DKK),
+                clock);
+        populateWithSpotPrices(cache, first, last);
+        ElspotpriceRecord[] changedRecords = new ElspotpriceRecord[1];
+        changedRecords[0] = new ElspotpriceRecord(last, BigDecimal.TEN, BigDecimal.ZERO);
+        assertThat(cache.put(changedRecords), is(true));
+    }
+
+    @Test
+    void updateCacheIsChangedByAdditionalKey() {
+        Instant now = Instant.parse("2023-02-07T08:38:47Z");
+        Instant first = Instant.parse("2023-02-06T08:00:00Z");
+        Instant last = Instant.parse("2023-02-07T07:00:00Z");
+        Clock clock = Clock.fixed(now, NORD_POOL_TIMEZONE);
+        SpotPriceSubscriptionCache cache = new SpotPriceSubscriptionCache(SpotPriceSubscription.of("DK1", CURRENCY_DKK),
+                clock);
+        populateWithSpotPrices(cache, first, last);
+        assertThat(populateWithSpotPrices(cache, first, last.plus(1, ChronoUnit.HOURS)), is(true));
+    }
+
+    private boolean populateWithSpotPrices(SpotPriceSubscriptionCache cache, Instant first, Instant last) {
         int size = (int) Duration.between(first, last).getSeconds() / 60 / 60 + 1;
         ElspotpriceRecord[] records = new ElspotpriceRecord[size];
         int i = 0;
         for (Instant hourStart = first; !hourStart.isAfter(last); hourStart = hourStart.plus(1, ChronoUnit.HOURS)) {
             records[i++] = new ElspotpriceRecord(hourStart, BigDecimal.ONE, BigDecimal.ZERO);
         }
-        cache.put(records);
+        return cache.put(records);
     }
 }

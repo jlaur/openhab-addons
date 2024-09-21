@@ -39,7 +39,6 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.eclipse.jetty.client.HttpClient;
 import org.openhab.binding.energidataservice.internal.ApiController;
 import org.openhab.binding.energidataservice.internal.DatahubTariff;
-import org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants;
 import org.openhab.binding.energidataservice.internal.PriceListParser;
 import org.openhab.binding.energidataservice.internal.action.EnergiDataServiceActions;
 import org.openhab.binding.energidataservice.internal.api.ChargeType;
@@ -127,8 +126,11 @@ public class EnergiDataServiceHandler extends BaseThingHandler
 
         String channelId = channelUID.getId();
         if (ELECTRICITY_CHANNELS.contains(channelId)) {
-            // Request already cached results to be republished.
-            updateChannelFromCache(getChannelSubscription(channelId), channelId);
+            if (!electricityPriceProvider.forceRefreshPrices(getChannelSubscription(channelId))) {
+                // All subscriptions are automatically notified upon actual changes after download.
+                // If cached values are the same, we will update the requested channel directly.
+                updateChannelFromCache(getChannelSubscription(channelId), channelId);
+            }
         } else if (CO2_EMISSION_CHANNELS.contains(channelId)) {
             Subscription subscription = getChannelSubscription(channelId);
             unsubscribe(subscription);
@@ -198,18 +200,23 @@ public class EnergiDataServiceHandler extends BaseThingHandler
         String channelId = channelUID.getId();
         if (!ELECTRICITY_CHANNELS.contains(channelId) && !CO2_EMISSION_CHANNELS.contains(channelId)) {
             // Do not trigger REFRESH command for subscription-based channels, we will trigger
-            // a state update ourselves through relevant Provider.
+            // a state update ourselves through relevant provider.
             super.channelLinked(channelUID);
         }
 
         if (ELECTRICITY_CHANNELS.contains(channelId)) {
             Subscription subscription = getChannelSubscription(channelId);
-            if (!subscribe(subscription)) {
+            if (subscribe(subscription)) {
+                logger.debug("First item linked to channel '{}', starting {}", channelId, subscription);
+            } else {
                 updateChannelFromCache(subscription, channelId);
             }
         } else if (CO2_EMISSION_CHANNELS.contains(channelId)) {
             if ("DK1".equals(config.priceArea) || "DK2".equals(config.priceArea)) {
-                subscribe(getChannelSubscription(channelId));
+                Subscription subscription = getChannelSubscription(channelId);
+                if (subscribe(subscription)) {
+                    logger.debug("First item linked to channel '{}', starting {}", channelId, subscription);
+                }
             } else {
                 logger.warn("Item linked to channel '{}', but price area {} is not supported for this channel",
                         channelId, config.priceArea);
@@ -222,7 +229,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
         Map<Instant, BigDecimal> prices = electricityPriceProvider.getPricesIfCached(subscription);
         if (subscription instanceof SpotPriceSubscription) {
             updatePriceState(channelId, currentPrice, config.getCurrency());
-            updatePriceTimeSeries(CHANNEL_SPOT_PRICE, prices, config.getCurrency(), false);
+            updatePriceTimeSeries(channelId, prices, config.getCurrency(), false);
         } else if (subscription instanceof DatahubPriceSubscription) {
             updatePriceState(channelId, currentPrice, CURRENCY_DKK);
             updatePriceTimeSeries(channelId, prices, CURRENCY_DKK, true);
@@ -443,7 +450,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
             Currency currency = config.getCurrency();
             ElspotpriceRecord[] spotPriceRecords = apiController.getSpotPrices(config.priceArea, currency,
                     DateQueryParameter.of(startDate), DateQueryParameter.of(endDate.plusDays(1)), properties);
-            boolean isDKK = EnergiDataServiceBindingConstants.CURRENCY_DKK.equals(currency);
+            boolean isDKK = CURRENCY_DKK.equals(currency);
             TimeSeries spotPriceTimeSeries = new TimeSeries(REPLACE);
             if (spotPriceRecords.length == 0) {
                 return 0;
@@ -539,19 +546,7 @@ public class EnergiDataServiceHandler extends BaseThingHandler
      * @return Map of future spot prices
      */
     public Map<Instant, BigDecimal> getSpotPrices() {
-        try {
-            return electricityPriceProvider.getPrices(getChannelSubscription(CHANNEL_SPOT_PRICE));
-        } catch (DataServiceException e) {
-            if (logger.isDebugEnabled()) {
-                logger.warn("Error retrieving spot prices", e);
-            } else {
-                logger.warn("Error retrieving spot prices: {}", e.getMessage());
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        return Map.of();
+        return this.getPrices(getChannelSubscription(CHANNEL_SPOT_PRICE));
     }
 
     /**
@@ -561,15 +556,15 @@ public class EnergiDataServiceHandler extends BaseThingHandler
      * @return Map of future tariffs
      */
     public Map<Instant, BigDecimal> getTariffs(DatahubTariff datahubTariff) {
+        return this.getPrices(DatahubPriceSubscription.of(datahubTariff, getGlobalLocationNumber(datahubTariff),
+                getDatahubTariffFilter(datahubTariff)));
+    }
+
+    private Map<Instant, BigDecimal> getPrices(Subscription subscription) {
         try {
-            return electricityPriceProvider.getPrices(DatahubPriceSubscription.of(datahubTariff,
-                    getGlobalLocationNumber(datahubTariff), getDatahubTariffFilter(datahubTariff)));
+            return electricityPriceProvider.getPrices(subscription);
         } catch (DataServiceException e) {
-            if (logger.isDebugEnabled()) {
-                logger.warn("Error retrieving tariffs", e);
-            } else {
-                logger.warn("Error retrieving tariffs of type {}: {}", datahubTariff, e.getMessage());
-            }
+            logger.warn("Error retrieving prices for subscription {}: {}", subscription, e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }

@@ -26,16 +26,48 @@ import org.eclipse.jdt.annotation.Nullable;
  */
 @NonNullByDefault
 public interface SubscriptionDataCache<R> {
-    void put(R records);
 
+    /**
+     * Add records to cache.
+     *
+     * @param records Records to add to cache
+     * @return true if the provided records resulted in any cache changes
+     */
+    boolean put(R records);
+
+    /**
+     * Get cached prices.
+     *
+     * @return Map of cached key/value pairs
+     */
     Map<Instant, BigDecimal> get();
 
+    /**
+     * Get cached price for specific {@link Instant}.
+     *
+     * @param time Get cached value at this time
+     * @return Price at given time
+     */
     @Nullable
     BigDecimal get(Instant time);
 
-    void cleanup();
+    /**
+     * Flush expired cached values.
+     */
+    void flush();
 
+    /**
+     * Get the number of future prices in the cache.
+     *
+     * @return number of cached future prices
+     */
     long getNumberOfFuturePrices();
 
+    /**
+     * Check if all required historic values are cached, considering
+     * {@link ElectricityPriceSubscriptionCache#NUMBER_OF_HISTORIC_HOURS}.
+     *
+     * @return true if historic values are fully cached
+     */
     boolean areHistoricPricesCached();
 }

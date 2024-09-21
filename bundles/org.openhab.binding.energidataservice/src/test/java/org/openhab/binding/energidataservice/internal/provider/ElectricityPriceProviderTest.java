@@ -65,7 +65,8 @@ public class ElectricityPriceProviderTest {
     @SuppressWarnings("unchecked")
     @BeforeEach
     void setUp() {
-        ScheduledCompletableFuture<@Nullable Void> futureMock = mock(ScheduledCompletableFuture.class);
+        ScheduledCompletableFuture<@Nullable Void> futureMock = (ScheduledCompletableFuture<@Nullable Void>) mock(
+                ScheduledCompletableFuture.class);
         when(scheduler.at(any(SchedulerRunnable.class), any(Instant.class))).thenReturn(futureMock);
         provider = new ElectricityPriceProvider(scheduler, httpClientFactory, timeZoneProvider);
     }

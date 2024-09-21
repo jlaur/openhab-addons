@@ -23,7 +23,6 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.energidataservice.internal.EnergiDataServiceBindingConstants;
 import org.openhab.binding.energidataservice.internal.api.dto.ElspotpriceRecord;
 import org.openhab.binding.energidataservice.internal.provider.subscription.SpotPriceSubscription;
 
@@ -52,15 +51,25 @@ public class SpotPriceSubscriptionCache extends ElectricityPriceSubscriptionCach
      * Convert and cache the supplied {@link ElspotpriceRecord}s.
      * 
      * @param records The records as received from Energi Data Service.
+     * @return true if the provided records resulted in any cache changes
      */
     @Override
-    public void put(ElspotpriceRecord[] records) {
-        boolean isDKK = EnergiDataServiceBindingConstants.CURRENCY_DKK.equals(subscription.getCurrency());
+    public boolean put(ElspotpriceRecord[] records) {
+        boolean isDKK = CURRENCY_DKK.equals(subscription.getCurrency());
+        boolean anyChanges = false;
+        int oldSize = priceMap.size();
         for (ElspotpriceRecord record : records) {
-            priceMap.put(record.hour(),
-                    (isDKK ? record.spotPriceDKK() : record.spotPriceEUR()).divide(BigDecimal.valueOf(1000)));
+            BigDecimal newValue = (isDKK ? record.spotPriceDKK() : record.spotPriceEUR())
+                    .divide(BigDecimal.valueOf(1000));
+            BigDecimal oldValue = priceMap.put(record.hour(), newValue);
+            if (oldValue == null || newValue.compareTo(oldValue) != 0) {
+                anyChanges = true;
+            }
         }
-        cleanup();
+        anyChanges |= oldSize != priceMap.size();
+        flush();
+
+        return anyChanges;
     }
 
     /**
