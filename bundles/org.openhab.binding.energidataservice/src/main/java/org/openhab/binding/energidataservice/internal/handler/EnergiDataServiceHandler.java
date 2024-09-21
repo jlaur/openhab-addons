@@ -366,16 +366,6 @@ public class EnergiDataServiceHandler extends BaseThingHandler
         };
     }
 
-    private Collection<DatahubPricelistRecord> downloadPriceLists(GlobalLocationNumber globalLocationNumber,
-            DatahubTariffFilter filter) throws InterruptedException, DataServiceException {
-        Map<String, String> properties = editProperties();
-        try {
-            return apiController.getDatahubPriceLists(globalLocationNumber, ChargeType.Tariff, filter, properties);
-        } finally {
-            updateProperties(properties);
-        }
-    }
-
     private DatahubTariffFilter getGridTariffFilter() {
         Channel channel = getThing().getChannel(CHANNEL_GRID_TARIFF);
         if (channel == null) {
@@ -501,6 +491,16 @@ public class EnergiDataServiceHandler extends BaseThingHandler
                 lastHourStart);
 
         return updatePriceTimeSeries(datahubTariff.getChannelId(), tariffMap, CURRENCY_DKK, true);
+    }
+
+    private Collection<DatahubPricelistRecord> downloadPriceLists(GlobalLocationNumber globalLocationNumber,
+            DatahubTariffFilter filter) throws InterruptedException, DataServiceException {
+        Map<String, String> properties = editProperties();
+        try {
+            return apiController.getDatahubPriceLists(globalLocationNumber, ChargeType.Tariff, filter, properties);
+        } finally {
+            updateProperties(properties);
+        }
     }
 
     private int updatePriceTimeSeries(String channelId, Map<Instant, BigDecimal> priceMap, Currency currency,
