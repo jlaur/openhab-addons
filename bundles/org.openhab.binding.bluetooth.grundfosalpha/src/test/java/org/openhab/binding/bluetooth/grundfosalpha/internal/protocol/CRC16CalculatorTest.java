@@ -33,7 +33,7 @@ public class CRC16CalculatorTest {
 
     private static final int MAX_16BIT = 0xFFFF;
     private static final int MSB_16BIT = 0x8000;
-    private static final int POLYNOMIAL = 0x1021; // CRC-16-CCITT polynomial (4129 in decimal)
+    private static final int POLYNOMIAL = 0x1021; // CRC-16-CCITT polynomial
 
     @Test
     void precomputedValuesAreCorrect() {

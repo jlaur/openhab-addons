@@ -22,18 +22,26 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 @NonNullByDefault
 public enum MessageType {
     FlowHead(new byte[] { 0x1f, 0x00, 0x01, 0x30, 0x01, 0x00, 0x00, 0x18 },
-            new byte[] { (byte) 0x27, (byte) 0x07, (byte) 0xe7, (byte) 0xf8, (byte) 0x0a, (byte) 0x03, (byte) 0x5d,
-                    (byte) 0x01, (byte) 0x21, (byte) 0x52, (byte) 0x1f }),
+            new byte[] { (byte) 0x03, (byte) 0x5d, (byte) 0x01, (byte) 0x21 }),
     Power(new byte[] { 0x2c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x25 },
-            new byte[] { (byte) 0x27, (byte) 0x07, (byte) 0xe7, (byte) 0xf8, (byte) 0x0a, (byte) 0x03, (byte) 0x57,
-                    (byte) 0x00, (byte) 0x45, (byte) 0x8a, (byte) 0xcd });
+            new byte[] { (byte) 0x03, (byte) 0x57, (byte) 0x00, (byte) 0x45 });
 
     private final byte[] identifier;
     private final byte[] request;
 
-    MessageType(byte[] identifier, byte[] request) {
+    MessageType(byte[] identifier, byte[] requestMessage) {
         this.identifier = identifier;
-        this.request = request;
+
+        int messageLength = requestMessage.length + 3;
+        request = new byte[messageLength + 4];
+
+        // Append the header
+        MessageHeader.setRequestHeader(request, messageLength);
+
+        // Append the message type-specific part
+        System.arraycopy(requestMessage, 0, request, MessageHeader.LENGTH, requestMessage.length);
+
+        CRC16Calculator.put(request, messageLength);
     }
 
     public byte[] identifier() {

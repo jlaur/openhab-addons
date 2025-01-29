@@ -39,7 +39,6 @@ public class ResponseMessage {
     private final Logger logger = LoggerFactory.getLogger(ResponseMessage.class);
 
     private static final int GENI_RESPONSE_MAX_SIZE = 259;
-    private static final int GENI_RESPONSE_HEADER_LENGTH = 5;
     private static final int GENI_RESPONSE_TYPE_LENGTH = 8;
 
     private int responseTotalSize;
@@ -58,13 +57,13 @@ public class ResponseMessage {
             logger.trace("GENI response: {}", HexUtils.bytesToHex(packet));
         }
 
-        boolean isFirstPacket = isInitialPacket(packet);
+        boolean isFirstPacket = MessageHeader.isInitialResponsePacket(packet);
 
         if (responseRemaining == Integer.MAX_VALUE) {
-            if (!isInitialPacket(packet)) {
+            if (!MessageHeader.isInitialResponsePacket(packet)) {
                 if (logger.isDebugEnabled()) {
-                    byte[] header = new byte[GENI_RESPONSE_HEADER_LENGTH];
-                    System.arraycopy(packet, 0, header, 0, GENI_RESPONSE_HEADER_LENGTH);
+                    byte[] header = new byte[MessageHeader.LENGTH];
+                    System.arraycopy(packet, 0, header, 0, MessageHeader.LENGTH);
                     if (logger.isDebugEnabled()) {
                         logger.debug("Response bytes {} don't match GENI header", HexUtils.bytesToHex(header));
                     }
@@ -72,13 +71,13 @@ public class ResponseMessage {
                 return false;
             }
 
-            responseTotalSize = getTotalSize(packet);
+            responseTotalSize = MessageHeader.getTotalSize(packet);
             responseOffset = 0;
             responseRemaining = responseTotalSize;
         } else if (isFirstPacket && responseRemaining > 0) {
             logger.debug("Received new first packet while awaiting continuation, resetting");
 
-            responseTotalSize = getTotalSize(packet);
+            responseTotalSize = MessageHeader.getTotalSize(packet);
             responseOffset = 0;
             responseRemaining = responseTotalSize;
         }
@@ -124,24 +123,15 @@ public class ResponseMessage {
     private Optional<ByteBuffer> decode(SensorDataType dataType) {
         byte[] expectedResponseType = dataType.messageType().identifier();
         byte[] responseType = new byte[GENI_RESPONSE_TYPE_LENGTH];
-        System.arraycopy(response, GENI_RESPONSE_HEADER_LENGTH, responseType, 0, GENI_RESPONSE_TYPE_LENGTH);
+        System.arraycopy(response, MessageHeader.LENGTH, responseType, 0, GENI_RESPONSE_TYPE_LENGTH);
 
         if (!Arrays.equals(expectedResponseType, responseType)) {
             return Optional.empty();
         }
 
-        int valueOffset = GENI_RESPONSE_HEADER_LENGTH + GENI_RESPONSE_TYPE_LENGTH + dataType.offset();
+        int valueOffset = MessageHeader.LENGTH + GENI_RESPONSE_TYPE_LENGTH + dataType.offset();
         byte[] valueBuffer = Arrays.copyOfRange(response, valueOffset, valueOffset + 4);
 
         return Optional.of(ByteBuffer.wrap(valueBuffer).order(ByteOrder.BIG_ENDIAN));
-    }
-
-    private boolean isInitialPacket(byte[] packet) {
-        return packet[0] == (byte) 0x24 && packet[2] == (byte) 0xf8 && packet[3] == (byte) 0xe7
-                && packet[4] == (byte) 0x0a;
-    }
-
-    private int getTotalSize(byte[] initialPacket) {
-        return ((byte) initialPacket[1]) + 4;
     }
 }

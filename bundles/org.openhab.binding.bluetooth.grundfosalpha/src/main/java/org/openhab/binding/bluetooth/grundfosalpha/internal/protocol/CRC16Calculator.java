@@ -40,9 +40,9 @@ public class CRC16Calculator {
             48554, 44427, 40424, 36297, 31782, 27655, 23652, 19525, 15522, 11395, 7392, 3265, 61215, 65342, 53085,
             57212, 44955, 49082, 36825, 40952, 28183, 32310, 20053, 24180, 11923, 16050, 3793, 7920 };
 
-    private static final int CRC16_INITIAL_VALUE = 0xFFFF;
-    private static final int CRC16_FINAL_XOR = 0xFFFF;
-    private static final int BYTE_MASK = 0xFF;
+    private static final int CRC16_INITIAL_VALUE = 0xffff;
+    private static final int CRC16_FINAL_XOR = 0xffff;
+    private static final int BYTE_MASK = 0xff;
 
     private CRC16Calculator() {
         // Prevent instantiation
@@ -59,35 +59,53 @@ public class CRC16Calculator {
             throw new IllegalArgumentException("Data array must contain at least 3 bytes.");
         }
 
-        int dataLength = (data[1] & BYTE_MASK) + 1;
-        if (dataLength + 3 > data.length) {
+        int dataLength = (data[1] & BYTE_MASK);
+        if (dataLength + 4 > data.length) {
             throw new IllegalArgumentException("Invalid data length specified in the array.");
         }
 
-        int crcValue = calculateCRC(data, 1, dataLength);
-        byte highByte = (byte) getHighByte(crcValue);
-        byte lowByte = (byte) getLowByte(crcValue);
+        int crcValue = calculate(data, 1, dataLength + 1);
+        byte lowByte = getLowByte(crcValue);
+        byte highByte = getHighByte(crcValue);
 
-        return data[dataLength + 1] == highByte && data[dataLength + 2] == lowByte;
+        return data[dataLength + 2] == highByte && data[dataLength + 3] == lowByte;
     }
 
-    private static int calculateCRC(byte[] data, int start, int length) {
+    /**
+     * Calculates the CRC-16 checksum for the given data and puts it into
+     * the last two bytes of the given data array.
+     *
+     * @param data The data array to calculate CRC-16 with the two last bytes reserved for the result
+     * @param length The message size excluding start delimiter/size (first two bytes) and CRC-16 checksum (last two
+     *            bytes)
+     */
+    public static void put(byte[] data, int length) {
+        int dataLength = (data[1] & BYTE_MASK);
+        if (dataLength + 4 > data.length) {
+            throw new IllegalArgumentException("Invalid data length specified in the array.");
+        }
+        int crcValue = calculate(data, 1, length + 1);
+        data[length + 2] = getHighByte(crcValue);
+        data[length + 3] = getLowByte(crcValue);
+    }
+
+    private static int calculate(byte[] data, int start, int length) {
         int value = CRC16_INITIAL_VALUE;
 
         for (int i = 0; i < length; i++) {
             int inputByte = data[start + i] & BYTE_MASK;
             int tableIndex = (inputByte ^ (value >> 8)) & BYTE_MASK;
-            value = (LOOKUP_TABLE[tableIndex] ^ (value << 8)) & 0xFFFF;
+            value = (LOOKUP_TABLE[tableIndex] ^ (value << 8)) & 0xffff;
         }
 
         return value ^ CRC16_FINAL_XOR;
     }
 
-    private static int getHighByte(int word) {
-        return (word >> 8) & BYTE_MASK;
+    private static byte getLowByte(int word) {
+        return (byte) (word & BYTE_MASK);
     }
 
-    private static int getLowByte(int word) {
-        return word & BYTE_MASK;
+    private static byte getHighByte(int word) {
+        return (byte) ((word >> 8) & BYTE_MASK);
     }
 }
