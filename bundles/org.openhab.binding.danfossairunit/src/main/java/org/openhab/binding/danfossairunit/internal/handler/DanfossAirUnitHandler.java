@@ -30,6 +30,7 @@ import org.openhab.binding.danfossairunit.internal.Channel;
 import org.openhab.binding.danfossairunit.internal.DanfossAirUnit;
 import org.openhab.binding.danfossairunit.internal.DanfossAirUnitCommunicationController;
 import org.openhab.binding.danfossairunit.internal.DanfossAirUnitConfiguration;
+import org.openhab.binding.danfossairunit.internal.DanfossAirUnitReadAccessor;
 import org.openhab.binding.danfossairunit.internal.DanfossAirUnitWriteAccessor;
 import org.openhab.binding.danfossairunit.internal.FixedTimeZoneProvider;
 import org.openhab.binding.danfossairunit.internal.UnexpectedResponseValueException;
@@ -155,7 +156,11 @@ public class DanfossAirUnitHandler extends BaseThingHandler {
         }
 
         try {
-            State state = channel.getReadAccessor().access(airUnit);
+            DanfossAirUnitReadAccessor readAccessor = channel.getReadAccessor();
+            if (readAccessor == null) {
+                return;
+            }
+            State state = readAccessor.access(airUnit);
             if (forceUpdate) {
                 forceUpdateState(channelUID, state);
             } else {

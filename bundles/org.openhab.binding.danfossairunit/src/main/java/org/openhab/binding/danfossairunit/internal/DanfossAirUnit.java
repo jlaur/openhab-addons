@@ -253,6 +253,10 @@ public class DanfossAirUnit {
         return setNumberTypeRegister(cmd, Parameter.FILTER_PERIOD);
     }
 
+    public OnOffType resetFilter(Command cmd) throws IOException {
+        return setOnOffTypeRegister(cmd, Parameter.FILTER_RESET);
+    }
+
     public DateTimeType getCurrentTime() throws IOException, UnexpectedResponseValueException {
         Instant timestamp = getTimestamp(Parameter.CURRENT_TIME);
         return new DateTimeType(timestamp);

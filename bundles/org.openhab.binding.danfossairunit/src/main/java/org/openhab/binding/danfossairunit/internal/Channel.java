@@ -58,6 +58,7 @@ public enum Channel {
     CHANNEL_FILTER_LIFE("filter_life", ChannelGroup.SERVICE, DanfossAirUnit::getFilterLife),
     CHANNEL_FILTER_PERIOD("filter_period", ChannelGroup.SERVICE, DanfossAirUnit::getFilterPeriod,
             DanfossAirUnit::setFilterPeriod),
+    CHANNEL_FILTER_RESET("filter_reset", ChannelGroup.SERVICE, DanfossAirUnit::resetFilter),
 
     // Operation channels
     CHANNEL_POWER_CYCLES("power_cycles", ChannelGroup.OPERATION, DanfossAirUnit::getPowerCycles),
@@ -65,6 +66,7 @@ public enum Channel {
 
     private final String channelName;
     private final ChannelGroup group;
+    @Nullable
     private final DanfossAirUnitReadAccessor readAccessor;
     @Nullable
     private final DanfossAirUnitWriteAccessor writeAccessor;
@@ -82,7 +84,11 @@ public enum Channel {
         this(channelName, group, readAccessor, null);
     }
 
-    Channel(String channelName, ChannelGroup group, DanfossAirUnitReadAccessor readAccessor,
+    Channel(String channelName, ChannelGroup group, DanfossAirUnitWriteAccessor writeAccessor) {
+        this(channelName, group, null, writeAccessor);
+    }
+
+    Channel(String channelName, ChannelGroup group, @Nullable DanfossAirUnitReadAccessor readAccessor,
             @Nullable DanfossAirUnitWriteAccessor writeAccessor) {
         this.channelName = channelName;
         this.group = group;
@@ -98,6 +104,7 @@ public enum Channel {
         return group;
     }
 
+    @Nullable
     public DanfossAirUnitReadAccessor getReadAccessor() {
         return readAccessor;
     }

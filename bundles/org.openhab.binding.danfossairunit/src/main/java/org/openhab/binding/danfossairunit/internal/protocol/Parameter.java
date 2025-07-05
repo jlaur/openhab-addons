@@ -31,6 +31,7 @@ public enum Parameter {
     BYPASS(Endpoint.ENDPOINT_1, Flag.READ_WRITE, (short) 5216),
     FILTER_PERIOD(Endpoint.ENDPOINT_1, Flag.READ_WRITE, (short) 5225),
     FILTER_LIFE(Endpoint.ENDPOINT_1, Flag.READ, (short) 5226),
+    FILTER_RESET(Endpoint.ENDPOINT_1, Flag.WRITE, (short) 5231),
     HUMIDITY(Endpoint.ENDPOINT_1, Flag.READ, (short) 5232),
     BOOST(Endpoint.ENDPOINT_1, Flag.READ_WRITE, (short) 5424),
     MANUAL_FAN_SPEED_STEP(Endpoint.ENDPOINT_1, Flag.READ_WRITE, (short) 5473),

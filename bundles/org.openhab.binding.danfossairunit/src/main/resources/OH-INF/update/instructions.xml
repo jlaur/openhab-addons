@@ -88,6 +88,12 @@
 			</add-channel>
 		</instruction-set>
 
+		<instruction-set targetVersion="6">
+			<add-channel id="filter_reset" groupIds="service">
+				<type>danfossairunit:filter-reset</type>
+			</add-channel>
+		</instruction-set>
+
 	</thing-type>
 
 </update:update-descriptions>

@@ -21,7 +21,7 @@
 
 		<properties>
 			<property name="vendor">Danfoss</property>
-			<property name="thingTypeVersion">5</property>
+			<property name="thingTypeVersion">6</property>
 		</properties>
 
 		<representation-property>serialNumber</representation-property>
@@ -126,6 +126,7 @@
 			</channel>
 			<channel id="filter_life" typeId="filter-life"/>
 			<channel id="filter_period" typeId="filterPeriod"/>
+			<channel id="filter_reset" typeId="filter-reset"/>
 		</channels>
 	</channel-group-type>
 
@@ -220,6 +221,13 @@
 		<label>Remaining Filter Life</label>
 		<description>Remaining life of filter until exchange is necessary</description>
 		<state pattern="%.0f %%" readOnly="true" min="0" max="100"/>
+	</channel-type>
+
+	<channel-type id="filter-reset" advanced="true">
+		<item-type>Switch</item-type>
+		<label>Filter Reset</label>
+		<description>Resets the remaining life of filter until exchange is necessary</description>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
 	</channel-type>
 
 	<channel-type id="boost">

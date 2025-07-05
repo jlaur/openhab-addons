@@ -44,6 +44,7 @@ These are the available configuration parameters:
 | battery_life         | service       | Number               | RO                                  | Remaining Air Dial Battery Level (percentage)                                                                                                                                            |
 | filter_life          | service       | Number               | RO                                  | Remaining life of filter until exchange is necessary (percentage)                                                                                                                        |
 | filter_period        | service       | Number               | RW                                  | Number of months between filter replacements (between 3 and 12). This value affects calculation of filter_life by the unit, and might get overwritten by Air Dial or Link CC Controller. |
+| filter_reset         | service       | Switch               | W                                   | Resets the remaining life of filter until exchange is necessary                                                                                                                          |
 | power_cycles         | operation     | Number               | RO                                  | The total count of power cycles, indicating how many times the unit has been turned off and on again.                                                                                    |
 | operating_hours      | operation     | Number:Time          | RO                                  | The number of hours the unit has been in operation (in minutes).                                                                                                                         |
 
@@ -81,6 +82,7 @@ Number:Temperature DanfossHRV_ExtractAirTemperature "Extract air temperature" <t
 Number:Temperature DanfossHRV_ExhaustAirTemperature "Exhaust air temperature" <temperature> { channel = "danfossairunit:airunit:myairunit:recuperator#exhaust_temp" }
 Number DanfossHRV_RemainingFilterLife "Remaining filter life" { channel = "danfossairunit:airunit:myairunit:service#filter_life" }
 Number DanfossHRV_FilterPeriod "Filter period" { channel = "danfossairunit:airunit:myairunit:service#filter_period" }
+Switch DanfossHRV_FilterReset "Filter reset" { channel = "danfossairunit:airunit:myairunit:service#filter_reset" }
 ```
 
 ### Sitemap
