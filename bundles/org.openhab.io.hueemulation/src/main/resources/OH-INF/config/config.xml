@@ -35,6 +35,14 @@
 				want the old (round Hue bridge) to be emulated.</description>
 			<default>false</default>
 		</parameter>
+		<parameter name="useSemanticModel" type="boolean">
+			<label>Use Semantic Model</label>
+			<description>If enabled, the HUE emulation will use the semantic model to determine which items to expose. Items
+				belonging to group classified as LightSource will be exposed. Switch items with the 'Switch'/'Power' tags will be
+				exposed as switches, Color items with the 'Control'/'Color' tags will be exposed as color lights, and Dimmer items
+				with the 'Control'/'Brightness' tags will be exposed as white lights.</description>
+			<default>false</default>
+		</parameter>
 		<parameter name="restrictToTagsSwitches" type="text" required="false">
 			<label>Switch Item Tags</label>
 			<description>The HUE emulation can either publish Switch items if this is set to an empty string or filter items by
@@ -61,7 +69,8 @@
 		</parameter>
 		<parameter name="discoveryIp" type="text" required="false">
 			<label>Optional Discovery Address</label>
-			<description>If your host has multiple IP addresses you may specify the IP(s) you would like to advertise in the UPNP
+			<description>If your host has multiple IP addresses you may specify the IP(s) you would like to advertise in the
+				UPNP
 				discovery process. You may safely leave this empty on most systems. Use commas to separate multiple entries.</description>
 		</parameter>
 		<parameter name="discoveryHttpPort" type="integer" required="false">
@@ -74,8 +83,10 @@
 		</parameter>
 		<parameter name="uuid" type="text" required="false">
 			<label>Unique Bridge ID</label>
-			<description>Each Hue bridge has a universal unique id (UUID) assigned. This is random generated if no value has been
-				assigned. Note on Amazon Alexa Echo devices: It might help to change the UUID after you have changed item ids. The
+			<description>Each Hue bridge has a universal unique id (UUID) assigned. This is random generated if no value has
+				been
+				assigned. Note on Amazon Alexa Echo devices: It might help to change the UUID after you have changed item ids.
+				The
 				Echos will recognize this service as a new bridge.</description>
 			<advanced>true</advanced>
 		</parameter>

@@ -152,15 +152,15 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
             return;
         }
 
-        DeviceType deviceType = StateUtils.determineTargetType(cs, element);
+        DeviceType deviceType = cs.useSemanticModel ? StateUtils.determineTargetTypeSemantic(cs, element, itemRegistry)
+                : StateUtils.determineTargetType(cs, element);
         if (deviceType == null) {
             return;
         }
 
         String hueID = cs.mapItemUIDtoHueID(element);
 
-        if (element instanceof GroupItem && !element.hasTag(EXPOSE_AS_DEVICE_TAG)) {
-            GroupItem g = (GroupItem) element;
+        if (element instanceof GroupItem g && !element.hasTag(EXPOSE_AS_DEVICE_TAG)) {
             HueGroupEntry group = new HueGroupEntry(g.getName(), g, deviceType);
 
             // Restore group type and room class from tags
@@ -180,7 +180,16 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
 
             cs.ds.groups.put(hueID, group);
         } else {
-            HueLightEntry device = new HueLightEntry(element, cs.getHueUniqueId(hueID), deviceType);
+            String name = element.getLabel();
+            if (cs.useSemanticModel) {
+                GroupItem semanticItem = StateUtils.getSemanticEquipmentItem(element, itemRegistry);
+                if (semanticItem != null) {
+                    name = semanticItem.getLabel();
+                }
+            }
+
+            HueLightEntry device = new HueLightEntry(element, cs.getHueUniqueId(hueID), deviceType,
+                    name != null ? name : "");
             device.item = element;
             cs.ds.lights.put(hueID, device);
             updateGroup0();
@@ -218,7 +227,8 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
 
         HueGroupEntry hueGroup = cs.ds.groups.get(hueID);
         if (hueGroup != null) {
-            DeviceType t = StateUtils.determineTargetType(cs, element);
+            DeviceType t = cs.useSemanticModel ? StateUtils.determineTargetTypeSemantic(cs, element, itemRegistry)
+                    : StateUtils.determineTargetType(cs, element);
             if (t != null && element instanceof GroupItem groupElement) {
                 hueGroup.updateItem(groupElement);
             } else {
@@ -229,19 +239,29 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
         HueLightEntry hueDevice = cs.ds.lights.get(hueID);
         if (hueDevice == null) {
             // If the correct tags got added -> use the logic within added()
+            // FIXME: If GroupItem with semantic tag LightSource, then update labels for children
             added(element);
             return;
         }
 
         // Check if type can still be determined (tags and category is still sufficient)
         // and that it's still an allowed item type
-        DeviceType t = StateUtils.determineTargetType(cs, element);
+        DeviceType t = cs.useSemanticModel ? StateUtils.determineTargetTypeSemantic(cs, element, itemRegistry)
+                : StateUtils.determineTargetType(cs, element);
         if (t == null || !ALLOWED_ITEM_TYPES.contains(element.getType())) {
             removed(element);
             return;
         }
 
-        hueDevice.updateItem(element);
+        String name = element.getLabel();
+        if (cs.useSemanticModel) {
+            GroupItem semanticItem = StateUtils.getSemanticEquipmentItem(element, itemRegistry);
+            if (semanticItem != null) {
+                name = semanticItem.getLabel();
+            }
+        }
+
+        hueDevice.updateItem(element, name != null ? name : "");
     }
 
     @GET

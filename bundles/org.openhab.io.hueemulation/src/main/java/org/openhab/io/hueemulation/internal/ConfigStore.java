@@ -115,6 +115,7 @@ public class ConfigStore {
     private Set<InetAddress> discoveryIps = Collections.emptySet();
     protected volatile @NonNullByDefault({}) HueEmulationConfig config;
 
+    public boolean useSemanticModel = false;
     public Set<String> switchFilter = Collections.emptySet();
     public Set<String> colorFilter = Collections.emptySet();
     public Set<String> whiteFilter = Collections.emptySet();
@@ -174,6 +175,8 @@ public class ConfigStore {
     @Modified
     public void modified(Map<String, Object> properties) {
         this.config = new Configuration(properties).as(HueEmulationConfig.class);
+
+        useSemanticModel = config.useSemanticModel;
 
         switchFilter = Collections.unmodifiableSet(
                 Stream.of(config.restrictToTagsSwitches.split(",")).map(String::trim).collect(Collectors.toSet()));
