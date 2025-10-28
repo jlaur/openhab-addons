@@ -13,7 +13,9 @@
 package org.openhab.io.hueemulation.internal.rest;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -109,6 +111,7 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
     private static final String ITEM_TYPE_GROUP = "Group";
     private static final Set<String> ALLOWED_ITEM_TYPES = Stream.of(CoreItemFactory.COLOR, CoreItemFactory.DIMMER,
             CoreItemFactory.ROLLERSHUTTER, CoreItemFactory.SWITCH, ITEM_TYPE_GROUP).collect(Collectors.toSet());
+    private final Map<String, Item> parentToChildMap = new HashMap<>();
 
     @Reference
     protected @NonNullByDefault({}) ConfigStore cs;
@@ -148,23 +151,52 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
             return;
         }
 
+        String hueID = cs.mapItemUIDtoHueID(element);
+
+        if (cs.useSemanticModel && element instanceof GroupItem groupItem) {
+            // Update child items if parent group got added
+            Item semanticChild = parentToChildMap.get(element.getUID());
+            if (semanticChild != null) {
+                updated(semanticChild, semanticChild);
+            }
+
+            if (StateUtils.isSemanticLocationItem(groupItem, itemRegistry)) {
+                HueGroupEntry group = new HueGroupEntry(groupItem.getName(), groupItem, DeviceType.SwitchType);
+                group.type = HueGroupEntry.TypeEnum.Room.name();
+                group.lights = new ArrayList<>();
+
+                Set<GroupItem> lightSources = StateUtils.getSemanticEquipmentChildren(groupItem);
+                for (GroupItem lightSource : lightSources) {
+                    for (Item item : lightSource.getMembers()) {
+                        DeviceType deviceType = StateUtils.determineTargetTypeSemantic(cs, item, itemRegistry);
+                        if (deviceType == null) {
+                            continue;
+                        }
+                        group.lights.add(cs.mapItemUIDtoHueID(item));
+                    }
+                }
+
+                cs.ds.groups.put(hueID, group);
+            }
+
+            return;
+        }
+
         if (!(element instanceof GroupItem) && !ALLOWED_ITEM_TYPES.contains(element.getType())) {
             return;
         }
 
-        DeviceType deviceType = StateUtils.determineTargetType(cs, element);
+        DeviceType deviceType = cs.useSemanticModel ? StateUtils.determineTargetTypeSemantic(cs, element, itemRegistry)
+                : StateUtils.determineTargetType(cs, element);
         if (deviceType == null) {
             return;
         }
 
-        String hueID = cs.mapItemUIDtoHueID(element);
-
-        if (element instanceof GroupItem && !element.hasTag(EXPOSE_AS_DEVICE_TAG)) {
-            GroupItem g = (GroupItem) element;
-            HueGroupEntry group = new HueGroupEntry(g.getName(), g, deviceType);
+        if (element instanceof GroupItem groupItem && !element.hasTag(EXPOSE_AS_DEVICE_TAG)) {
+            HueGroupEntry group = new HueGroupEntry(groupItem.getName(), groupItem, deviceType);
 
             // Restore group type and room class from tags
-            for (String tag : g.getTags()) {
+            for (String tag : groupItem.getTags()) {
                 if (tag.startsWith("huetype_")) {
                     group.type = tag.split("huetype_")[1];
                 } else if (tag.startsWith("hueroom_")) {
@@ -174,13 +206,23 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
 
             // Add group members
             group.lights = new ArrayList<>();
-            for (Item item : g.getMembers()) {
+            for (Item item : groupItem.getMembers()) {
                 group.lights.add(cs.mapItemUIDtoHueID(item));
             }
 
             cs.ds.groups.put(hueID, group);
         } else {
-            HueLightEntry device = new HueLightEntry(element, cs.getHueUniqueId(hueID), deviceType);
+            String name = element.getLabel();
+            if (cs.useSemanticModel) {
+                GroupItem semanticItem = StateUtils.getSemanticEquipmentItem(element, itemRegistry);
+                if (semanticItem != null) {
+                    name = semanticItem.getLabel();
+                    parentToChildMap.put(semanticItem.getUID(), element);
+                }
+            }
+
+            HueLightEntry device = new HueLightEntry(element, cs.getHueUniqueId(hueID), deviceType,
+                    name != null ? name : "");
             device.item = element;
             cs.ds.lights.put(hueID, device);
             updateGroup0();
@@ -197,6 +239,8 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
 
     @Override
     public synchronized void removed(Item element) {
+        parentToChildMap.remove(element.getUID());
+        parentToChildMap.entrySet().removeIf(entry -> entry.getValue().equals(element));
         String hueID = cs.mapItemUIDtoHueID(element);
         logger.debug("Remove item {}", hueID);
         cs.ds.lights.remove(hueID);
@@ -218,7 +262,8 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
 
         HueGroupEntry hueGroup = cs.ds.groups.get(hueID);
         if (hueGroup != null) {
-            DeviceType t = StateUtils.determineTargetType(cs, element);
+            DeviceType t = cs.useSemanticModel ? StateUtils.determineTargetTypeSemantic(cs, element, itemRegistry)
+                    : StateUtils.determineTargetType(cs, element);
             if (t != null && element instanceof GroupItem groupElement) {
                 hueGroup.updateItem(groupElement);
             } else {
@@ -235,13 +280,23 @@ public class LightsAndGroups implements RegistryChangeListener<Item> {
 
         // Check if type can still be determined (tags and category is still sufficient)
         // and that it's still an allowed item type
-        DeviceType t = StateUtils.determineTargetType(cs, element);
+        DeviceType t = cs.useSemanticModel ? StateUtils.determineTargetTypeSemantic(cs, element, itemRegistry)
+                : StateUtils.determineTargetType(cs, element);
         if (t == null || !ALLOWED_ITEM_TYPES.contains(element.getType())) {
             removed(element);
             return;
         }
 
-        hueDevice.updateItem(element);
+        String name = element.getLabel();
+        if (cs.useSemanticModel) {
+            GroupItem semanticItem = StateUtils.getSemanticEquipmentItem(element, itemRegistry);
+            if (semanticItem != null) {
+                name = semanticItem.getLabel();
+                parentToChildMap.put(semanticItem.getUID(), element);
+            }
+        }
+
+        hueDevice.updateItem(element, name != null ? name : "");
     }
 
     @GET
