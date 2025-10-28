@@ -15,16 +15,27 @@ package org.openhab.io.hueemulation.internal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.items.GroupItem;
 import org.openhab.core.items.Item;
+import org.openhab.core.items.ItemRegistry;
 import org.openhab.core.library.CoreItemFactory;
 import org.openhab.core.library.types.HSBType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.PercentType;
+import org.openhab.core.semantics.SemanticTag;
+import org.openhab.core.semantics.SemanticTags;
+import org.openhab.core.semantics.SemanticsPredicates;
+import org.openhab.core.semantics.Tag;
+import org.openhab.core.semantics.model.DefaultSemanticTags.Equipment;
+import org.openhab.core.semantics.model.DefaultSemanticTags.Point;
+import org.openhab.core.semantics.model.DefaultSemanticTags.Property;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
 import org.openhab.io.hueemulation.internal.dto.AbstractHueState;
@@ -90,8 +101,7 @@ public class StateUtils {
                 break;
             case SwitchType:
             default:
-                if (itemState instanceof OnOffType) {
-                    OnOffType t = (OnOffType) itemState;
+                if (itemState instanceof OnOffType t) {
                     state = new HueStatePlug(t == OnOffType.ON);
                 } else {
                     state = new HueStatePlug(false);
@@ -410,6 +420,93 @@ public class StateUtils {
             }
         }
         return t;
+    }
+
+    public static @Nullable DeviceType determineTargetTypeSemantic(ConfigStore cs, Item item,
+            ItemRegistry itemRegistry) {
+        Set<String> tags = item.getTags();
+
+        // The user wants this item to be not exposed
+        if (cs.ignoreItemsFilter.stream().anyMatch(tags::contains)) {
+            return null;
+        }
+
+        DeviceType deviceType = null;
+
+        switch (item.getType()) {
+            case CoreItemFactory.COLOR:
+                if (item.hasTag(Point.CONTROL.getName()) && item.hasTag(Property.COLOR.getName())) {
+                    deviceType = DeviceType.ColorType;
+                    break;
+                }
+                // Fall through to Dimmer-level behavior
+
+            case CoreItemFactory.DIMMER:
+                if (item.hasTag(Point.CONTROL.getName()) && item.hasTag(Property.BRIGHTNESS.getName())) {
+                    deviceType = DeviceType.WhiteTemperatureType;
+                    break;
+                }
+                // Fall through to Switch-level behavior
+
+            case CoreItemFactory.SWITCH:
+                if (item.hasTag(Point.SWITCH.getName()) && item.hasTag(Property.POWER.getName())) {
+                    deviceType = DeviceType.SwitchType;
+                    break;
+                }
+                break;
+        }
+
+        if (deviceType == null) {
+            return null;
+        }
+
+        return hasSemanticGroupItem(item, Equipment.LIGHT_SOURCE.getUID(), itemRegistry) ? deviceType : null;
+    }
+
+    public static boolean hasSemanticGroupItem(Item item, String tagId, ItemRegistry itemRegistry) {
+        Class<? extends Tag> semanticRootTag = SemanticTags.getById(tagId);
+        if (semanticRootTag == null) {
+            return false;
+        }
+
+        return item.getGroupNames().stream().map(itemRegistry::get).filter(Objects::nonNull)
+                .filter(GroupItem.class::isInstance).map(GroupItem.class::cast)
+                .anyMatch(SemanticsPredicates.isA(semanticRootTag));
+    }
+
+    public static @Nullable GroupItem getSemanticGroupItem(Item item, SemanticTag tag, ItemRegistry itemRegistry) {
+        Class<? extends Tag> semanticRootTag = SemanticTags.getById(tag.getUID());
+        if (semanticRootTag == null) {
+            return null;
+        }
+
+        return item.getGroupNames().stream().map(itemRegistry::get).filter(Objects::nonNull)
+                .filter(GroupItem.class::isInstance).map(GroupItem.class::cast)
+                .filter(SemanticsPredicates.isA(semanticRootTag)).findFirst().orElse(null);
+    }
+
+    public static boolean isSemanticLocationItem(Item item) {
+        Class<? extends Tag> type = SemanticTags.getSemanticType(item);
+        if (type == null) {
+            return false;
+        }
+        Class<? extends Tag> locationTag = SemanticTags.getById(org.openhab.core.semantics.Location.name());
+        if (locationTag == null) {
+            return false;
+        }
+        Class<? extends Tag> root = SemanticTags.getSemanticRoot(type);
+
+        return locationTag.equals(root);
+    }
+
+    public static Set<GroupItem> getSemanticEquipmentChildren(GroupItem item) {
+        Class<? extends Tag> lightSourceTag = SemanticTags.getById(Equipment.LIGHT_SOURCE.getUID());
+        if (lightSourceTag == null) {
+            return Set.of();
+        }
+
+        return item.getMembers().stream().filter(GroupItem.class::isInstance).map(GroupItem.class::cast)
+                .filter(SemanticsPredicates.isA(lightSourceTag)).collect(Collectors.toSet());
     }
 
     /**
