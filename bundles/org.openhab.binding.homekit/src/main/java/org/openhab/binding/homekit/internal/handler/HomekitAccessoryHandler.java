@@ -360,6 +360,8 @@ public class HomekitAccessoryHandler extends HomekitBaseAccessoryHandler {
                                     chanDef.getChannelTypeUID(), chanDef.getAutoUpdatePolicy(),
                                     chanDef.getProperties());
 
+                            // FIXME: Properties were populated based on actual channel group types put into the registry.
+                            // This would need to be refactored.
                             if (CHANNEL_TYPE_STATIC.equals(chanDef.getChannelTypeUID())) {
                                 // static ChannelDefinition: add as a Property (rather than a Channel)
                                 Map<String, String> channelProperties = chanDef.getProperties();

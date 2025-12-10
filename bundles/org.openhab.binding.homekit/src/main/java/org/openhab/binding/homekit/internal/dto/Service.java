@@ -16,6 +16,7 @@ import static org.openhab.binding.homekit.internal.HomekitBindingConstants.*;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -67,7 +68,11 @@ public class Service {
 
         List<ChannelDefinition> channelDefinitions = characteristics.stream()
                 .map(c -> c.buildAndRegisterChannelDefinition(thingUID, typeProvider, i18nProvider, bundle))
-                .filter(Objects::nonNull).toList();
+                .mapMulti((ChannelMappingResult result, Consumer<ChannelDefinition> out) -> {
+                    if (result instanceof ChannelMappingResult.Channel c) {
+                        out.accept(c.definition());
+                    }
+                }).toList();
 
         if (channelDefinitions.isEmpty()) {
             return null;

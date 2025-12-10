@@ -90,7 +90,7 @@ public class Characteristic {
      * @param typeProvider the HomekitTypeProvider to register the channel type with
      * @return the ChannelDefinition or null if it cannot be mapped
      */
-    public @Nullable ChannelDefinition buildAndRegisterChannelDefinition(ThingUID thingUID,
+    public @Nullable ChannelMappingResult buildAndRegisterChannelDefinition(ThingUID thingUID,
             HomekitTypeProvider typeProvider, TranslationProvider i18nProvider, Bundle bundle) {
         CharacteristicType characteristicType = getCharacteristicType();
         DataFormatType dataFormatType;
@@ -816,8 +816,7 @@ public class Characteristic {
          */
         if (isStaticValue) {
             if (value != null && value.isJsonPrimitive()) {
-                return new ChannelDefinitionBuilder("static", CHANNEL_TYPE_STATIC)
-                        .withProperties(Map.of(characteristicType.toCamelCase(), value.getAsString())).build();
+                return new ChannelMappingResult.Property(characteristicType.toCamelCase(), value.getAsString());
             }
             return null;
         }
@@ -939,7 +938,7 @@ public class Characteristic {
                 channelTypeUid).withLabel(getChannelLabel(characteristicType, i18nProvider, bundle))
                 .withProperties(props);
         Optional.ofNullable(getChannelDescription()).ifPresent(d -> channelDefBuilder.withDescription(d));
-        return channelDefBuilder.build();
+        return new ChannelMappingResult.Channel(channelDefBuilder.build());
     }
 
     /*

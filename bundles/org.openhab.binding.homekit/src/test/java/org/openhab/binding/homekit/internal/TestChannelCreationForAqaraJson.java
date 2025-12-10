@@ -657,7 +657,7 @@ class TestChannelCreationForAqaraJson {
                 .buildAndRegisterChannelGroupDefinitions(thingUID, typeProvider, i18nProvider, bundle);
 
         assertNotNull(channelGroupDefinitions);
-        assertEquals(5, channelGroupDefinitions.size());
+        assertEquals(4, channelGroupDefinitions.size());
 
         // Check that the channel group definition and its type UID and label are set
         for (ChannelGroupDefinition groupDef : channelGroupDefinitions) {
@@ -666,8 +666,8 @@ class TestChannelCreationForAqaraJson {
             assertNotNull(groupDef.getLabel());
         }
 
-        // there should be 5 unique channel group types; 1 protocol info service, 1 light sensor, and 3 presence sensors
-        assertEquals(5, channelGroupTypes.size());
+        // there should be 4 unique channel group types; 1 light sensor, and 3 presence sensors
+        assertEquals(4, channelGroupTypes.size());
 
         // there should be 4 unique channel types; 1 light sensor, and 3 presence sensors
         assertEquals(4, channelTypes.size());
@@ -680,8 +680,8 @@ class TestChannelCreationForAqaraJson {
         assertNotNull(channelGroupType);
         List<ChannelDefinition> channelDefinitions = channelGroupType.getChannelDefinitions();
         assertNotNull(channelDefinitions);
-        assertEquals(2, channelDefinitions.size());
-        ChannelDefinition channelDefinition = channelDefinitions.get(1);
+        assertEquals(1, channelDefinitions.size());
+        ChannelDefinition channelDefinition = channelDefinitions.get(0);
         assertNotNull(channelDefinition);
         ChannelTypeUID channelTypeUID = channelDefinition.getChannelTypeUID();
         assertNotNull(channelTypeUID);
@@ -697,8 +697,8 @@ class TestChannelCreationForAqaraJson {
         assertNotNull(channelGroupType);
         channelDefinitions = channelGroupType.getChannelDefinitions();
         assertNotNull(channelDefinitions);
-        assertEquals(2, channelDefinitions.size());
-        channelDefinition = channelDefinitions.get(1);
+        assertEquals(1, channelDefinitions.size());
+        channelDefinition = channelDefinitions.get(0);
         assertNotNull(channelDefinition);
         channelTypeUID = channelDefinition.getChannelTypeUID();
         assertNotNull(channelTypeUID);
@@ -714,8 +714,8 @@ class TestChannelCreationForAqaraJson {
         assertNotNull(channelGroupType);
         channelDefinitions = channelGroupType.getChannelDefinitions();
         assertNotNull(channelDefinitions);
-        assertEquals(2, channelDefinitions.size());
-        channelDefinition = channelDefinitions.get(1);
+        assertEquals(1, channelDefinitions.size());
+        channelDefinition = channelDefinitions.get(0);
         assertNotNull(channelDefinition);
         channelTypeUID = channelDefinition.getChannelTypeUID();
         assertNotNull(channelTypeUID);

@@ -15,7 +15,6 @@ package org.openhab.binding.homekit.internal;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
-import static org.openhab.binding.homekit.internal.HomekitBindingConstants.CHANNEL_TYPE_STATIC;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -27,6 +26,7 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.openhab.binding.homekit.internal.dto.Accessories;
 import org.openhab.binding.homekit.internal.dto.Accessory;
+import org.openhab.binding.homekit.internal.dto.ChannelMappingResult;
 import org.openhab.binding.homekit.internal.dto.Characteristic;
 import org.openhab.binding.homekit.internal.dto.Service;
 import org.openhab.binding.homekit.internal.enums.ServiceType;
@@ -1614,10 +1614,10 @@ class TestChannelCreationForVeluxJson {
         for (Service service : accessory.services) {
             if (ServiceType.ACCESSORY_INFORMATION == service.getServiceType()) {
                 for (Characteristic characteristic : service.characteristics) {
-                    ChannelDefinition channelDef = characteristic.buildAndRegisterChannelDefinition(thingUID,
+                    ChannelMappingResult result = characteristic.buildAndRegisterChannelDefinition(thingUID,
                             typeProvider, i18nProvider, bundle);
-                    if (channelDef != null && CHANNEL_TYPE_STATIC.equals(channelDef.getChannelTypeUID())) {
-                        properties.putAll(channelDef.getProperties());
+                    if (result instanceof ChannelMappingResult.Property propertyDef) {
+                        properties.put(propertyDef.name(), propertyDef.value());
                     }
                 }
                 break;
