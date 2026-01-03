@@ -78,7 +78,6 @@ public class HeosPlayerHandler extends HeosThingBaseHandler {
         PlayerConfiguration configuration = thing.getConfiguration().as(PlayerConfiguration.class);
         pid = configuration.pid;
 
-        cancel(scheduledFuture);
         scheduledFuture = scheduler.submit(this::delayedInitialize);
     }
 

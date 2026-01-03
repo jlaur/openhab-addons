@@ -120,7 +120,8 @@ public abstract class HeosThingBaseHandler extends BaseThingHandler implements H
 
         try {
             getApiConnection().registerForChangeEvents(this);
-            cancel(scheduleQueueFetchFuture);
+
+            updateStatus(ThingStatus.UNKNOWN);
             scheduleQueueFetchFuture = scheduler.submit(this::fetchQueueFromPlayer);
 
             if (localBridgeHandler.isLoggedIn()) {
