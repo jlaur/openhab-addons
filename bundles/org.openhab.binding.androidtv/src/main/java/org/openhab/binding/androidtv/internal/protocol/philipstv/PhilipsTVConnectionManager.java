@@ -682,7 +682,7 @@ public class PhilipsTVConnectionManager implements DiscoveryListener {
     @Override
     public @Nullable Collection<ThingUID> removeOlderResults(DiscoveryService source, Instant timestamp,
             @Nullable Collection<ThingTypeUID> thingTypeUIDs, @Nullable ThingUID bridgeUID) {
-        return Collections.emptyList();
+        return List.of();
     }
 
     public void dispose() {

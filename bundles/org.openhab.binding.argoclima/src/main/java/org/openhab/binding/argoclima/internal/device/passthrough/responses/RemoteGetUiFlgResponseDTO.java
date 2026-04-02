@@ -13,7 +13,6 @@
 package org.openhab.binding.argoclima.internal.device.passthrough.responses;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
@@ -150,11 +149,11 @@ public class RemoteGetUiFlgResponseDTO {
          * @return This DTO
          */
         public static UiFlgResponseCommmands fromResponseString(String commandString) {
-            var values = commandString.split(ArgoDeviceStatus.HMI_ELEMENT_SEPARATOR);
+            String[] values = commandString.split(ArgoDeviceStatus.HMI_ELEMENT_SEPARATOR);
             if (values.length != ArgoDeviceStatus.HMI_COMMAND_ELEMENT_COUNT) {
                 throw new IllegalArgumentException("commandString");
             }
-            return new UiFlgResponseCommmands(Arrays.asList(values));
+            return new UiFlgResponseCommmands(List.of(values));
         }
 
         /**
