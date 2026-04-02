@@ -14,7 +14,6 @@ package org.openhab.binding.argoclima.internal.device.api.protocol;
 
 import java.text.MessageFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -181,7 +180,7 @@ public class ArgoDeviceStatus implements IArgoSettingProvider {
      * @throws ArgoApiProtocolViolationException If API response doesn't match protocol format
      */
     public void fromDeviceString(String deviceOutput) throws ArgoApiProtocolViolationException {
-        var values = Arrays.asList(deviceOutput.split(HMI_ELEMENT_SEPARATOR));
+        List<String> values = List.of(deviceOutput.split(HMI_ELEMENT_SEPARATOR));
         if (values.size() != HMI_UPDATE_ELEMENT_COUNT) {
             throw new ArgoApiProtocolViolationException(MessageFormat.format(
                     "Invalid device API response: [{0}]. Expected to contain {1} elements while has {2}.", deviceOutput,

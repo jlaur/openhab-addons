@@ -14,7 +14,6 @@ package org.openhab.binding.bluetooth.generic.internal;
 
 import java.math.BigDecimal;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -133,7 +132,7 @@ public class CharacteristicChannelTypeProvider implements ChannelTypeProvider {
         }
 
         if ("Switch".equals(itemType)) {
-            options = Collections.emptyList();
+            options = List.of();
         }
 
         StateDescriptionFragmentBuilder stateDescBuilder = StateDescriptionFragmentBuilder.create()//
@@ -172,7 +171,7 @@ public class CharacteristicChannelTypeProvider implements ChannelTypeProvider {
                 .stream()//
                 .flatMap(List::stream)
                 .map(enumeration -> new StateOption(String.valueOf(enumeration.getKey()), enumeration.getValue()))
-                .collect(Collectors.toList());
+                .toList();
     }
 
     private static @Nullable BigDecimal toBigDecimal(@Nullable Double value) {

@@ -29,7 +29,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -153,7 +152,7 @@ class BoschShcCommandExtensionTest {
         when(mockBridgeHandler.getPublicInformation()).thenReturn(publicInformation);
         Thing mockBridgeThing = mock(Thing.class);
         when(mockBridgeThing.getHandler()).thenReturn(mockBridgeHandler);
-        when(thingRegistry.getAll()).thenReturn(Collections.singletonList(mockBridgeThing));
+        when(thingRegistry.getAll()).thenReturn(List.of(mockBridgeThing));
         assertThat(fixture.buildBridgeInfo(),
                 allOf(containsString("Bridge: TestLabel"), containsString("access possible: false"),
                         containsString("SHC Generation: Gen-T"), containsString("IP Address: 1.2.3.4")));
@@ -170,7 +169,7 @@ class BoschShcCommandExtensionTest {
         when(mockBridgeHandler2.getPublicInformation()).thenReturn(publicInformation2);
         Thing mockBridgeThing2 = mock(Thing.class);
         when(mockBridgeThing2.getHandler()).thenReturn(mockBridgeHandler2);
-        when(thingRegistry.getAll()).thenReturn(Arrays.asList(mockBridgeThing, mockBridgeThing2));
+        when(thingRegistry.getAll()).thenReturn(List.of(mockBridgeThing, mockBridgeThing2));
         assertThat(fixture.buildBridgeInfo(),
                 allOf(containsString("Bridge: TestLabel"), containsString("access possible: false"),
                         containsString("SHC Generation: Gen-T"), containsString("IP Address: 1.2.3.4"),
@@ -189,7 +188,7 @@ class BoschShcCommandExtensionTest {
         Thing mockBridgeThing = mock(Thing.class);
         when(mockBridgeThing.getLabel()).thenReturn("TestLabel");
         when(mockBridgeThing.getHandler()).thenReturn(mockBridgeHandler);
-        when(thingRegistry.getAll()).thenReturn(Collections.singletonList(mockBridgeThing));
+        when(thingRegistry.getAll()).thenReturn(List.of(mockBridgeThing));
         assertThat(fixture.buildDeviceInfo(), allOf(containsString("thing: TestLabel"), containsString("devices (0)")));
 
         // One bridge, One UNsupported device

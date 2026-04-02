@@ -13,7 +13,6 @@
 package org.openhab.binding.argoclima.internal.utils;
 
 import java.text.MessageFormat;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -74,6 +73,6 @@ public final class StringUtils {
             return List.of();
         }
 
-        return Arrays.asList(withoutLeadingAndTrailingSeparators.split(multiSeparatorPattern));
+        return List.of(withoutLeadingAndTrailingSeparators.split(multiSeparatorPattern));
     }
 }

@@ -36,7 +36,7 @@ public final class AhaCollectionScheduleStub implements AhaCollectionSchedule {
 
     @Override
     public Map<WasteType, CollectionDate> getCollectionDates() throws IOException {
-        final Map<WasteType, CollectionDate> result = new LinkedHashMap<>(4);
+        final Map<WasteType, CollectionDate> result = new LinkedHashMap<>(5);
         result.put(WasteType.GENERAL_WASTE,
                 new CollectionDate(WasteType.GENERAL_WASTE, Arrays.asList(GENERAL_WASTE_DATE)));
         result.put(WasteType.LIGHT_PACKAGES,
