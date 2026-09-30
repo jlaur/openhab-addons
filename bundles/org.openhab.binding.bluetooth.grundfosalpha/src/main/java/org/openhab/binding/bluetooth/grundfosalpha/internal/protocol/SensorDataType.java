@@ -18,32 +18,32 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 
 /**
  * This represents the different sensor data types that can
- * be extracted from a {@link ResponseMessage}.
+ * be extracted from a {@link GeniResponseDecoder}.
  *
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
 public enum SensorDataType {
-    Flow(MessageType.FlowHead, 0, new BigDecimal(3600), 3),
-    Head(MessageType.FlowHead, 4, new BigDecimal("0.0001"), 5),
-    VoltageAC(MessageType.Power, 0, BigDecimal.ONE, 1),
-    PowerConsumption(MessageType.Power, 12, BigDecimal.ONE, 1),
-    MotorSpeed(MessageType.Power, 20, BigDecimal.ONE, 0);
+    Flow(Class10ReadRequest.FlowHead, 0, new BigDecimal(3600), 3),
+    Head(Class10ReadRequest.FlowHead, 4, new BigDecimal("0.0001"), 5),
+    VoltageAC(Class10ReadRequest.Power, 0, BigDecimal.ONE, 1),
+    PowerConsumption(Class10ReadRequest.Power, 12, BigDecimal.ONE, 1),
+    MotorSpeed(Class10ReadRequest.Power, 20, BigDecimal.ONE, 0);
 
-    private final MessageType messageType;
+    private final Class10ReadRequest readRequest;
     private final int offset;
     private final BigDecimal factor;
     private final int decimals;
 
-    SensorDataType(MessageType messageType, int offset, BigDecimal factor, int decimals) {
-        this.messageType = messageType;
+    SensorDataType(Class10ReadRequest readRequest, int offset, BigDecimal factor, int decimals) {
+        this.readRequest = readRequest;
         this.offset = offset;
         this.factor = factor;
         this.decimals = decimals;
     }
 
-    public MessageType messageType() {
-        return messageType;
+    public Class10ReadRequest readRequest() {
+        return readRequest;
     }
 
     public int offset() {

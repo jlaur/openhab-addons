@@ -35,8 +35,8 @@ import org.openhab.binding.bluetooth.BluetoothDevice.ConnectionState;
 import org.openhab.binding.bluetooth.BluetoothService;
 import org.openhab.binding.bluetooth.ConnectedBluetoothHandler;
 import org.openhab.binding.bluetooth.grundfosalpha.internal.CharacteristicRequest;
-import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.MessageType;
-import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.ResponseMessage;
+import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.Class10ReadRequest;
+import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.GeniResponseDecoder;
 import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.SensorDataType;
 import org.openhab.binding.bluetooth.notification.BluetoothConnectionStatusNotification;
 import org.openhab.binding.bluetooth.notification.BluetoothScanNotification;
@@ -75,7 +75,7 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
 
     private @Nullable ScheduledFuture<?> refreshFuture;
     private @Nullable WriteCharacteristicThread senderThread;
-    private ResponseMessage responseMessage = new ResponseMessage();
+    private GeniResponseDecoder responseDecoder = new GeniResponseDecoder();
 
     public GrundfosAlpha3Handler(Thing thing) {
         super(thing);
@@ -135,9 +135,9 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
         }
 
         if (FLOW_HEAD_CHANNELS.contains(channelUID.getId())) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, MessageType.FlowHead));
+            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, Class10ReadRequest.FlowHead));
         } else if (POWER_CHANNELS.contains(channelUID.getId())) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, MessageType.Power));
+            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, Class10ReadRequest.Power));
         }
     }
 
@@ -193,10 +193,10 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
                 return;
             }
 
-            if (responseMessage.addPacket(value)) {
-                Map<SensorDataType, BigDecimal> values = responseMessage.decode();
+            if (responseDecoder.addPacket(value)) {
+                Map<SensorDataType, BigDecimal> values = responseDecoder.decode();
                 updateChannels(values);
-                responseMessage = new ResponseMessage();
+                responseDecoder = new GeniResponseDecoder();
             }
         } finally {
             stateLock.unlock();
@@ -209,11 +209,11 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
         }
 
         if (FLOW_HEAD_CHANNELS.stream().anyMatch(this::isLinked)) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, MessageType.FlowHead));
+            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, Class10ReadRequest.FlowHead));
         }
 
         if (POWER_CHANNELS.stream().anyMatch(this::isLinked)) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, MessageType.Power));
+            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, Class10ReadRequest.Power));
         }
     }
 

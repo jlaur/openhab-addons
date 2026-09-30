@@ -20,21 +20,21 @@ import org.junit.jupiter.api.Test;
 import org.openhab.core.util.HexUtils;
 
 /**
- * Tests for {@link MessageType}.
+ * Tests for {@link Class10ReadRequest}.
  *
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class MessageTypeTest {
+public class Class10ReadRequestTest {
     @Test
     void requestFlowHead() {
         String expected = "27 07 E7 F8 0A 03 5D 01 21 52 1F";
-        assertThat(HexUtils.bytesToHex(MessageType.FlowHead.request(), " "), is(expected));
+        assertThat(HexUtils.bytesToHex(Class10ReadRequest.FlowHead.request(), " "), is(expected));
     }
 
     @Test
     void requestPower() {
         String expected = "27 07 E7 F8 0A 03 57 00 45 8A CD";
-        assertThat(HexUtils.bytesToHex(MessageType.Power.request(), " "), is(expected));
+        assertThat(HexUtils.bytesToHex(Class10ReadRequest.Power.request(), " "), is(expected));
     }
 }
