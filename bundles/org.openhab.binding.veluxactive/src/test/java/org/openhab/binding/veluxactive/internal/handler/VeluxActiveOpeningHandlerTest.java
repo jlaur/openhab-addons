@@ -1,0 +1,272 @@
+/*
+ * Copyright (c) 2010-2026 Contributors to the openHAB project
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+package org.openhab.binding.veluxactive.internal.handler;
+
+import static java.util.Objects.requireNonNull;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants.*;
+
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
+import org.openhab.core.config.core.Configuration;
+import org.openhab.core.library.types.DateTimeType;
+import org.openhab.core.library.types.PercentType;
+import org.openhab.core.library.types.StopMoveType;
+import org.openhab.core.library.types.StringType;
+import org.openhab.core.library.types.UpDownType;
+import org.openhab.core.thing.Bridge;
+import org.openhab.core.thing.ChannelUID;
+import org.openhab.core.thing.Thing;
+import org.openhab.core.thing.ThingStatus;
+import org.openhab.core.thing.ThingStatusInfo;
+import org.openhab.core.thing.ThingUID;
+import org.openhab.core.thing.binding.ThingHandlerCallback;
+import org.openhab.core.thing.binding.builder.ThingBuilder;
+import org.openhab.core.types.Command;
+import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.State;
+import org.openhab.core.types.UnDefType;
+
+import com.google.gson.Gson;
+
+/**
+ * Verifies NXO position conventions, unsigned commands and lifecycle handling.
+ *
+ * @author Jacob Laursen - Initial contribution
+ */
+@NonNullByDefault
+class VeluxActiveOpeningHandlerTest {
+    private final ThingUID bridgeUID = new ThingUID(THING_TYPE_ACCOUNT, "test");
+    private final Thing thing = ThingBuilder.create(THING_TYPE_OPENING, "opening").withBridge(bridgeUID)
+            .withConfiguration(new Configuration(Map.of("homeId", "home", "moduleId", "opening"))).build();
+    private final Bridge bridge = mock(Bridge.class);
+    private final VeluxActiveAccountHandler account = mock(VeluxActiveAccountHandler.class);
+    private final ThingHandlerCallback callback = mock(ThingHandlerCallback.class);
+    private final VeluxActiveOpeningHandler handler = new VeluxActiveOpeningHandler(thing);
+    private final Map<String, State> states = new HashMap<>();
+
+    @BeforeEach
+    void setup() {
+        when(callback.getBridge(bridgeUID)).thenReturn(bridge);
+        when(bridge.getHandler()).thenReturn(account);
+        when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
+        doAnswer(invocation -> {
+            ChannelUID channel = invocation.getArgument(0);
+            states.put(channel.getId(), invocation.getArgument(1));
+            return null;
+        }).when(callback).stateUpdated(any(), any());
+        doAnswer(invocation -> {
+            ThingStatusInfo status = invocation.getArgument(1);
+            thing.setStatusInfo(status);
+            return null;
+        }).when(callback).statusUpdated(any(), any());
+        handler.setCallback(callback);
+        handler.initialize();
+    }
+
+    @Test
+    void reportsWindowPositionsAndProperties() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","type":"NXO","velux_type":"window",
+                 "bridge":"gateway","current_position":20,"target_position":80,"mode":"algo_available",
+                 "firmware_revision":53,"manufacturer":"Netatmo","last_seen":1791635702,"reachable":true}]}}
+                """);
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(80)));
+        assertThat(states.get(CHANNEL_MODE), is(new StringType("algo_available")));
+        assertThat(states.get(CHANNEL_LAST_SEEN), is(new DateTimeType(Instant.ofEpochSecond(1791635702L))));
+        assertThat(thing.getProperties().get(Thing.PROPERTY_FIRMWARE_VERSION), is("53"));
+        assertThat(thing.getProperties().get(Thing.PROPERTY_VENDOR), is("Netatmo"));
+        assertThat(thing.getProperties().get("veluxType"), is("window"));
+        assertThat(thing.getProperties().get("gatewayId"), is("gateway"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "blind", "venetian_blind", "shutter", "awning_blind" })
+    void preservesCoverPositionsAndSupportsUnsignedMovement(String type) {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"%s",
+                 "bridge":"gateway","current_position":20,"target_position":80}]}}
+                """.formatted(type));
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(20)));
+        clearInvocations(account, callback);
+        command(UpDownType.UP);
+        command(UpDownType.DOWN);
+        command(new PercentType(45));
+        var target = requireNonNull(handler.target());
+        verify(account).setPosition(target, "gateway", 0);
+        verify(account).setPosition(target, "gateway", 100);
+        verify(account).setPosition(target, "gateway", 45);
+        verify(callback, never()).stateUpdated(any(), any());
+    }
+
+    @Test
+    void allowsWindowClosingButDoesNotAttemptUnsignedOpening() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"window","bridge":"gateway",
+                 "current_position":100,"target_position":0}]}}
+                """);
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(0)));
+        clearInvocations(account);
+        command(UpDownType.UP);
+        command(new PercentType(50));
+        verifyNoInteractions(account);
+        command(UpDownType.DOWN);
+        command(new PercentType(100));
+        verify(account, times(2)).setPosition(requireNonNull(handler.target()), "gateway", 0);
+    }
+
+    @Test
+    void stopTargetsTheGatewayAndRefreshUsesSharedPolling() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"window","bridge":"gateway"}]}}
+                """);
+        clearInvocations(account);
+        command(StopMoveType.STOP);
+        verify(account).stopMovements(requireNonNull(handler.target()), "gateway");
+        command(RefreshType.REFRESH);
+        verify(account).requestPoll();
+        clearInvocations(account);
+        command(StopMoveType.MOVE);
+        handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_MODE), UpDownType.UP);
+        verifyNoInteractions(account);
+    }
+
+    @Test
+    void missingOrUnsupportedTypeDoesNotGuessPositionDirection() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","bridge":"gateway","current_position":25}]}}
+                """);
+        assertThat(states.get(CHANNEL_POSITION), is(UnDefType.UNDEF));
+        clearInvocations(account);
+        command(UpDownType.DOWN);
+        verifyNoInteractions(account);
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"future_type",
+                 "current_position":25,"target_position":75}]}}
+                """);
+        assertThat(states.get(CHANNEL_POSITION), is(UnDefType.UNDEF));
+        command(new PercentType(30));
+        verifyNoInteractions(account);
+    }
+
+    @Test
+    void retainsKnownRoutingForPartialStatusButRequiresGatewayBeforeCommands() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter","current_position":0}]}}
+                """);
+        clearInvocations(account);
+        command(UpDownType.DOWN);
+        command(StopMoveType.STOP);
+        verifyNoInteractions(account);
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","bridge":"gateway","current_position":100}]}}
+                """);
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(100)));
+        command(UpDownType.UP);
+        verify(account).setPosition(requireNonNull(handler.target()), "gateway", 0);
+    }
+
+    @Test
+    void invalidOrMissingValuesAreUndefined() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"window","current_position":-1,
+                 "target_position":101,"last_seen":9223372036854775807}]}}
+                """);
+        assertThat(states.size(), is(3));
+        assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening"}]}}
+                """);
+        assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
+    }
+
+    @Test
+    void unreachableMissingAndRecoveredOpening() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter",
+                 "bridge":"gateway","current_position":35,"reachable":true}]}}
+                """);
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","reachable":false}]}}
+                """);
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
+        clearInvocations(account);
+        command(UpDownType.UP);
+        verifyNoInteractions(account);
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","reachable":true}]},
+                 "errors":[{"id":"opening","code":6}]}
+                """);
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        update("""
+                {"home":{"id":"home","modules":[]}}
+                """);
+        assertThat(thing.getStatus(), is(ThingStatus.UNKNOWN));
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","current_position":35,"reachable":true}]}}
+                """);
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(35)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "window", "shutter" })
+    void acceptedTargetIsPublishedAndNextPollReconcilesActualPosition(String type) {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"%s",
+                 "bridge":"gateway","current_position":20,"target_position":0}]}}
+                """.formatted(type));
+        var target = requireNonNull(handler.target());
+        handler.positionAccepted(target, 0);
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType("window".equals(type) ? 100 : 0)));
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","current_position":10,"target_position":0}]}}
+                """);
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType("window".equals(type) ? 90 : 10)));
+    }
+
+    @Test
+    void disposalSuppressesLateUpdatesAndCommands() {
+        var target = requireNonNull(handler.target());
+        handler.dispose();
+        clearInvocations(callback, account);
+        handler.update(target, new HomeStatus());
+        handler.failed(target, "late failure");
+        handler.positionAccepted(target, 0);
+        command(RefreshType.REFRESH);
+        command(UpDownType.UP);
+        command(StopMoveType.STOP);
+        verifyNoInteractions(callback, account);
+    }
+
+    private void command(Command command) {
+        handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_POSITION), command);
+    }
+
+    private void update(String json) {
+        handler.update(requireNonNull(handler.target()), requireNonNull(new Gson().fromJson(json, HomeStatus.class)));
+    }
+}

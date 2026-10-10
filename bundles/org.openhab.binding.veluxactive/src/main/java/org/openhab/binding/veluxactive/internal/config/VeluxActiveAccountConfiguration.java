@@ -1,0 +1,39 @@
+/*
+ * Copyright (c) 2010-2026 Contributors to the openHAB project
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+package org.openhab.binding.veluxactive.internal.config;
+
+import org.eclipse.jdt.annotation.NonNullByDefault;
+
+/**
+ * Configuration for a VELUX ACTIVE account.
+ *
+ * @author Jacob Laursen - Initial contribution
+ */
+@NonNullByDefault
+public class VeluxActiveAccountConfiguration {
+    public String clientId = "5931426da127d981e76bdd3f";
+    public String clientSecret = "6ae2d89d15e767ae5c56b456b452d319";
+    public String username = "";
+    public String password = "";
+
+    public int refreshInterval = 60;
+
+    public boolean isComplete() {
+        return !clientId.isBlank() && !clientSecret.isBlank() && !username.isBlank() && !password.isBlank();
+    }
+
+    public boolean hasSameCredentials(VeluxActiveAccountConfiguration other) {
+        return clientId.equals(other.clientId) && clientSecret.equals(other.clientSecret)
+                && username.equals(other.username) && password.equals(other.password);
+    }
+}

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<thing:thing-descriptions bindingId="veluxactive"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:thing="https://openhab.org/schemas/thing-description/v1.0.0"
+	xsi:schemaLocation="https://openhab.org/schemas/thing-description/v1.0.0 https://openhab.org/schemas/thing-description-1.0.0.xsd">
+
+	<channel-type id="locked">
+		<item-type>Switch</item-type>
+		<label>Departure Locked</label>
+		<description>Reported departure lock state. Send ON to lock; unlocking is not supported.</description>
+		<category>Lock</category>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
+	<channel-type id="locking">
+		<item-type>Switch</item-type>
+		<label>Locking</label>
+		<description>Whether the gateway is applying departure locking</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="last-seen">
+		<item-type>DateTime</item-type>
+		<label>Last Seen</label>
+		<description>Last contact with the gateway reported by the service</description>
+		<category>Time</category>
+		<state readOnly="true" pattern="%1$tF %1$tT"/>
+	</channel-type>
+
+	<channel-type id="temperature">
+		<item-type>Number:Temperature</item-type>
+		<label>Temperature</label>
+		<category>Temperature</category>
+		<tags>
+			<tag>Measurement</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state readOnly="true" pattern="%.1f %unit%"/>
+	</channel-type>
+
+	<channel-type id="humidity">
+		<item-type unitHint="%">Number:Dimensionless</item-type>
+		<label>Humidity</label>
+		<category>Humidity</category>
+		<tags>
+			<tag>Measurement</tag>
+			<tag>Humidity</tag>
+		</tags>
+		<state readOnly="true" pattern="%d %%"/>
+	</channel-type>
+
+	<channel-type id="co2">
+		<item-type unitHint="ppm">Number:Dimensionless</item-type>
+		<label>CO₂</label>
+		<category>Carbondioxide</category>
+		<tags>
+			<tag>Measurement</tag>
+			<tag>CO2</tag>
+		</tags>
+		<state readOnly="true" pattern="%d ppm"/>
+	</channel-type>
+
+	<channel-type id="illuminance">
+		<item-type unitHint="lx">Number:Illuminance</item-type>
+		<label>Illuminance</label>
+		<description>Room illuminance</description>
+		<category>Light</category>
+		<tags>
+			<tag>Measurement</tag>
+			<tag>Light</tag>
+		</tags>
+		<state readOnly="true" pattern="%d lx"/>
+	</channel-type>
+
+	<channel-type id="position">
+		<item-type>Rollershutter</item-type>
+		<label>Position</label>
+		<description>0% open, 100% closed. Window opening requires signing and is not supported. STOP stops all movements on
+			the gateway.</description>
+		<category>Blinds</category>
+		<tags>
+			<tag>Control</tag>
+			<tag>Opening</tag>
+		</tags>
+		<state pattern="%d %%"/>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
+	<channel-type id="operating-mode">
+		<item-type>String</item-type>
+		<label>Operating Mode</label>
+		<description>Operating mode reported by the device</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+</thing:thing-descriptions>
