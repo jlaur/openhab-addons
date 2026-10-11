@@ -20,7 +20,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.handler.VeluxActiveAccountHandler;
 import org.openhab.core.config.discovery.AbstractThingHandlerDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
@@ -51,15 +52,15 @@ public class VeluxActiveDiscoveryService extends AbstractThingHandlerDiscoverySe
         thingHandler.discover(modules -> publish(scan, modules));
     }
 
-    private synchronized void publish(long scan, List<VeluxActiveApi.ModuleInfo> modules) {
+    private synchronized void publish(long scan, List<ModuleInfo> modules) {
         if (scan != generation) {
             return;
         }
         ThingUID bridgeUID = thingHandler.getThing().getUID();
-        for (VeluxActiveApi.ModuleInfo module : modules) {
+        for (ModuleInfo module : modules) {
             String identity = module.homeId() + "/" + module.moduleId();
             String id = UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8)).toString();
-            if (!"NXG".equals(module.type())) {
+            if (module.type() != ModuleType.GATEWAY) {
                 continue;
             }
             thingDiscovered(DiscoveryResultBuilder.create(new ThingUID(THING_TYPE_GATEWAY, bridgeUID, id))

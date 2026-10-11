@@ -29,7 +29,8 @@ import java.util.function.Consumer;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.OnOffType;
@@ -135,7 +136,7 @@ class VeluxActiveGatewayHandlerTest {
 
     @Test
     void disposalSuppressesLateStatusAndCommands() {
-        var target = requireNonNull(handler.target());
+        var target = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
         handler.update(target, status("{\"home\":{\"id\":\"home\",\"modules\":[]}}"));
@@ -150,7 +151,7 @@ class VeluxActiveGatewayHandlerTest {
         update("""
                 {"home":{"id":"home","modules":[{"id":"gateway","locked":false,"locking":false}]}}
                 """);
-        handler.lockAccepted(requireNonNull(handler.target()));
+        handler.lockAccepted(requireNonNull(handler.captureRequestContext()));
         assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.ON));
         assertThat(states.get(CHANNEL_LOCKING), is(OnOffType.OFF));
         update("""
@@ -177,9 +178,12 @@ class VeluxActiveGatewayHandlerTest {
     void discoveryFiltersByBothHomeAndGateway() {
         doAnswer(invocation -> {
             Consumer<List<ModuleInfo>> consumer = invocation.getArgument(0);
-            consumer.accept(List.of(new ModuleInfo("home", "sensor", "Sensor", "NXS", null, null, "gateway"),
-                    new ModuleInfo("home", "other", "Other", "NXS", null, null, "other-gateway"),
-                    new ModuleInfo("other-home", "foreign", "Foreign", "NXS", null, null, "gateway")));
+            consumer.accept(
+                    List.of(new ModuleInfo("home", "sensor", "Sensor", ModuleType.INDOOR_SENSOR, null, null, "gateway"),
+                            new ModuleInfo("home", "other", "Other", ModuleType.INDOOR_SENSOR, null, null,
+                                    "other-gateway"),
+                            new ModuleInfo("other-home", "foreign", "Foreign", ModuleType.INDOOR_SENSOR, null, null,
+                                    "gateway")));
             return null;
         }).when(account).discover(any());
         var results = new ArrayList<ModuleInfo>();
@@ -189,7 +193,7 @@ class VeluxActiveGatewayHandlerTest {
     }
 
     private void update(String json) {
-        handler.update(requireNonNull(handler.target()), status(json));
+        handler.update(requireNonNull(handler.captureRequestContext()), status(json));
     }
 
     private static HomeStatus status(String json) {

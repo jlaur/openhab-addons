@@ -33,6 +33,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.exception.ApiException;
 import org.openhab.binding.veluxactive.internal.exception.ApiUnauthorizedException;
 
@@ -59,16 +61,17 @@ class VeluxActiveApiTest {
 
     @Test
     void discoversSupportedModulesWithoutRequiringStatus() throws Exception {
-        when(response.getContentAsString()).thenReturn("""
-                {"status":"ok","body":{"homes":[
-                  {"id":"home-a","modules":[{"id":"gateway-a","type":"NXG","name":"Attic"},
-                                          {"id":"unsupported","type":"NXZ"}]},
-                  {"id":"home-b","modules":[{"id":"gateway-b","type":"NXG"}]}]}}
-                """);
+        when(response.getContentAsString()).thenReturn(
+                """
+                        {"status":"ok","body":{"homes":[
+                          {"id":"home-a","modules":[{"id":"gateway-a","type":"NXG","name":"Attic"},
+                                                  {"id":"unsupported","type":"NXZ"},{"id":"missing-type"},{"id":"null-type","type":null}]},
+                          {"id":"home-b","modules":[{"id":"gateway-b","type":"NXG"}]}]}}
+                        """);
         var gateways = api.modules("token");
         assertThat(gateways.size(), is(2));
         assertThat(gateways.getFirst(),
-                is(new VeluxActiveApi.ModuleInfo("home-a", "gateway-a", "Attic", "NXG", null, null, null)));
+                is(new ModuleInfo("home-a", "gateway-a", "Attic", ModuleType.GATEWAY, null, null, null)));
         assertThat(gateways.get(1).homeId(), is("home-b"));
         verify(http).newRequest("https://app.velux-active.com/api/homesdata");
         verify(request).header(HttpHeader.AUTHORIZATION, "Bearer token");
@@ -85,9 +88,9 @@ class VeluxActiveApiTest {
         var modules = api.modules("token");
         assertThat(modules.size(), is(3));
         assertThat(modules.getFirst(),
-                is(new VeluxActiveApi.ModuleInfo("home", "window", "Roof window", "NXO", null, null, null)));
+                is(new ModuleInfo("home", "window", "Roof window", ModuleType.OPENING, null, null, null)));
         assertThat(modules.get(1).name(), is("VELUX Window/Cover"));
-        assertThat(modules.get(2).type(), is("NXO"));
+        assertThat(modules.get(2).type(), is(ModuleType.OPENING));
     }
 
     @ParameterizedTest
@@ -150,8 +153,8 @@ class VeluxActiveApiTest {
                 """);
         var modules = api.modules("token");
         assertThat(modules.size(), is(2));
-        assertThat(modules.getFirst(),
-                is(new VeluxActiveApi.ModuleInfo("home", "switch", "Departure switch", "NXD", null, null, "gateway")));
+        assertThat(modules.getFirst(), is(new ModuleInfo("home", "switch", "Departure switch",
+                ModuleType.DEPARTURE_SWITCH, null, null, "gateway")));
         assertThat(modules.get(1).name(), is("VELUX Departure Switch"));
     }
 

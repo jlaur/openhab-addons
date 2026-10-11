@@ -68,8 +68,8 @@ class VeluxActiveDepartureSwitchHandlerTest {
         when(bridge.getHandler()).thenReturn(gateway);
         when(gateway.getThing()).thenReturn(bridge);
         when(gateway.account()).thenReturn(account);
-        when(gateway.target()).thenReturn(new VeluxActiveModuleHandler.Target(gateway, "home", "gateway", 1, null));
-        when(gateway.current(any())).thenReturn(true);
+        when(gateway.captureRequestContext()).thenReturn(new ModuleRequestContext(gateway, "home", "gateway", 1, null));
+        when(gateway.isRequestContextCurrent(any())).thenReturn(true);
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         doAnswer(invocation -> {
             ChannelUID channel = invocation.getArgument(0);
@@ -162,7 +162,7 @@ class VeluxActiveDepartureSwitchHandlerTest {
 
     @Test
     void disposalSuppressesLateUpdatesAndCommands() {
-        var target = requireNonNull(handler.target());
+        var target = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
         handler.update(target, new HomeStatus());
@@ -172,6 +172,7 @@ class VeluxActiveDepartureSwitchHandlerTest {
     }
 
     private void update(String json) {
-        handler.update(requireNonNull(handler.target()), requireNonNull(new Gson().fromJson(json, HomeStatus.class)));
+        handler.update(requireNonNull(handler.captureRequestContext()),
+                requireNonNull(new Gson().fromJson(json, HomeStatus.class)));
     }
 }

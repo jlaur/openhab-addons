@@ -67,13 +67,13 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         if (!CHANNEL_POSITION.equals(channelUID.getId())) {
             return;
         }
-        Target target;
+        ModuleRequestContext target;
         String type;
         String gateway;
         synchronized (this) {
-            target = target();
+            target = captureRequestContext();
             type = veluxType;
-            Target parent = target == null ? null : target.parent();
+            ModuleRequestContext parent = target == null ? null : target.parent();
             gateway = parent == null ? null : parent.moduleId();
             if (target == null || getThing().getStatus() != ThingStatus.ONLINE) {
                 return;
@@ -118,8 +118,8 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
     }
 
     @Override
-    synchronized void update(Target target, HomeStatus status) {
-        if (!current(target)) {
+    synchronized void update(ModuleRequestContext target, HomeStatus status) {
+        if (!isRequestContextCurrent(target)) {
             return;
         }
         Module module = status.module(target.moduleId());
@@ -142,7 +142,7 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             veluxType = type;
             properties.put("veluxType", type);
         }
-        Target parent = target.parent();
+        ModuleRequestContext parent = target.parent();
         String bridge = parent == null ? null : parent.moduleId();
         if (bridge != null) {
             properties.put("gatewayId", bridge);
@@ -170,8 +170,8 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         updateStatus(ThingStatus.ONLINE);
     }
 
-    synchronized void positionAccepted(Target target, int apiPosition) {
-        if (current(target)) {
+    synchronized void positionAccepted(ModuleRequestContext target, int apiPosition) {
+        if (isRequestContextCurrent(target)) {
             Integer expected = position(apiPosition);
             if (expected != null) {
                 // Acceptance predicts the destination; status polls reconcile the actual position.
