@@ -30,14 +30,14 @@ import org.openhab.core.config.discovery.DiscoveryResult;
 import org.openhab.core.thing.binding.builder.BridgeBuilder;
 
 /**
- * Verifies sensor discovery uses module identity independently of room assignment.
+ * Verifies account discovery publishes gateway Bridges.
  *
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
 class VeluxActiveDiscoveryServiceTest {
     @Test
-    void discoversPhysicalSensorWithStableIdentityAcrossRoomMoves() {
+    void discoversOnlyGatewaysUnderAccount() {
         var account = mock(VeluxActiveAccountHandler.class);
         var bridge = BridgeBuilder.create(THING_TYPE_ACCOUNT, "test").build();
         when(account.getThing()).thenReturn(bridge);
@@ -57,43 +57,19 @@ class VeluxActiveDiscoveryServiceTest {
         try {
             service.startScan();
             replies.getFirst()
-                    .accept(List.of(new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "hall", "Hall"),
-                            new VeluxActiveApi.ModuleInfo("home", "gateway", "Gateway", "NXG", null, null),
-                            new VeluxActiveApi.ModuleInfo("home", "switch", "Switch", "NXD", null, null),
-                            new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", "hall", "Hall")));
-            assertThat(results.size(), is(4));
-            assertThat(results.get(3).getThingTypeUID(), is(THING_TYPE_OPENING));
-            assertThat(results.get(3).getProperties().get("moduleId"), is("opening"));
-            assertThat(results.get(3).getBridgeUID(), is(bridge.getUID()));
-            assertThat(results.get(2).getThingTypeUID(), is(THING_TYPE_DEPARTURE_SWITCH));
-            assertThat(results.get(2).getProperties().get("moduleId"), is("switch"));
-            assertThat(results.getFirst().getThingTypeUID(), is(THING_TYPE_INDOOR_SENSOR));
-            assertThat(results.getFirst().getProperties().get("moduleId"), is("sensor"));
+                    .accept(List.of(
+                            new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "hall", "Hall", null),
+                            new VeluxActiveApi.ModuleInfo("home", "gateway", "Gateway", "NXG", null, null, null),
+                            new VeluxActiveApi.ModuleInfo("home", "switch", "Switch", "NXD", null, null, null),
+                            new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", "hall", "Hall", null)));
+            assertThat(results.size(), is(1));
+            assertThat(results.getFirst().getThingTypeUID(), is(THING_TYPE_GATEWAY));
+            assertThat(results.getFirst().getProperties().containsKey("homeId"), is(false));
             assertThat(results.getFirst().getBridgeUID(), is(bridge.getUID()));
-            assertThat(results.get(1).getThingTypeUID(), is(THING_TYPE_GATEWAY));
-            assertThat(results.get(3).getLabel(), is("Window (Hall)"));
-            assertThat(results.getFirst().getLabel(), is("Sensor"));
-            var openingUID = results.get(3).getThingUID();
-            var sensorUID = results.getFirst().getThingUID();
-            service.startScan();
-            replies.get(1).accept(
-                    List.of(new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "bedroom", "Bedroom")));
-            assertThat(results.getLast().getThingUID(), is(sensorUID));
-            service.startScan();
-            replies.getLast().accept(
-                    List.of(new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", "bedroom", "Bedroom")));
-            assertThat(results.getLast().getThingUID(), is(openingUID));
-            assertThat(results.getLast().getLabel(), is("Window (Bedroom)"));
-            for (String roomName : new String[] { null, "", "   " }) {
-                service.startScan();
-                replies.getLast().accept(
-                        List.of(new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", null, roomName)));
-                assertThat(results.getLast().getThingUID(), is(openingUID));
-                assertThat(results.getLast().getLabel(), is("Window"));
-            }
             service.dispose();
-            replies.getLast().accept(List.of(new VeluxActiveApi.ModuleInfo("home", "late", "Late", "NXS", null, null)));
-            assertThat(results.size(), is(9));
+            replies.getFirst()
+                    .accept(List.of(new VeluxActiveApi.ModuleInfo("home", "late", "Late", "NXG", null, null, null)));
+            assertThat(results.size(), is(1));
         } finally {
             service.dispose();
         }

@@ -32,7 +32,6 @@ public class VeluxActiveBindingConstants {
 
     public static final String CHANNEL_POSITION = "position";
     public static final String CHANNEL_MODE = "mode";
-
     public static final String CHANNEL_TEMPERATURE = "temperature";
     public static final String CHANNEL_HUMIDITY = "humidity";
     public static final String CHANNEL_CO2 = "co2";

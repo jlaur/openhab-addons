@@ -45,7 +45,6 @@ import org.slf4j.LoggerFactory;
 public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveOpeningHandler.class);
     private @Nullable String veluxType;
-    private @Nullable String gatewayId;
 
     public VeluxActiveOpeningHandler(Thing thing) {
         super(thing);
@@ -55,7 +54,6 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
     public void initialize() {
         synchronized (this) {
             veluxType = null;
-            gatewayId = null;
         }
         super.initialize();
     }
@@ -75,7 +73,8 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         synchronized (this) {
             target = target();
             type = veluxType;
-            gateway = gatewayId;
+            Target parent = target == null ? null : target.parent();
+            gateway = parent == null ? null : parent.moduleId();
             if (target == null || getThing().getStatus() != ThingStatus.ONLINE) {
                 return;
             }
@@ -124,6 +123,9 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             return;
         }
         Module module = status.module(target.moduleId());
+        if (module != null && !checkGateway(target, module)) {
+            return;
+        }
         if (status.error(target.moduleId()) != null || module != null && Boolean.FALSE.equals(module.reachable)) {
             failed(target, "Window/cover is unreachable.");
             return;
@@ -140,9 +142,9 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             veluxType = type;
             properties.put("veluxType", type);
         }
-        String bridge = module.bridge;
+        Target parent = target.parent();
+        String bridge = parent == null ? null : parent.moduleId();
         if (bridge != null) {
-            gatewayId = bridge;
             properties.put("gatewayId", bridge);
         }
         Integer firmware = module.firmwareRevision;

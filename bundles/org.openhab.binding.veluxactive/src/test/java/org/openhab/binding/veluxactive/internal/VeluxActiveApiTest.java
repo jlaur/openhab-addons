@@ -68,7 +68,7 @@ class VeluxActiveApiTest {
         var gateways = api.modules("token");
         assertThat(gateways.size(), is(2));
         assertThat(gateways.getFirst(),
-                is(new VeluxActiveApi.ModuleInfo("home-a", "gateway-a", "Attic", "NXG", null, null)));
+                is(new VeluxActiveApi.ModuleInfo("home-a", "gateway-a", "Attic", "NXG", null, null, null)));
         assertThat(gateways.get(1).homeId(), is("home-b"));
         verify(http).newRequest("https://app.velux-active.com/api/homesdata");
         verify(request).header(HttpHeader.AUTHORIZATION, "Bearer token");
@@ -85,7 +85,7 @@ class VeluxActiveApiTest {
         var modules = api.modules("token");
         assertThat(modules.size(), is(3));
         assertThat(modules.getFirst(),
-                is(new VeluxActiveApi.ModuleInfo("home", "window", "Roof window", "NXO", null, null)));
+                is(new VeluxActiveApi.ModuleInfo("home", "window", "Roof window", "NXO", null, null, null)));
         assertThat(modules.get(1).name(), is("VELUX Window/Cover"));
         assertThat(modules.get(2).type(), is("NXO"));
     }
@@ -151,8 +151,26 @@ class VeluxActiveApiTest {
         var modules = api.modules("token");
         assertThat(modules.size(), is(2));
         assertThat(modules.getFirst(),
-                is(new VeluxActiveApi.ModuleInfo("home", "switch", "Departure switch", "NXD", null, null)));
+                is(new VeluxActiveApi.ModuleInfo("home", "switch", "Departure switch", "NXD", null, null, "gateway")));
         assertThat(modules.get(1).name(), is("VELUX Departure Switch"));
+    }
+
+    @Test
+    void resolvesGatewayMembershipWithoutGuessingAmbiguousAssignments() throws Exception {
+        when(response.getContentAsString()).thenReturn("""
+                {"status":"ok","body":{"homes":[{"id":"home","modules":[
+                  {"id":"first","type":"NXG","modules_bridged":["fallback","ambiguous","explicit"]},
+                  {"id":"second","type":"NXG","modules_bridged":["ambiguous"]},
+                  {"id":"fallback","type":"NXS"},
+                  {"id":"explicit","type":"NXO","bridge":"second"},
+                  {"id":"ambiguous","type":"NXD"},
+                  {"id":"unassigned","type":"NXS"}]}]}}
+                """);
+        var modules = api.modules("token");
+        assertThat(modules.get(2).bridgeId(), is("first"));
+        assertThat(modules.get(3).bridgeId(), is("second"));
+        assertThat(modules.get(4).bridgeId(), nullValue());
+        assertThat(modules.get(5).bridgeId(), nullValue());
     }
 
     @Test

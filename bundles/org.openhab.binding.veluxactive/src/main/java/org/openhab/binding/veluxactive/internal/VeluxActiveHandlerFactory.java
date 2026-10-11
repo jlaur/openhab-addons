@@ -70,8 +70,8 @@ public class VeluxActiveHandlerFactory extends BaseThingHandlerFactory {
         if (THING_TYPE_ACCOUNT.equals(thing.getThingTypeUID()) && thing instanceof Bridge bridge) {
             return new VeluxActiveAccountHandler(bridge, oAuthFactory, api, timeZoneProvider);
         }
-        if (THING_TYPE_GATEWAY.equals(thing.getThingTypeUID())) {
-            return new VeluxActiveGatewayHandler(thing);
+        if (THING_TYPE_GATEWAY.equals(thing.getThingTypeUID()) && thing instanceof Bridge bridge) {
+            return new VeluxActiveGatewayHandler(bridge);
         }
         if (THING_TYPE_INDOOR_SENSOR.equals(thing.getThingTypeUID())) {
             return new VeluxActiveIndoorSensorHandler(thing);

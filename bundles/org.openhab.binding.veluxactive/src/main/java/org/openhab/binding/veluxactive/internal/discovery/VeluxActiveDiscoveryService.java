@@ -29,7 +29,7 @@ import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ServiceScope;
 
 /**
- * Discovers gateways, battery modules and NXO openings from account topology.
+ * Discovers gateway Bridges belonging to an account.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -39,9 +39,7 @@ public class VeluxActiveDiscoveryService extends AbstractThingHandlerDiscoverySe
     private long generation;
 
     public VeluxActiveDiscoveryService() {
-        super(VeluxActiveAccountHandler.class,
-                Set.of(THING_TYPE_GATEWAY, THING_TYPE_INDOOR_SENSOR, THING_TYPE_DEPARTURE_SWITCH, THING_TYPE_OPENING),
-                60, false);
+        super(VeluxActiveAccountHandler.class, Set.of(THING_TYPE_GATEWAY), 60, false);
     }
 
     @Override
@@ -61,17 +59,12 @@ public class VeluxActiveDiscoveryService extends AbstractThingHandlerDiscoverySe
         for (VeluxActiveApi.ModuleInfo module : modules) {
             String identity = module.homeId() + "/" + module.moduleId();
             String id = UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8)).toString();
-            String roomName = module.roomName();
-            String label = "NXO".equals(module.type()) && roomName != null && !roomName.isBlank()
-                    ? module.name() + " (" + roomName + ")"
-                    : module.name();
-            thingDiscovered(DiscoveryResultBuilder.create(new ThingUID(switch (module.type()) {
-                case "NXS" -> THING_TYPE_INDOOR_SENSOR;
-                case "NXD" -> THING_TYPE_DEPARTURE_SWITCH;
-                case "NXO" -> THING_TYPE_OPENING;
-                default -> THING_TYPE_GATEWAY;
-            }, bridgeUID, id)).withBridge(bridgeUID).withLabel(label).withProperty("homeId", module.homeId())
-                    .withProperty("moduleId", module.moduleId()).withRepresentationProperty("moduleId").build());
+            if (!"NXG".equals(module.type())) {
+                continue;
+            }
+            thingDiscovered(DiscoveryResultBuilder.create(new ThingUID(THING_TYPE_GATEWAY, bridgeUID, id))
+                    .withBridge(bridgeUID).withLabel(module.name()).withProperty("moduleId", module.moduleId())
+                    .withRepresentationProperty("moduleId").build());
         }
     }
 
