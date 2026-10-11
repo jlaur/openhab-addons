@@ -24,7 +24,8 @@ import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.handler.VeluxActiveGatewayHandler;
 import org.openhab.core.config.discovery.DiscoveryResult;
 import org.openhab.core.thing.binding.builder.BridgeBuilder;
@@ -49,7 +50,7 @@ class VeluxActiveGatewayDiscoveryServiceTest {
             }
         };
         service.setThingHandler(account);
-        var replies = new ArrayList<Consumer<List<VeluxActiveApi.ModuleInfo>>>();
+        var replies = new ArrayList<Consumer<List<ModuleInfo>>>();
         doAnswer(invocation -> {
             replies.add(invocation.getArgument(0));
             return null;
@@ -58,10 +59,10 @@ class VeluxActiveGatewayDiscoveryServiceTest {
             service.startScan();
             replies.getFirst()
                     .accept(List.of(
-                            new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "hall", "Hall", null),
-                            new VeluxActiveApi.ModuleInfo("home", "gateway", "Gateway", "NXG", null, null, null),
-                            new VeluxActiveApi.ModuleInfo("home", "switch", "Switch", "NXD", null, null, null),
-                            new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", "hall", "Hall", null)));
+                            new ModuleInfo("home", "sensor", "Sensor", ModuleType.INDOOR_SENSOR, "hall", "Hall", null),
+                            new ModuleInfo("home", "gateway", "Gateway", ModuleType.GATEWAY, null, null, null),
+                            new ModuleInfo("home", "switch", "Switch", ModuleType.DEPARTURE_SWITCH, null, null, null),
+                            new ModuleInfo("home", "opening", "Window", ModuleType.OPENING, "hall", "Hall", null)));
             assertThat(results.size(), is(3));
             assertThat(results.get(2).getThingTypeUID(), is(THING_TYPE_OPENING));
             assertThat(results.get(2).getProperties().get("moduleId"), is("opening"));
@@ -77,24 +78,24 @@ class VeluxActiveGatewayDiscoveryServiceTest {
             var openingUID = results.get(2).getThingUID();
             var sensorUID = results.getFirst().getThingUID();
             service.startScan();
-            replies.get(1).accept(List
-                    .of(new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "bedroom", "Bedroom", null)));
+            replies.get(1).accept(List.of(
+                    new ModuleInfo("home", "sensor", "Sensor", ModuleType.INDOOR_SENSOR, "bedroom", "Bedroom", null)));
             assertThat(results.getLast().getThingUID(), is(sensorUID));
             service.startScan();
             replies.getLast().accept(List
-                    .of(new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", "bedroom", "Bedroom", null)));
+                    .of(new ModuleInfo("home", "opening", "Window", ModuleType.OPENING, "bedroom", "Bedroom", null)));
             assertThat(results.getLast().getThingUID(), is(openingUID));
             assertThat(results.getLast().getLabel(), is("Window (Bedroom)"));
             for (String roomName : new String[] { null, "", "   " }) {
                 service.startScan();
-                replies.getLast().accept(List
-                        .of(new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", null, roomName, null)));
+                replies.getLast().accept(
+                        List.of(new ModuleInfo("home", "opening", "Window", ModuleType.OPENING, null, roomName, null)));
                 assertThat(results.getLast().getThingUID(), is(openingUID));
                 assertThat(results.getLast().getLabel(), is("Window"));
             }
             service.dispose();
-            replies.getLast()
-                    .accept(List.of(new VeluxActiveApi.ModuleInfo("home", "late", "Late", "NXS", null, null, null)));
+            replies.getLast().accept(
+                    List.of(new ModuleInfo("home", "late", "Late", ModuleType.INDOOR_SENSOR, null, null, null)));
             assertThat(results.size(), is(8));
         } finally {
             service.dispose();

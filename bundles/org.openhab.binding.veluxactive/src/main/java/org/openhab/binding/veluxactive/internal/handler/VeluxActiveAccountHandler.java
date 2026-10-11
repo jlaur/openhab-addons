@@ -35,6 +35,8 @@ import java.util.stream.Collectors;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.serialization.VeluxActiveTokenResponseDeserializer;
 import org.openhab.binding.veluxactive.internal.config.VeluxActiveAccountConfiguration;
 import org.openhab.binding.veluxactive.internal.discovery.VeluxActiveDiscoveryService;
@@ -325,7 +327,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         return Set.of(VeluxActiveDiscoveryService.class);
     }
 
-    public synchronized void discover(Consumer<List<VeluxActiveApi.ModuleInfo>> consumer) {
+    public synchronized void discover(Consumer<List<ModuleInfo>> consumer) {
         if (!running) {
             return;
         }
@@ -370,7 +372,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
     }
 
     private void pollModules(long session) {
-        var targets = new java.util.ArrayList<VeluxActiveModuleHandler.Target>();
+        var targets = new java.util.ArrayList<ModuleRequestContext>();
         try {
             if (!isCurrent(session) || accessToken == null) {
                 return;
@@ -386,7 +388,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 }
             }
             var byHome = targets.stream().filter(target -> !target.homeId().isBlank())
-                    .collect(Collectors.groupingBy(VeluxActiveModuleHandler.Target::homeId));
+                    .collect(Collectors.groupingBy(ModuleRequestContext::homeId));
             for (var entry : byHome.entrySet()) {
                 String token = accessToken;
                 if (!isCurrent(session) || token == null) {
@@ -435,9 +437,9 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         }
     }
 
-    private void collectTargets(Thing thing, List<VeluxActiveModuleHandler.Target> targets) {
+    private void collectTargets(Thing thing, List<ModuleRequestContext> targets) {
         if (thing.getHandler() instanceof VeluxActiveModuleHandler module) {
-            var target = module.target();
+            var target = module.captureRequestContext();
             if (target != null) {
                 targets.add(target);
             }
@@ -449,8 +451,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         }
     }
 
-    private void refreshTopology(long session, List<VeluxActiveModuleHandler.Target> targets)
-            throws InterruptedException {
+    private void refreshTopology(long session, List<ModuleRequestContext> targets) throws InterruptedException {
         String token = accessToken;
         if (token == null || !isCurrent(session)) {
             return;
@@ -461,7 +462,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 if (isCurrent(session)) {
                     Map<String, String> homes = new HashMap<>();
                     for (var module : modules) {
-                        if ("NXG".equals(module.type())) {
+                        if (module.type() == ModuleType.GATEWAY) {
                             homes.merge(module.moduleId(), module.homeId(),
                                     (first, second) -> first.equals(second) ? first : "");
                         }
@@ -472,7 +473,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                             gateway.homeResolved(!target.homeId().equals(homeId(target.moduleId())));
                         }
                         if (target.handler() instanceof VeluxActiveIndoorSensorHandler sensor) {
-                            var current = sensor.target();
+                            var current = sensor.captureRequestContext();
                             if (current != null) {
                                 sensor.updateTopology(current, modules);
                             }
@@ -490,27 +491,26 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         return gatewayHomes.getOrDefault(moduleId, "");
     }
 
-    void lock(VeluxActiveModuleHandler.Target target) {
+    void lock(ModuleRequestContext target) {
         if (target.handler() instanceof VeluxActiveGatewayHandler gateway) {
             sendCommand(target, (token, timezone) -> api.lock(token, target.homeId(), target.moduleId(), timezone),
                     () -> gateway.lockAccepted(target));
         }
     }
 
-    void setPosition(VeluxActiveModuleHandler.Target target, String gatewayId, int position) {
+    void setPosition(ModuleRequestContext target, String gatewayId, int position) {
         if (target.handler() instanceof VeluxActiveOpeningHandler opening) {
             sendCommand(target, (token, timezone) -> api.setPosition(token, target.homeId(), target.moduleId(),
                     gatewayId, position, timezone), () -> opening.positionAccepted(target, position));
         }
     }
 
-    void stopMovements(VeluxActiveModuleHandler.Target target, String gatewayId) {
+    void stopMovements(ModuleRequestContext target, String gatewayId) {
         sendCommand(target, (token, timezone) -> api.stopMovements(token, target.homeId(), gatewayId, timezone), () -> {
         });
     }
 
-    private synchronized void sendCommand(VeluxActiveModuleHandler.Target target, ModuleCommand command,
-            Runnable accepted) {
+    private synchronized void sendCommand(ModuleRequestContext target, ModuleCommand command, Runnable accepted) {
         if (!running) {
             return;
         }
@@ -518,13 +518,13 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         enqueue(session, () -> {
             String token = accessToken;
             if (token == null || !isCurrent(session) || target.homeId().isBlank()
-                    || !target.handler().current(target)) {
+                    || !target.handler().isRequestContextCurrent(target)) {
                 return;
             }
             try {
                 command.execute(token, timeZoneProvider.getTimeZone().getId());
                 synchronized (this) {
-                    if (isCurrent(session) && target.handler().current(target)) {
+                    if (isCurrent(session) && target.handler().isRequestContextCurrent(target)) {
                         accepted.run();
                         fastPollsRemaining = 6;
                         requestPoll();

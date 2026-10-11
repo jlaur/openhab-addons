@@ -31,8 +31,8 @@ public class VeluxActiveDepartureSwitchHandler extends VeluxActiveBatteryModuleH
     }
 
     @Override
-    synchronized void update(Target target, HomeStatus status) {
-        if (!current(target)) {
+    synchronized void update(ModuleRequestContext target, HomeStatus status) {
+        if (!isRequestContextCurrent(target)) {
             return;
         }
         Module module = status.module(target.moduleId());

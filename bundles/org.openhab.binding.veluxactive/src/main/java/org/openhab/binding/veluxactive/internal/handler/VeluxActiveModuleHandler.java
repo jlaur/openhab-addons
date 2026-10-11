@@ -67,7 +67,7 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
                 return;
             }
             accountHandler = account;
-            Target target = target();
+            ModuleRequestContext target = captureRequestContext();
             if (config.moduleId.isBlank()) {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Module ID is required.");
                 return;
@@ -82,7 +82,7 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
                 return;
             }
-            if (!current(target)) {
+            if (!isRequestContextCurrent(target)) {
                 return;
             }
             updateStatus(ThingStatus.UNKNOWN);
@@ -104,7 +104,7 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        if (command == RefreshType.REFRESH && target() != null) {
+        if (command == RefreshType.REFRESH && captureRequestContext() != null) {
             VeluxActiveAccountHandler account = account();
             if (account != null) {
                 account.requestPoll();
@@ -126,8 +126,7 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
         return null;
     }
 
-    @Nullable
-    Target target() {
+    protected @Nullable ModuleRequestContext captureRequestContext() {
         long session = generation;
         VeluxActiveModuleConfiguration config = configuration;
         if (!active || config == null || config.moduleId.isBlank()) {
@@ -136,30 +135,32 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
         if (this instanceof VeluxActiveGatewayHandler) {
             VeluxActiveAccountHandler account = accountHandler;
             return account == null ? null
-                    : new Target(this, account.homeId(config.moduleId), config.moduleId, session, null);
+                    : new ModuleRequestContext(this, account.homeId(config.moduleId), config.moduleId, session, null);
         }
         Bridge bridge = getBridge();
-        Target parent = bridge != null && bridge.getHandler() instanceof VeluxActiveGatewayHandler gateway
-                ? gateway.target()
+        ModuleRequestContext parent = bridge != null && bridge.getHandler() instanceof VeluxActiveGatewayHandler gateway
+                ? gateway.captureRequestContext()
                 : null;
-        return parent == null ? null : new Target(this, parent.homeId(), config.moduleId, session, parent);
+        return parent == null ? null
+                : new ModuleRequestContext(this, parent.homeId(), config.moduleId, session, parent);
     }
 
-    boolean current(Target target) {
-        if (!active || generation != target.generation()) {
+    protected boolean isRequestContextCurrent(ModuleRequestContext context) {
+        if (!active || generation != context.generation()) {
             return false;
         }
-        Target parent = target.parent();
+        ModuleRequestContext parent = context.parent();
         // Parent generations invalidate child work without acquiring a parent monitor.
         if (parent != null) {
-            return parent.handler().current(parent) && parent.handler().getThing().getStatus() == ThingStatus.ONLINE;
+            return parent.handler().isRequestContextCurrent(parent)
+                    && parent.handler().getThing().getStatus() == ThingStatus.ONLINE;
         }
         VeluxActiveAccountHandler account = accountHandler;
-        return account != null && target.homeId().equals(account.homeId(target.moduleId()));
+        return account != null && context.homeId().equals(account.homeId(context.moduleId()));
     }
 
-    protected boolean checkGateway(Target target, Module module) {
-        Target parent = target.parent();
+    protected boolean checkGateway(ModuleRequestContext target, Module module) {
+        ModuleRequestContext parent = target.parent();
         String reportedBridge = module.bridge;
         if (parent != null && reportedBridge != null && !parent.moduleId().equals(reportedBridge)) {
             clearState();
@@ -170,10 +171,10 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
         return true;
     }
 
-    abstract void update(Target target, HomeStatus status);
+    abstract void update(ModuleRequestContext target, HomeStatus status);
 
-    synchronized void failed(Target target, @Nullable String message) {
-        if (current(target)) {
+    synchronized void failed(ModuleRequestContext target, @Nullable String message) {
+        if (isRequestContextCurrent(target)) {
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, message);
         }
@@ -186,9 +187,5 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
         active = false;
         accountHandler = null;
         generation++;
-    }
-
-    record Target(VeluxActiveModuleHandler handler, String homeId, String moduleId, long generation,
-            @Nullable Target parent) {
     }
 }

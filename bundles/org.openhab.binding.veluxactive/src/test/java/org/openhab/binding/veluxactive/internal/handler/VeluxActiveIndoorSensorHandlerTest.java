@@ -26,7 +26,8 @@ import java.util.Map;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.DecimalType;
@@ -71,8 +72,8 @@ class VeluxActiveIndoorSensorHandlerTest {
         when(bridge.getHandler()).thenReturn(gateway);
         when(gateway.getThing()).thenReturn(bridge);
         when(gateway.account()).thenReturn(account);
-        when(gateway.target()).thenReturn(new VeluxActiveModuleHandler.Target(gateway, "home", "gateway", 1, null));
-        when(gateway.current(any())).thenReturn(true);
+        when(gateway.captureRequestContext()).thenReturn(new ModuleRequestContext(gateway, "home", "gateway", 1, null));
+        when(gateway.isRequestContextCurrent(any())).thenReturn(true);
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         doAnswer(invocation -> {
             ChannelUID channel = invocation.getArgument(0);
@@ -121,7 +122,7 @@ class VeluxActiveIndoorSensorHandlerTest {
         update(status);
         assertThat(states.get(CHANNEL_TEMPERATURE), is(new QuantityType<>(18.5, SIUnits.CELSIUS)));
         assertThat(states.get(CHANNEL_HUMIDITY), is(UnDefType.UNDEF));
-        handler.updateTopology(requireNonNull(handler.target()), List.of());
+        handler.updateTopology(requireNonNull(handler.captureRequestContext()), List.of());
         update(status);
         assertThat(states.get(CHANNEL_TEMPERATURE), is(UnDefType.UNDEF));
         assertThat(states.get(CHANNEL_BATTERY), is(new DecimalType(35)));
@@ -158,7 +159,7 @@ class VeluxActiveIndoorSensorHandlerTest {
 
     @Test
     void disposalSuppressesUpdatesAndRefresh() {
-        var target = requireNonNull(handler.target());
+        var target = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
         handler.updateTopology(target, List.of());
@@ -179,11 +180,12 @@ class VeluxActiveIndoorSensorHandlerTest {
     }
 
     private void topology(String roomId) {
-        handler.updateTopology(requireNonNull(handler.target()), List
-                .of(new VeluxActiveApi.ModuleInfo("home", "gateway", "Indoor sensor", "NXS", roomId, roomId, null)));
+        handler.updateTopology(requireNonNull(handler.captureRequestContext()), List.of(
+                new ModuleInfo("home", "gateway", "Indoor sensor", ModuleType.INDOOR_SENSOR, roomId, roomId, null)));
     }
 
     private void update(String json) {
-        handler.update(requireNonNull(handler.target()), requireNonNull(new Gson().fromJson(json, HomeStatus.class)));
+        handler.update(requireNonNull(handler.captureRequestContext()),
+                requireNonNull(new Gson().fromJson(json, HomeStatus.class)));
     }
 }

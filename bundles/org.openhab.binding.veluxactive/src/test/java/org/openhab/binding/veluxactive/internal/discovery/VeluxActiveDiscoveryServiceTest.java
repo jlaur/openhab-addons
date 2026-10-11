@@ -24,7 +24,8 @@ import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.handler.VeluxActiveAccountHandler;
 import org.openhab.core.config.discovery.DiscoveryResult;
 import org.openhab.core.thing.binding.builder.BridgeBuilder;
@@ -49,7 +50,7 @@ class VeluxActiveDiscoveryServiceTest {
             }
         };
         service.setThingHandler(account);
-        var replies = new ArrayList<Consumer<List<VeluxActiveApi.ModuleInfo>>>();
+        var replies = new ArrayList<Consumer<List<ModuleInfo>>>();
         doAnswer(invocation -> {
             replies.add(invocation.getArgument(0));
             return null;
@@ -58,17 +59,17 @@ class VeluxActiveDiscoveryServiceTest {
             service.startScan();
             replies.getFirst()
                     .accept(List.of(
-                            new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "hall", "Hall", null),
-                            new VeluxActiveApi.ModuleInfo("home", "gateway", "Gateway", "NXG", null, null, null),
-                            new VeluxActiveApi.ModuleInfo("home", "switch", "Switch", "NXD", null, null, null),
-                            new VeluxActiveApi.ModuleInfo("home", "opening", "Window", "NXO", "hall", "Hall", null)));
+                            new ModuleInfo("home", "sensor", "Sensor", ModuleType.INDOOR_SENSOR, "hall", "Hall", null),
+                            new ModuleInfo("home", "gateway", "Gateway", ModuleType.GATEWAY, null, null, null),
+                            new ModuleInfo("home", "switch", "Switch", ModuleType.DEPARTURE_SWITCH, null, null, null),
+                            new ModuleInfo("home", "opening", "Window", ModuleType.OPENING, "hall", "Hall", null)));
             assertThat(results.size(), is(1));
             assertThat(results.getFirst().getThingTypeUID(), is(THING_TYPE_GATEWAY));
             assertThat(results.getFirst().getProperties().containsKey("homeId"), is(false));
             assertThat(results.getFirst().getBridgeUID(), is(bridge.getUID()));
             service.dispose();
             replies.getFirst()
-                    .accept(List.of(new VeluxActiveApi.ModuleInfo("home", "late", "Late", "NXG", null, null, null)));
+                    .accept(List.of(new ModuleInfo("home", "late", "Late", ModuleType.GATEWAY, null, null, null)));
             assertThat(results.size(), is(1));
         } finally {
             service.dispose();

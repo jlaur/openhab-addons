@@ -20,10 +20,13 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.handler.VeluxActiveGatewayHandler;
 import org.openhab.core.config.discovery.AbstractThingHandlerDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
+import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.ThingUID;
 import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ServiceScope;
@@ -53,28 +56,31 @@ public class VeluxActiveGatewayDiscoveryService
         thingHandler.discover(modules -> publish(scan, modules));
     }
 
-    private synchronized void publish(long scan, List<VeluxActiveApi.ModuleInfo> modules) {
+    private synchronized void publish(long scan, List<ModuleInfo> modules) {
         if (scan != generation) {
             return;
         }
         ThingUID bridgeUID = thingHandler.getThing().getUID();
-        for (VeluxActiveApi.ModuleInfo module : modules) {
-            if (!Set.of("NXS", "NXD", "NXO").contains(module.type())) {
+        for (ModuleInfo module : modules) {
+            @Nullable
+            ThingTypeUID thingType = switch (module.type()) {
+                case GATEWAY -> null;
+                case INDOOR_SENSOR -> THING_TYPE_INDOOR_SENSOR;
+                case DEPARTURE_SWITCH -> THING_TYPE_DEPARTURE_SWITCH;
+                case OPENING -> THING_TYPE_OPENING;
+            };
+            if (thingType == null) {
                 continue;
             }
             String identity = module.homeId() + "/" + module.moduleId();
             String id = UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8)).toString();
             String roomName = module.roomName();
-            String label = "NXO".equals(module.type()) && roomName != null && !roomName.isBlank()
+            String label = module.type() == ModuleType.OPENING && roomName != null && !roomName.isBlank()
                     ? module.name() + " (" + roomName + ")"
                     : module.name();
-            thingDiscovered(DiscoveryResultBuilder.create(new ThingUID(switch (module.type()) {
-                case "NXS" -> THING_TYPE_INDOOR_SENSOR;
-                case "NXD" -> THING_TYPE_DEPARTURE_SWITCH;
-                case "NXO" -> THING_TYPE_OPENING;
-                default -> THING_TYPE_OPENING;
-            }, bridgeUID, id)).withBridge(bridgeUID).withLabel(label).withProperty("moduleId", module.moduleId())
-                    .withRepresentationProperty("moduleId").build());
+            thingDiscovered(DiscoveryResultBuilder.create(new ThingUID(thingType, bridgeUID, id)).withBridge(bridgeUID)
+                    .withLabel(label).withProperty("moduleId", module.moduleId()).withRepresentationProperty("moduleId")
+                    .build());
         }
     }
 

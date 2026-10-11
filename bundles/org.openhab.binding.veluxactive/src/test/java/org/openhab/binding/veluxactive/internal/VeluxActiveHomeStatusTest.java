@@ -20,8 +20,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.ApiResponse;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
+import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.binding.veluxactive.internal.exception.ApiException;
 import org.openhab.binding.veluxactive.internal.exception.ApiUnauthorizedException;
 
@@ -35,6 +40,20 @@ import com.google.gson.Gson;
 @NonNullByDefault
 class VeluxActiveHomeStatusTest {
     private final Gson gson = new Gson();
+
+    @ParameterizedTest
+    @CsvSource({ "NXG,GATEWAY", "NXS,INDOOR_SENSOR", "NXD,DEPARTURE_SWITCH", "NXO,OPENING" })
+    void deserializesModuleTypes(String code, ModuleType expected) {
+        var module = requireNonNull(gson.fromJson("{\"type\":\"" + code + "\"}", Module.class));
+        assertThat(module.type, is(expected));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "{}", "{\"type\":null}", "{\"type\":\"NXZ\"}", "{\"type\":\"\"}" })
+    void preservesMissingOrUnknownModuleTypes(String json) {
+        var module = requireNonNull(gson.fromJson(json, Module.class));
+        assertThat(module.type, nullValue());
+    }
 
     @Test
     void preservesModuleDiagnosticsAndRawRoomValues() {
