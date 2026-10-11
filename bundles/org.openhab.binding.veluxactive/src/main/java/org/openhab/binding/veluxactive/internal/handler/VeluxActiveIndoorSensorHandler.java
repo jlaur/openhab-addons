@@ -18,7 +18,8 @@ import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.Home;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
@@ -52,13 +53,13 @@ public class VeluxActiveIndoorSensorHandler extends VeluxActiveBatteryModuleHand
         super.initialize();
     }
 
-    synchronized void updateTopology(Target target, List<VeluxActiveApi.ModuleInfo> modules) {
-        if (!current(target)) {
+    synchronized void updateTopology(ModuleRequestContext target, List<ModuleInfo> modules) {
+        if (!isRequestContextCurrent(target)) {
             return;
         }
         var info = modules
                 .stream().filter(module -> target.homeId().equals(module.homeId())
-                        && target.moduleId().equals(module.moduleId()) && "NXS".equals(module.type()))
+                        && target.moduleId().equals(module.moduleId()) && module.type() == ModuleType.INDOOR_SENSOR)
                 .findFirst().orElse(null);
         roomId = info == null ? null : info.roomId();
         String roomName = info == null ? null : info.roomName();
@@ -78,8 +79,8 @@ public class VeluxActiveIndoorSensorHandler extends VeluxActiveBatteryModuleHand
     }
 
     @Override
-    synchronized void update(Target target, HomeStatus status) {
-        if (!current(target)) {
+    synchronized void update(ModuleRequestContext target, HomeStatus status) {
+        if (!isRequestContextCurrent(target)) {
             return;
         }
         Module module = status.module(target.moduleId());

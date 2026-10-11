@@ -16,6 +16,7 @@ import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 
 import com.google.gson.annotations.SerializedName;
 
@@ -28,7 +29,7 @@ import com.google.gson.annotations.SerializedName;
 public class Module {
     public @Nullable String id;
     public @Nullable String name;
-    public @Nullable String type;
+    public @Nullable ModuleType type;
     public @Nullable String bridge;
     @SerializedName("modules_bridged")
     public @Nullable List<String> modulesBridged;

@@ -30,6 +30,8 @@ import org.eclipse.jetty.client.util.StringContentProvider;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.http.HttpMethod;
 import org.eclipse.jetty.http.HttpStatus;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
+import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.ApiResponse;
 import org.openhab.binding.veluxactive.internal.api.dto.Home;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
@@ -81,23 +83,18 @@ public class VeluxActiveApi {
                 }
                 for (Module module : homeModules) {
                     String moduleId = module == null ? null : module.id;
-                    if (module != null && ("NXG".equals(module.type) || "NXS".equals(module.type)
-                            || "NXD".equals(module.type) || "NXO".equals(module.type)) && moduleId != null
-                            && !moduleId.isBlank()) {
+                    ModuleType type = module == null ? null : module.type;
+                    if (module != null && type != null && moduleId != null && !moduleId.isBlank()) {
                         String name = module.name;
-                        String type = java.util.Objects.requireNonNull(module.type);
                         Room room = findRoom(home, module);
                         String bridgeId = findGateway(home, module);
                         String roomId = module.roomId;
                         if ((roomId == null || roomId.isBlank()) && room != null) {
                             roomId = room.id;
                         }
-                        modules.add(new ModuleInfo(homeId, moduleId, name == null || name.isBlank() ? switch (type) {
-                            case "NXS" -> "VELUX Indoor Climate Sensor";
-                            case "NXD" -> "VELUX Departure Switch";
-                            case "NXO" -> "VELUX Window/Cover";
-                            default -> "VELUX Gateway";
-                        } : name, type, roomId, room == null ? null : room.name, bridgeId));
+                        modules.add(new ModuleInfo(homeId, moduleId,
+                                name == null || name.isBlank() ? type.defaultName() : name, type, roomId,
+                                room == null ? null : room.name, bridgeId));
                     }
                 }
             }
@@ -224,7 +221,7 @@ public class VeluxActiveApi {
         String match = null;
         if (modules != null) {
             for (Module candidate : modules) {
-                if (candidate == null || !"NXG".equals(candidate.type)) {
+                if (candidate == null || candidate.type != ModuleType.GATEWAY) {
                     continue;
                 }
                 List<String> bridged = candidate.modulesBridged;
@@ -269,9 +266,5 @@ public class VeluxActiveApi {
             }
         }
         return match;
-    }
-
-    public record ModuleInfo(String homeId, String moduleId, String name, String type, @Nullable String roomId,
-            @Nullable String roomName, @Nullable String bridgeId) {
     }
 }
