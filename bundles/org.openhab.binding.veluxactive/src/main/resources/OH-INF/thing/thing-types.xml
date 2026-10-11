@@ -39,7 +39,7 @@
 		</config-description>
 	</bridge-type>
 
-	<thing-type id="gateway">
+	<bridge-type id="gateway">
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="account"/>
 		</supported-bridge-type-refs>
@@ -52,27 +52,29 @@
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 		<config-description>
-			<parameter name="homeId" type="text" required="true">
-				<label>Home ID</label>
-				<description>Home containing the gateway</description>
-			</parameter>
 			<parameter name="moduleId" type="text" required="true">
 				<label>Module ID</label>
 				<description>NXG gateway module identifier</description>
 			</parameter>
 		</config-description>
-	</thing-type>
+	</bridge-type>
 
 	<thing-type id="indoor-sensor">
 		<supported-bridge-type-refs>
-			<bridge-type-ref id="account"/>
+			<bridge-type-ref id="gateway"/>
 		</supported-bridge-type-refs>
 		<label>VELUX ACTIVE Indoor Climate Sensor</label>
 		<description>NXS indoor climate sensor with room measurements and battery diagnostics</description>
 		<category>Sensor</category>
 		<channels>
-			<channel id="temperature" typeId="temperature"/>
-			<channel id="humidity" typeId="humidity"/>
+			<channel id="temperature" typeId="system.indoor-temperature">
+				<label>Temperature</label>
+				<description>Current temperature measured by the sensor.</description>
+			</channel>
+			<channel id="humidity" typeId="system.atmospheric-humidity">
+				<label>Humidity</label>
+				<description>Current relative humidity measured by the sensor.</description>
+			</channel>
 			<channel id="co2" typeId="co2"/>
 			<channel id="illuminance" typeId="illuminance"/>
 			<channel id="battery-level" typeId="system.battery-level"/>
@@ -81,10 +83,6 @@
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 		<config-description>
-			<parameter name="homeId" type="text" required="true">
-				<label>Home ID</label>
-				<description>Home containing the sensor</description>
-			</parameter>
 			<parameter name="moduleId" type="text" required="true">
 				<label>Module ID</label>
 				<description>NXS sensor module identifier</description>
@@ -94,7 +92,7 @@
 
 	<thing-type id="departure-switch">
 		<supported-bridge-type-refs>
-			<bridge-type-ref id="account"/>
+			<bridge-type-ref id="gateway"/>
 		</supported-bridge-type-refs>
 		<label>VELUX ACTIVE Departure Switch</label>
 		<description>NXD departure switch battery and connectivity diagnostics</description>
@@ -106,10 +104,6 @@
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 		<config-description>
-			<parameter name="homeId" type="text" required="true">
-				<label>Home ID</label>
-				<description>Home containing the departure switch</description>
-			</parameter>
 			<parameter name="moduleId" type="text" required="true">
 				<label>Module ID</label>
 				<description>NXD departure switch module identifier</description>
@@ -119,7 +113,7 @@
 
 	<thing-type id="opening">
 		<supported-bridge-type-refs>
-			<bridge-type-ref id="account"/>
+			<bridge-type-ref id="gateway"/>
 		</supported-bridge-type-refs>
 		<label>VELUX ACTIVE Window/Cover</label>
 		<description>NXO roof window, blind or shutter</description>
@@ -130,10 +124,6 @@
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 		<config-description>
-			<parameter name="homeId" type="text" required="true">
-				<label>Home ID</label>
-				<description>Home containing the window or cover</description>
-			</parameter>
 			<parameter name="moduleId" type="text" required="true">
 				<label>Module ID</label>
 				<description>NXO window or cover module identifier</description>

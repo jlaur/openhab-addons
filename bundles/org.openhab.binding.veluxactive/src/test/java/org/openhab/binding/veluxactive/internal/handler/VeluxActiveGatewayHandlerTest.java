@@ -20,12 +20,16 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.openhab.binding.veluxactive.internal.VeluxActiveApi.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.OnOffType;
@@ -36,7 +40,7 @@ import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusInfo;
 import org.openhab.core.thing.ThingUID;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
-import org.openhab.core.thing.binding.builder.ThingBuilder;
+import org.openhab.core.thing.binding.builder.BridgeBuilder;
 import org.openhab.core.types.RefreshType;
 import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
@@ -51,8 +55,8 @@ import com.google.gson.Gson;
 @NonNullByDefault
 class VeluxActiveGatewayHandlerTest {
     private final ThingUID bridgeUID = new ThingUID(THING_TYPE_ACCOUNT, "test");
-    private final Thing thing = ThingBuilder.create(THING_TYPE_GATEWAY, "gateway").withBridge(bridgeUID)
-            .withConfiguration(new Configuration(Map.of("homeId", "home", "moduleId", "gateway"))).build();
+    private final Bridge thing = BridgeBuilder.create(THING_TYPE_GATEWAY, "gateway").withBridge(bridgeUID)
+            .withConfiguration(new Configuration(Map.of("moduleId", "gateway"))).build();
     private final Bridge bridge = mock(Bridge.class);
     private final VeluxActiveAccountHandler account = mock(VeluxActiveAccountHandler.class);
     private final ThingHandlerCallback callback = mock(ThingHandlerCallback.class);
@@ -63,6 +67,7 @@ class VeluxActiveGatewayHandlerTest {
     void setup() {
         when(callback.getBridge(bridgeUID)).thenReturn(bridge);
         when(bridge.getHandler()).thenReturn(account);
+        when(account.homeId("gateway")).thenReturn("home");
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         doAnswer(invocation -> {
             ChannelUID channel = invocation.getArgument(0);
@@ -119,7 +124,8 @@ class VeluxActiveGatewayHandlerTest {
         clearInvocations(account);
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LOCKING), OnOffType.ON);
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LOCKED), OnOffType.OFF);
-        verifyNoInteractions(account);
+        verify(account, never()).lock(any());
+        verify(account, never()).requestPoll();
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LOCKED), OnOffType.ON);
         verify(account).lock(any());
         assertThat(states.containsKey(CHANNEL_LOCKED), is(false));
@@ -165,6 +171,21 @@ class VeluxActiveGatewayHandlerTest {
                 {"home":{"id":"home","modules":[{"id":"gateway","locked":false}]}}
                 """);
         assertThat(thing.getProperties().get(Thing.PROPERTY_FIRMWARE_VERSION), is("203"));
+    }
+
+    @Test
+    void discoveryFiltersByBothHomeAndGateway() {
+        doAnswer(invocation -> {
+            Consumer<List<ModuleInfo>> consumer = invocation.getArgument(0);
+            consumer.accept(List.of(new ModuleInfo("home", "sensor", "Sensor", "NXS", null, null, "gateway"),
+                    new ModuleInfo("home", "other", "Other", "NXS", null, null, "other-gateway"),
+                    new ModuleInfo("other-home", "foreign", "Foreign", "NXS", null, null, "gateway")));
+            return null;
+        }).when(account).discover(any());
+        var results = new ArrayList<ModuleInfo>();
+        handler.discover(results::addAll);
+        assertThat(results.size(), is(1));
+        assertThat(results.getFirst().moduleId(), is("sensor"));
     }
 
     private void update(String json) {

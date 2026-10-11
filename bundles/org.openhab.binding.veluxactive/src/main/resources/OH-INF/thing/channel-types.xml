@@ -24,40 +24,19 @@
 		<label>Last Seen</label>
 		<description>Last contact with the gateway reported by the service</description>
 		<category>Time</category>
-		<state readOnly="true" pattern="%1$tF %1$tT"/>
-	</channel-type>
-
-	<channel-type id="temperature">
-		<item-type>Number:Temperature</item-type>
-		<label>Temperature</label>
-		<category>Temperature</category>
-		<tags>
-			<tag>Measurement</tag>
-			<tag>Temperature</tag>
-		</tags>
-		<state readOnly="true" pattern="%.1f %unit%"/>
-	</channel-type>
-
-	<channel-type id="humidity">
-		<item-type unitHint="%">Number:Dimensionless</item-type>
-		<label>Humidity</label>
-		<category>Humidity</category>
-		<tags>
-			<tag>Measurement</tag>
-			<tag>Humidity</tag>
-		</tags>
-		<state readOnly="true" pattern="%d %%"/>
+		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="co2">
 		<item-type unitHint="ppm">Number:Dimensionless</item-type>
 		<label>CO₂</label>
+		<description>Current CO₂ concentration measured by the sensor.</description>
 		<category>Carbondioxide</category>
 		<tags>
 			<tag>Measurement</tag>
 			<tag>CO2</tag>
 		</tags>
-		<state readOnly="true" pattern="%d ppm"/>
+		<state readOnly="true" pattern="%d %unit%"/>
 	</channel-type>
 
 	<channel-type id="illuminance">
@@ -69,7 +48,7 @@
 			<tag>Measurement</tag>
 			<tag>Light</tag>
 		</tags>
-		<state readOnly="true" pattern="%d lx"/>
+		<state readOnly="true" pattern="%d %unit%"/>
 	</channel-type>
 
 	<channel-type id="position">

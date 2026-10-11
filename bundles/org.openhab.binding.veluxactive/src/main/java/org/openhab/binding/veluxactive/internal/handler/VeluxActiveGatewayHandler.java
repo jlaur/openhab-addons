@@ -16,17 +16,28 @@ import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstan
 
 import java.time.DateTimeException;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.binding.veluxactive.internal.api.dto.ModuleError;
+import org.openhab.binding.veluxactive.internal.discovery.VeluxActiveGatewayDiscoveryService;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
+import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
+import org.openhab.core.thing.binding.BridgeHandler;
+import org.openhab.core.thing.binding.ThingHandler;
+import org.openhab.core.thing.binding.ThingHandlerService;
+import org.openhab.core.thing.binding.builder.BridgeBuilder;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
 import org.openhab.core.types.UnDefType;
@@ -39,11 +50,58 @@ import org.slf4j.LoggerFactory;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler {
+public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implements BridgeHandler {
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveGatewayHandler.class);
 
-    public VeluxActiveGatewayHandler(Thing thing) {
+    public VeluxActiveGatewayHandler(Bridge thing) {
         super(thing);
+    }
+
+    @Override
+    public Bridge getThing() {
+        return (Bridge) super.getThing();
+    }
+
+    @Override
+    protected BridgeBuilder editThing() {
+        return BridgeBuilder.create(thing.getThingTypeUID(), thing.getUID()).withBridge(thing.getBridgeUID())
+                .withChannels(thing.getChannels()).withConfiguration(thing.getConfiguration())
+                .withLabel(thing.getLabel()).withLocation(thing.getLocation()).withProperties(thing.getProperties())
+                .withSemanticEquipmentTag(thing.getSemanticEquipmentTag());
+    }
+
+    @Override
+    public Collection<Class<? extends ThingHandlerService>> getServices() {
+        return Set.of(VeluxActiveGatewayDiscoveryService.class);
+    }
+
+    public void discover(Consumer<List<VeluxActiveApi.ModuleInfo>> consumer) {
+        Target target = target();
+        VeluxActiveAccountHandler account = account();
+        if (target != null && account != null) {
+            account.discover(modules -> {
+                if (current(target)) {
+                    consumer.accept(modules.stream().filter(module -> target.homeId().equals(module.homeId())
+                            && target.moduleId().equals(module.bridgeId())).toList());
+                }
+            });
+        }
+    }
+
+    @Override
+    public void childHandlerInitialized(ThingHandler childHandler, Thing childThing) {
+        VeluxActiveAccountHandler account = account();
+        if (account != null) {
+            account.requestPoll();
+        }
+    }
+
+    @Override
+    public void childHandlerDisposed(ThingHandler childHandler, Thing childThing) {
+        VeluxActiveAccountHandler account = account();
+        if (account != null) {
+            account.requestPoll();
+        }
     }
 
     @Override
@@ -64,6 +122,21 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler {
             } else if (command == OnOffType.OFF) {
                 logger.warn("Unlocking departure mode is not supported; ignoring OFF for {}", getThing().getUID());
             }
+        }
+    }
+
+    synchronized void homeResolved(boolean homeChanged) {
+        Target target = target();
+        if (target == null || !current(target)) {
+            return;
+        }
+        if (target.homeId().isBlank()) {
+            clearState();
+            updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE,
+                    "Waiting for the gateway's home to be resolved from account topology.");
+        } else if (homeChanged) {
+            clearState();
+            updateStatus(ThingStatus.UNKNOWN);
         }
     }
 

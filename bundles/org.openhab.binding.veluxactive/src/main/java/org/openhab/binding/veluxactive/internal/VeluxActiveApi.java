@@ -87,6 +87,7 @@ public class VeluxActiveApi {
                         String name = module.name;
                         String type = java.util.Objects.requireNonNull(module.type);
                         Room room = findRoom(home, module);
+                        String bridgeId = findGateway(home, module);
                         String roomId = module.roomId;
                         if ((roomId == null || roomId.isBlank()) && room != null) {
                             roomId = room.id;
@@ -96,7 +97,7 @@ public class VeluxActiveApi {
                             case "NXD" -> "VELUX Departure Switch";
                             case "NXO" -> "VELUX Window/Cover";
                             default -> "VELUX Gateway";
-                        } : name, type, roomId, room == null ? null : room.name));
+                        } : name, type, roomId, room == null ? null : room.name, bridgeId));
                     }
                 }
             }
@@ -214,6 +215,31 @@ public class VeluxActiveApi {
         return body.getAsJsonObject();
     }
 
+    private static @Nullable String findGateway(Home home, Module module) {
+        String bridge = module.bridge;
+        if (bridge != null && !bridge.isBlank()) {
+            return bridge;
+        }
+        List<@Nullable Module> modules = home.modules;
+        String match = null;
+        if (modules != null) {
+            for (Module candidate : modules) {
+                if (candidate == null || !"NXG".equals(candidate.type)) {
+                    continue;
+                }
+                List<String> bridged = candidate.modulesBridged;
+                String id = candidate.id;
+                if (id != null && !id.isBlank() && bridged != null && bridged.contains(module.id)) {
+                    if (match != null) {
+                        return null;
+                    }
+                    match = id;
+                }
+            }
+        }
+        return match;
+    }
+
     private static @Nullable Room findRoom(Home home, Module module) {
         List<@Nullable Room> rooms = home.rooms;
         if (rooms == null) {
@@ -246,6 +272,6 @@ public class VeluxActiveApi {
     }
 
     public record ModuleInfo(String homeId, String moduleId, String name, String type, @Nullable String roomId,
-            @Nullable String roomName) {
+            @Nullable String roomName, @Nullable String bridgeId) {
     }
 }
