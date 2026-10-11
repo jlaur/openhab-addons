@@ -74,8 +74,8 @@ class VeluxActiveOpeningHandlerTest {
         when(bridge.getHandler()).thenReturn(gateway);
         when(gateway.getThing()).thenReturn(bridge);
         when(gateway.account()).thenReturn(account);
-        when(gateway.target()).thenReturn(new VeluxActiveModuleHandler.Target(gateway, "home", "gateway", 1, null));
-        when(gateway.current(any())).thenReturn(true);
+        when(gateway.captureRequestContext()).thenReturn(new ModuleRequestContext(gateway, "home", "gateway", 1, null));
+        when(gateway.isRequestContextCurrent(any())).thenReturn(true);
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         doAnswer(invocation -> {
             ChannelUID channel = invocation.getArgument(0);
@@ -120,7 +120,7 @@ class VeluxActiveOpeningHandlerTest {
         command(UpDownType.UP);
         command(UpDownType.DOWN);
         command(new PercentType(45));
-        var target = requireNonNull(handler.target());
+        var target = requireNonNull(handler.captureRequestContext());
         verify(account).setPosition(target, "gateway", 0);
         verify(account).setPosition(target, "gateway", 100);
         verify(account).setPosition(target, "gateway", 45);
@@ -140,7 +140,7 @@ class VeluxActiveOpeningHandlerTest {
         verifyNoInteractions(account);
         command(UpDownType.DOWN);
         command(new PercentType(100));
-        verify(account, times(2)).setPosition(requireNonNull(handler.target()), "gateway", 0);
+        verify(account, times(2)).setPosition(requireNonNull(handler.captureRequestContext()), "gateway", 0);
     }
 
     @Test
@@ -150,7 +150,7 @@ class VeluxActiveOpeningHandlerTest {
                 """);
         clearInvocations(account);
         command(StopMoveType.STOP);
-        verify(account).stopMovements(requireNonNull(handler.target()), "gateway");
+        verify(account).stopMovements(requireNonNull(handler.captureRequestContext()), "gateway");
         command(RefreshType.REFRESH);
         verify(account).requestPoll();
         clearInvocations(account);
@@ -185,14 +185,14 @@ class VeluxActiveOpeningHandlerTest {
         clearInvocations(account);
         command(UpDownType.DOWN);
         command(StopMoveType.STOP);
-        verify(account).setPosition(requireNonNull(handler.target()), "gateway", 100);
-        verify(account).stopMovements(requireNonNull(handler.target()), "gateway");
+        verify(account).setPosition(requireNonNull(handler.captureRequestContext()), "gateway", 100);
+        verify(account).stopMovements(requireNonNull(handler.captureRequestContext()), "gateway");
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","bridge":"gateway","current_position":100}]}}
                 """);
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType(100)));
         command(UpDownType.UP);
-        verify(account).setPosition(requireNonNull(handler.target()), "gateway", 0);
+        verify(account).setPosition(requireNonNull(handler.captureRequestContext()), "gateway", 0);
     }
 
     @Test
@@ -246,7 +246,7 @@ class VeluxActiveOpeningHandlerTest {
                 {"home":{"id":"home","modules":[{"id":"opening","velux_type":"%s",
                  "bridge":"gateway","current_position":20,"target_position":0}]}}
                 """.formatted(type));
-        var target = requireNonNull(handler.target());
+        var target = requireNonNull(handler.captureRequestContext());
         handler.positionAccepted(target, 0);
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType("window".equals(type) ? 100 : 0)));
         update("""
@@ -257,7 +257,7 @@ class VeluxActiveOpeningHandlerTest {
 
     @Test
     void disposalSuppressesLateUpdatesAndCommands() {
-        var target = requireNonNull(handler.target());
+        var target = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
         handler.update(target, new HomeStatus());
@@ -271,25 +271,25 @@ class VeluxActiveOpeningHandlerTest {
 
     @Test
     void parentInvalidationSuppressesOldResponsesAndRecoveryUsesNewParent() {
-        var old = requireNonNull(handler.target());
-        when(gateway.current(requireNonNull(old.parent()))).thenReturn(false);
+        var old = requireNonNull(handler.captureRequestContext());
+        when(gateway.isRequestContextCurrent(requireNonNull(old.parent()))).thenReturn(false);
         clearInvocations(callback);
         handler.update(old, new HomeStatus());
         handler.positionAccepted(old, 0);
         handler.failed(old, "late");
         verifyNoInteractions(callback);
 
-        var parent = new VeluxActiveModuleHandler.Target(gateway, "other-home", "other-gateway", 2, null);
-        when(gateway.target()).thenReturn(parent);
-        when(gateway.current(parent)).thenReturn(true);
+        var parent = new ModuleRequestContext(gateway, "other-home", "other-gateway", 2, null);
+        when(gateway.captureRequestContext()).thenReturn(parent);
+        when(gateway.isRequestContextCurrent(parent)).thenReturn(true);
         handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
-        assertThat(requireNonNull(handler.target()).homeId(), is("other-home"));
+        assertThat(requireNonNull(handler.captureRequestContext()).homeId(), is("other-home"));
         update("""
                 {"home":{"id":"other-home","modules":[{"id":"opening","velux_type":"shutter",
                 "bridge":"other-gateway","current_position":25}]}}
                 """);
         command(UpDownType.DOWN);
-        verify(account).setPosition(requireNonNull(handler.target()), "other-gateway", 100);
+        verify(account).setPosition(requireNonNull(handler.captureRequestContext()), "other-gateway", 100);
     }
 
     @Test
@@ -306,7 +306,7 @@ class VeluxActiveOpeningHandlerTest {
 
     @Test
     void offlineGatewaySuppressesUpdatesUntilRecovery() {
-        var target = requireNonNull(handler.target());
+        var target = requireNonNull(handler.captureRequestContext());
         when(bridge.getStatus()).thenReturn(ThingStatus.OFFLINE);
         handler.bridgeStatusChanged(
                 new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, null));
@@ -329,6 +329,7 @@ class VeluxActiveOpeningHandlerTest {
     }
 
     private void update(String json) {
-        handler.update(requireNonNull(handler.target()), requireNonNull(new Gson().fromJson(json, HomeStatus.class)));
+        handler.update(requireNonNull(handler.captureRequestContext()),
+                requireNonNull(new Gson().fromJson(json, HomeStatus.class)));
     }
 }

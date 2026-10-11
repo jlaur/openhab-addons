@@ -22,7 +22,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.binding.veluxactive.internal.api.dto.ModuleError;
@@ -75,12 +75,12 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         return Set.of(VeluxActiveGatewayDiscoveryService.class);
     }
 
-    public void discover(Consumer<List<VeluxActiveApi.ModuleInfo>> consumer) {
-        Target target = target();
+    public void discover(Consumer<List<ModuleInfo>> consumer) {
+        ModuleRequestContext target = captureRequestContext();
         VeluxActiveAccountHandler account = account();
         if (target != null && account != null) {
             account.discover(modules -> {
-                if (current(target)) {
+                if (isRequestContextCurrent(target)) {
                     consumer.accept(modules.stream().filter(module -> target.homeId().equals(module.homeId())
                             && target.moduleId().equals(module.bridgeId())).toList());
                 }
@@ -106,7 +106,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        Target target = target();
+        ModuleRequestContext target = captureRequestContext();
         if (target == null) {
             return;
         }
@@ -126,8 +126,8 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     }
 
     synchronized void homeResolved(boolean homeChanged) {
-        Target target = target();
-        if (target == null || !current(target)) {
+        ModuleRequestContext target = captureRequestContext();
+        if (target == null || !isRequestContextCurrent(target)) {
             return;
         }
         if (target.homeId().isBlank()) {
@@ -140,8 +140,8 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         }
     }
 
-    synchronized void update(Target target, HomeStatus status) {
-        if (!current(target)) {
+    synchronized void update(ModuleRequestContext target, HomeStatus status) {
+        if (!isRequestContextCurrent(target)) {
             return;
         }
         ModuleError error = status.error(target.moduleId());
@@ -180,8 +180,8 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         }
     }
 
-    synchronized void lockAccepted(Target target) {
-        if (current(target)) {
+    synchronized void lockAccepted(ModuleRequestContext target) {
+        if (isRequestContextCurrent(target)) {
             // The API acknowledged the command; the immediate status poll reconciles actual gateway state.
             updateState(CHANNEL_LOCKED, OnOffType.ON);
         }
