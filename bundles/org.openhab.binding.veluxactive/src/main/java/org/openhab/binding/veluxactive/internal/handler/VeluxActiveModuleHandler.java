@@ -15,6 +15,7 @@ package org.openhab.binding.veluxactive.internal.handler;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
+import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.binding.veluxactive.internal.config.VeluxActiveModuleConfiguration;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
@@ -33,9 +34,10 @@ import org.openhab.core.types.RefreshType;
  */
 @NonNullByDefault
 public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
-    private long generation;
-    private boolean active;
-    private @Nullable VeluxActiveModuleConfiguration configuration;
+    private volatile @Nullable VeluxActiveAccountHandler accountHandler;
+    private volatile long generation;
+    private volatile boolean active;
+    private volatile @Nullable VeluxActiveModuleConfiguration configuration;
 
     protected VeluxActiveModuleHandler(Thing thing) {
         super(thing);
@@ -44,37 +46,43 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
     @Override
     public void initialize() {
         synchronized (this) {
-            active = true;
-            generation++;
+            active = false;
             configuration = getConfigAs(VeluxActiveModuleConfiguration.class);
+            generation++;
+            active = true;
         }
         refreshFromBridge();
     }
 
     private void refreshFromBridge() {
-        Target target = target();
-        if (target == null) {
-            synchronized (this) {
-                if (active) {
-                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                            "Home ID and module ID are required.");
-                }
-            }
+        long session = generation;
+        VeluxActiveModuleConfiguration config = configuration;
+        if (config == null) {
             return;
         }
         Bridge bridge = getBridge();
         VeluxActiveAccountHandler account = account();
         synchronized (this) {
-            if (!current(target)) {
+            if (!active || session != generation) {
                 return;
             }
-            if (bridge == null || account == null) {
+            accountHandler = account;
+            Target target = target();
+            if (config.moduleId.isBlank()) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Module ID is required.");
+                return;
+            }
+            if (bridge == null || account == null || target == null) {
+                clearState();
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_UNINITIALIZED);
                 return;
             }
             if (bridge.getStatus() != ThingStatus.ONLINE) {
                 clearState();
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
+                return;
+            }
+            if (!current(target)) {
                 return;
             }
             updateStatus(ThingStatus.UNKNOWN);
@@ -106,19 +114,60 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
 
     protected @Nullable VeluxActiveAccountHandler account() {
         Bridge bridge = getBridge();
-        return bridge != null && bridge.getHandler() instanceof VeluxActiveAccountHandler account ? account : null;
+        if (bridge != null) {
+            if (bridge.getHandler() instanceof VeluxActiveAccountHandler account
+                    && this instanceof VeluxActiveGatewayHandler) {
+                return account;
+            }
+            if (bridge.getHandler() instanceof VeluxActiveGatewayHandler gateway) {
+                return gateway.account();
+            }
+        }
+        return null;
     }
 
-    synchronized @Nullable Target target() {
-        VeluxActiveModuleConfiguration configuration = this.configuration;
-        if (!active || configuration == null || configuration.homeId.isBlank() || configuration.moduleId.isBlank()) {
+    @Nullable
+    Target target() {
+        long session = generation;
+        VeluxActiveModuleConfiguration config = configuration;
+        if (!active || config == null || config.moduleId.isBlank()) {
             return null;
         }
-        return new Target(this, configuration.homeId, configuration.moduleId, generation);
+        if (this instanceof VeluxActiveGatewayHandler) {
+            VeluxActiveAccountHandler account = accountHandler;
+            return account == null ? null
+                    : new Target(this, account.homeId(config.moduleId), config.moduleId, session, null);
+        }
+        Bridge bridge = getBridge();
+        Target parent = bridge != null && bridge.getHandler() instanceof VeluxActiveGatewayHandler gateway
+                ? gateway.target()
+                : null;
+        return parent == null ? null : new Target(this, parent.homeId(), config.moduleId, session, parent);
     }
 
-    synchronized boolean current(Target target) {
-        return active && generation == target.generation();
+    boolean current(Target target) {
+        if (!active || generation != target.generation()) {
+            return false;
+        }
+        Target parent = target.parent();
+        // Parent generations invalidate child work without acquiring a parent monitor.
+        if (parent != null) {
+            return parent.handler().current(parent) && parent.handler().getThing().getStatus() == ThingStatus.ONLINE;
+        }
+        VeluxActiveAccountHandler account = accountHandler;
+        return account != null && target.homeId().equals(account.homeId(target.moduleId()));
+    }
+
+    protected boolean checkGateway(Target target, Module module) {
+        Target parent = target.parent();
+        String reportedBridge = module.bridge;
+        if (parent != null && reportedBridge != null && !parent.moduleId().equals(reportedBridge)) {
+            clearState();
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                    "Module belongs to another gateway; discover it under that gateway.");
+            return false;
+        }
+        return true;
     }
 
     abstract void update(Target target, HomeStatus status);
@@ -135,9 +184,11 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
     @Override
     public synchronized void dispose() {
         active = false;
+        accountHandler = null;
         generation++;
     }
 
-    record Target(VeluxActiveModuleHandler handler, String homeId, String moduleId, long generation) {
+    record Target(VeluxActiveModuleHandler handler, String homeId, String moduleId, long generation,
+            @Nullable Target parent) {
     }
 }

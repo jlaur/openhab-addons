@@ -19,7 +19,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -47,6 +49,7 @@ import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
+import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseBridgeHandler;
@@ -73,8 +76,10 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
     private final TimeZoneProvider timeZoneProvider;
     private @Nullable String accessToken;
     private @Nullable ScheduledFuture<?> scheduledPoll;
+    private volatile Map<String, String> gatewayHomes = Map.of();
     private boolean running;
     private boolean pollQueued;
+    private boolean pollRequested;
     private int fastPollsRemaining;
     private final ScheduledExecutorService authenticationScheduler;
 
@@ -110,6 +115,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
 
     @Override
     public synchronized void initialize() {
+        gatewayHomes = Map.of();
         running = true;
         long session = ++generation;
         cancelPolling();
@@ -295,6 +301,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
 
     @Override
     public synchronized void dispose() {
+        gatewayHomes = Map.of();
         running = false;
         long session = ++generation;
         cancelPolling();
@@ -304,6 +311,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
 
     @Override
     public synchronized void handleRemoval() {
+        gatewayHomes = Map.of();
         running = false;
         long session = ++generation;
         cancelPolling();
@@ -344,7 +352,11 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
     }
 
     synchronized void requestPoll() {
-        if (!running || pollQueued) {
+        if (!running) {
+            return;
+        }
+        if (pollQueued) {
+            pollRequested = true;
             return;
         }
         ScheduledFuture<?> scheduled = scheduledPoll;
@@ -364,17 +376,17 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 return;
             }
             for (var thing : getThing().getThings()) {
-                if (thing.getHandler() instanceof VeluxActiveModuleHandler module) {
-                    var target = module.target();
-                    if (target != null) {
-                        targets.add(target);
-                    }
+                collectTargets(thing, targets);
+            }
+            if (!targets.isEmpty()) {
+                refreshTopology(session, targets);
+                targets.clear();
+                for (var thing : getThing().getThings()) {
+                    collectTargets(thing, targets);
                 }
             }
-            if (targets.stream().anyMatch(target -> target.handler() instanceof VeluxActiveIndoorSensorHandler)) {
-                refreshTopology(session, targets);
-            }
-            var byHome = targets.stream().collect(Collectors.groupingBy(VeluxActiveModuleHandler.Target::homeId));
+            var byHome = targets.stream().filter(target -> !target.homeId().isBlank())
+                    .collect(Collectors.groupingBy(VeluxActiveModuleHandler.Target::homeId));
             for (var entry : byHome.entrySet()) {
                 String token = accessToken;
                 if (!isCurrent(session) || token == null) {
@@ -403,11 +415,13 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 if (isCurrent(session)) {
                     pollQueued = false;
                     if (!targets.isEmpty() && accessToken != null && !Thread.currentThread().isInterrupted()) {
-                        long delay = fastPollsRemaining > 0 ? 5
-                                : getConfigAs(VeluxActiveAccountConfiguration.class).refreshInterval;
+                        long delay = pollRequested ? 0
+                                : fastPollsRemaining > 0 ? 5
+                                        : getConfigAs(VeluxActiveAccountConfiguration.class).refreshInterval;
                         if (fastPollsRemaining > 0) {
                             fastPollsRemaining--;
                         }
+                        pollRequested = false;
                         scheduledPoll = authenticationScheduler.schedule(() -> {
                             synchronized (this) {
                                 if (isCurrent(session)) {
@@ -417,6 +431,20 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                         }, delay, TimeUnit.SECONDS);
                     }
                 }
+            }
+        }
+    }
+
+    private void collectTargets(Thing thing, List<VeluxActiveModuleHandler.Target> targets) {
+        if (thing.getHandler() instanceof VeluxActiveModuleHandler module) {
+            var target = module.target();
+            if (target != null) {
+                targets.add(target);
+            }
+        }
+        if (thing instanceof Bridge bridge) {
+            for (var child : bridge.getThings()) {
+                collectTargets(child, targets);
             }
         }
     }
@@ -431,9 +459,23 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             var modules = api.modules(token);
             synchronized (this) {
                 if (isCurrent(session)) {
+                    Map<String, String> homes = new HashMap<>();
+                    for (var module : modules) {
+                        if ("NXG".equals(module.type())) {
+                            homes.merge(module.moduleId(), module.homeId(),
+                                    (first, second) -> first.equals(second) ? first : "");
+                        }
+                    }
+                    gatewayHomes = Map.copyOf(homes);
                     for (var target : targets) {
+                        if (target.handler() instanceof VeluxActiveGatewayHandler gateway) {
+                            gateway.homeResolved(!target.homeId().equals(homeId(target.moduleId())));
+                        }
                         if (target.handler() instanceof VeluxActiveIndoorSensorHandler sensor) {
-                            sensor.updateTopology(target, modules);
+                            var current = sensor.target();
+                            if (current != null) {
+                                sensor.updateTopology(current, modules);
+                            }
                         }
                     }
                 }
@@ -442,6 +484,10 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             logger.debug("Could not refresh module topology: {}", e.getMessage());
             recoverAuthentication(session, e);
         }
+    }
+
+    String homeId(String moduleId) {
+        return gatewayHomes.getOrDefault(moduleId, "");
     }
 
     void lock(VeluxActiveModuleHandler.Target target) {
@@ -471,7 +517,8 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         long session = generation;
         enqueue(session, () -> {
             String token = accessToken;
-            if (token == null || !isCurrent(session) || !target.handler().current(target)) {
+            if (token == null || !isCurrent(session) || target.homeId().isBlank()
+                    || !target.handler().current(target)) {
                 return;
             }
             try {
@@ -515,6 +562,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             scheduled.cancel(false);
         }
         pollQueued = false;
+        pollRequested = false;
         fastPollsRemaining = 0;
     }
 

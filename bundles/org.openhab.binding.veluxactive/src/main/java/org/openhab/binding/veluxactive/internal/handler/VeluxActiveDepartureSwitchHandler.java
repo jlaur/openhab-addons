@@ -36,6 +36,9 @@ public class VeluxActiveDepartureSwitchHandler extends VeluxActiveBatteryModuleH
             return;
         }
         Module module = status.module(target.moduleId());
+        if (module != null && !checkGateway(target, module)) {
+            return;
+        }
         if (status.error(target.moduleId()) != null || module != null && Boolean.FALSE.equals(module.reachable)) {
             failed(target, "Departure switch is unreachable.");
         } else if (module == null) {

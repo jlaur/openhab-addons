@@ -21,6 +21,5 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  */
 @NonNullByDefault
 public class VeluxActiveModuleConfiguration {
-    public String homeId = "";
     public String moduleId = "";
 }

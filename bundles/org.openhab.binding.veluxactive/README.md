@@ -13,13 +13,16 @@ For KLF 200 gateways, use the [Velux binding](https://www.openhab.org/addons/bin
 | Departure Switch | `departure-switch` | NXD battery and connectivity diagnostics |
 | Window/Cover | `opening` | NXO position, operating mode and unsigned movement commands |
 
-Gateway, indoor sensor, departure switch and window/cover Things are children of the account Bridge.
-An ONLINE account Bridge means authentication succeeded; gateway connectivity is represented by each Gateway Thing.
+Gateway Bridges are children of the Account Bridge.
+Indoor sensors, departure switches and windows/covers are children of their Gateway Bridge and inherit its home ID.
+An ONLINE account Bridge means authentication succeeded; gateway connectivity is represented by each Gateway Bridge.
 
 ## Discovery
 
 Create and configure an Account Bridge, wait for it to become ONLINE, then start a VELUX ACTIVE discovery scan.
-The binding discovers NXG gateways, NXS sensors, NXD departure switches and NXO windows/covers from account topology, including gateways that are currently unreachable.
+The account discovers NXG gateways, including gateways that are currently unreachable.
+Accept the gateways from the Inbox, then scan again to discover their NXS sensors, NXD departure switches and NXO windows/covers.
+Modules are associated with their gateway using `bridge`, falling back to `modules_bridged`.
 Accept a discovered module from the Inbox to start polling.
 
 Discovery reads topology on demand.
@@ -50,18 +53,21 @@ An API response rejecting the access token triggers token renewal; commands are 
 
 ## Gateway Configuration
 
-Discovery supplies both identifiers.
-For manual configuration, obtain them from `homesdata` or `homestatus`.
+Discovery supplies the module identifier.
+For manual configuration, obtain it from `homesdata` or `homestatus`.
+The binding resolves the home automatically from account topology.
+Existing `homeId` configuration is ignored and can be removed.
+Topology is refreshed during shared polling; communication failures retain the last successful association.
+An unresolved or ambiguous gateway remains UNKNOWN and cannot send commands until its home is resolved.
 
 | Parameter | Required | Description |
 | --- | --- | --- |
-| homeId | Yes | ID of the home containing the gateway |
 | moduleId | Yes | ID of the NXG gateway, usually formatted as a MAC address |
 
 ## Channels
 
 The Account Bridge has no channels.
-Gateway Things provide:
+Gateway Bridges provide:
 
 | Channel | Item type | Access | Description |
 | --- | --- | --- | --- |
@@ -86,7 +92,7 @@ Channel refresh commands request a shared status update.
 ## Indoor Climate Sensor
 
 The physical NXS sensor combines module diagnostics and measurements from its assigned room.
-Discovery provides `homeId` and `moduleId`, which are also the only required parameters for manual configuration.
+Discovery provides `moduleId`, which is the only required parameter for manual configuration under a Gateway Bridge.
 The binding resolves the room from `room_id`, falling back to room membership when needed.
 The module ID determines the Thing identity, so room reassignment preserves Item links.
 The assigned room ID and name appear as Thing properties, along with the sensor firmware version.
@@ -103,7 +109,7 @@ The assigned room ID and name appear as Thing properties, along with the sensor 
 | last-seen | DateTime | Last contact reported by the service |
 
 All sensor channels are read-only.
-Room topology is refreshed once per shared polling cycle when sensors are configured.
+Account topology is refreshed once per shared polling cycle to resolve gateway homes and sensor rooms.
 A temporary topology failure retains the last known association and does not prevent module diagnostics from updating.
 Missing room association or readings yield UNDEF climate channels.
 An unreachable sensor yields UNDEF for all its channels.
@@ -111,21 +117,21 @@ If multiple sensors belong to one room, their climate channels show the same roo
 
 ## Departure Switch
 
-The physical NXD departure switch is discovered automatically as a child of the Account Bridge.
-Manual configuration requires `homeId` and `moduleId`; no room association is needed.
+The physical NXD departure switch is discovered automatically as a child of its Gateway Bridge.
+Manual configuration under a Gateway Bridge requires `moduleId`; no room association is needed.
 It exposes the read-only `battery-level`, `low-battery`, `signal-strength` and `last-seen` channels described above, and a firmware version property.
 Reachability is reflected in Thing status.
 Missing values become UNDEF; an unreachable switch clears all four channel states.
 It uses the existing shared home status polling.
 
 The available module status does not report button presses.
-Departure lock state and locking commands remain on the Gateway Thing's `locked` channel.
+Departure lock state and locking commands remain on the Gateway Bridge's `locked` channel.
 
 ## Window/Cover
 
 NXO modules are discovered as Window/Cover Things (`opening`), covering roof windows, blinds, venetian blinds, shutters and awning blinds.
-Manual configuration requires `homeId` and `moduleId`.
-The device subtype and gateway are learned from home status.
+Manual configuration under a Gateway Bridge requires `moduleId`.
+The device subtype is learned from home status; commands use the parent gateway.
 Reported properties include `veluxType`, `gatewayId`, `firmwareVersion` and `vendor`.
 
 | Channel | Item type | Access | Description |
@@ -165,14 +171,18 @@ Bridge veluxactive:account:home "VELUX ACTIVE Account" [
     password="YOUR_ACCOUNT_PASSWORD",
     refreshInterval=60
 ] {
-    Thing gateway main "VELUX Gateway" [
-        homeId="YOUR_HOME_ID",
+    Bridge gateway main "VELUX Gateway" [
         moduleId="YOUR_GATEWAY_ID"
-    ]
+    ] {
+        Thing indoor-sensor climate [ moduleId="YOUR_SENSOR_ID" ]
+        Thing departure-switch departure [ moduleId="YOUR_SWITCH_ID" ]
+        Thing opening window [ moduleId="YOUR_OPENING_ID" ]
+    }
 }
 ```
 
 ```java
+Rollershutter VeluxWindow { channel="veluxactive:opening:home:main:window:position" }
 Switch VeluxDepartureLocked "Departure Locked" { channel="veluxactive:gateway:home:main:locked", autoupdate="false" }
 Switch VeluxDepartureLocking "Locking" { channel="veluxactive:gateway:home:main:locking" }
 DateTime VeluxGatewayLastSeen "Last Seen" { channel="veluxactive:gateway:home:main:last-seen" }

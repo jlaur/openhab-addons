@@ -15,6 +15,7 @@ package org.openhab.binding.veluxactive.internal.handler;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -285,6 +286,20 @@ class VeluxActiveAccountHandlerTest {
     }
 
     @Test
+    void pollRequestedDuringStatusPublicationIsScheduledImmediately() throws Exception {
+        var gateway = gateway("home", "gateway");
+        when(client.getAccessTokenResponse()).thenReturn(token());
+        when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
+        doAnswer(invocation -> {
+            handler.requestPoll();
+            return null;
+        }).when(gateway).update(any(), any());
+        handler.initialize();
+        executor.runAll();
+        verify(scheduler).schedule(any(Runnable.class), eq(0L), eq(TimeUnit.SECONDS));
+    }
+
+    @Test
     void pollFailureRecoversOnTheNextRequest() throws Exception {
         var gateway = gateway("home", "gateway");
         when(client.getAccessTokenResponse()).thenReturn(token());
@@ -406,17 +421,18 @@ class VeluxActiveAccountHandlerTest {
     void sensorAndGatewayShareHomeStatusAndTopologyFailureDoesNotBlockDiagnostics() throws Exception {
         var gateway = gateway("home", "gateway");
         var sensor = mock(VeluxActiveIndoorSensorHandler.class);
-        var target = new VeluxActiveModuleHandler.Target(sensor, "home", "sensor", 1);
+        var target = new VeluxActiveModuleHandler.Target(sensor, "home", "sensor", 1, null);
         when(sensor.target()).thenReturn(target);
         var child = mock(org.openhab.core.thing.Thing.class);
         when(child.getHandler()).thenReturn(sensor);
-        var children = new ArrayList<>(bridge.getThings());
+        Bridge parent = gateway.getThing();
+        var children = new ArrayList<>(parent.getThings());
         children.add(child);
-        doReturn(children).when(bridge).getThings();
+        doReturn(children).when(parent).getThings();
         when(client.getAccessTokenResponse()).thenReturn(token());
         var response = new HomeStatus();
         when(api.homeStatus("access", "home")).thenReturn(response);
-        var topology = List.of(new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "room", "Room"));
+        var topology = List.of(new VeluxActiveApi.ModuleInfo("home", "sensor", "Sensor", "NXS", "room", "Room", null));
         when(api.modules("access")).thenThrow(new ApiException("Unavailable")).thenReturn(topology);
         handler.initialize();
         executor.runAll();
@@ -518,24 +534,134 @@ class VeluxActiveAccountHandlerTest {
         verify(opening, never()).positionAccepted(any(), anyInt());
     }
 
+    @Test
+    void resolvesHomeBeforePollingAndRetainsMappingThroughTopologyFailure() throws Exception {
+        var gateway = realGateway();
+        when(client.getAccessTokenResponse()).thenReturn(token());
+        var topology = List
+                .of(new VeluxActiveApi.ModuleInfo("resolved-home", "gateway", "Gateway", "NXG", null, null, null));
+        when(api.modules("access")).thenThrow(new ApiException("Unavailable")).thenReturn(topology)
+                .thenThrow(new ApiException("Unavailable"));
+        when(api.homeStatus("access", "resolved-home")).thenReturn(new HomeStatus());
+        handler.initialize();
+        executor.runAll();
+        assertThat(handler.homeId("gateway"), is(""));
+        verify(api, never()).homeStatus(anyString(), anyString());
+        handler.lock(java.util.Objects.requireNonNull(gateway.target()));
+        executor.runAll();
+        verify(api, never()).lock(anyString(), anyString(), anyString(), anyString());
+
+        handler.requestPoll();
+        executor.runAll();
+        assertThat(handler.homeId("gateway"), is("resolved-home"));
+        assertThat(gateway.getThing().getProperties().get("homeId"), nullValue());
+        verify(api).homeStatus("access", "resolved-home");
+        handler.requestPoll();
+        executor.runAll();
+        verify(api, times(2)).homeStatus("access", "resolved-home");
+        assertThat(handler.homeId("gateway"), is("resolved-home"));
+    }
+
+    @Test
+    void movedOrMissingGatewayInvalidatesOldCommandTargetsAndRecovers() throws Exception {
+        var gateway = realGateway();
+        when(client.getAccessTokenResponse()).thenReturn(token());
+        when(api.modules("access")).thenReturn(
+                List.of(new VeluxActiveApi.ModuleInfo("first", "gateway", "Gateway", "NXG", null, null, null)),
+                List.of(new VeluxActiveApi.ModuleInfo("second", "gateway", "Gateway", "NXG", null, null, null)),
+                List.of(),
+                List.of(new VeluxActiveApi.ModuleInfo("second", "gateway", "Gateway", "NXG", null, null, null)));
+        when(api.homeStatus(anyString(), anyString())).thenReturn(new HomeStatus());
+        handler.initialize();
+        executor.runAll();
+        var old = java.util.Objects.requireNonNull(gateway.target());
+        handler.requestPoll();
+        handler.lock(old);
+        executor.runAll();
+        verify(api, never()).lock(anyString(), anyString(), anyString(), anyString());
+        verify(api).homeStatus("access", "second");
+        assertThat(gateway.current(old), is(false));
+        handler.requestPoll();
+        executor.runAll();
+        assertThat(handler.homeId("gateway"), is(""));
+        assertThat(gateway.getThing().getProperties().get("homeId"), nullValue());
+        assertThat(gateway.getThing().getStatus(), is(ThingStatus.UNKNOWN));
+        handler.requestPoll();
+        executor.runAll();
+        assertThat(handler.homeId("gateway"), is("second"));
+        verify(api, times(2)).homeStatus("access", "second");
+        handler.dispose();
+        assertThat(handler.homeId("gateway"), is(""));
+    }
+
+    @Test
+    void ambiguousGatewayHomeIsNotUsed() throws Exception {
+        realGateway();
+        when(client.getAccessTokenResponse()).thenReturn(token());
+        when(api.modules("access")).thenReturn(
+                List.of(new VeluxActiveApi.ModuleInfo("first", "gateway", "Gateway", "NXG", null, null, null),
+                        new VeluxActiveApi.ModuleInfo("second", "gateway", "Gateway", "NXG", null, null, null)));
+        handler.initialize();
+        executor.runAll();
+        verify(api, never()).homeStatus(anyString(), anyString());
+        assertThat(handler.homeId("gateway"), is(""));
+        verify(scheduler).schedule(any(Runnable.class), eq(60L), eq(TimeUnit.SECONDS));
+    }
+
+    @Test
+    void disposalDuringTopologyFetchDiscardsAssociation() throws Exception {
+        realGateway();
+        when(client.getAccessTokenResponse()).thenReturn(token());
+        when(api.modules("access")).thenAnswer(invocation -> {
+            handler.dispose();
+            return List.of(new VeluxActiveApi.ModuleInfo("home", "gateway", "Gateway", "NXG", null, null, null));
+        });
+        handler.initialize();
+        executor.runAll();
+        assertThat(handler.homeId("gateway"), is(""));
+        verify(api, never()).homeStatus(anyString(), anyString());
+    }
+
+    private VeluxActiveGatewayHandler realGateway() {
+        Bridge gatewayThing = spy(BridgeBuilder.create(THING_TYPE_GATEWAY, "gateway").withBridge(bridge.getUID())
+                .withConfiguration(new Configuration(Map.of("moduleId", "gateway"))).build());
+        var gateway = new VeluxActiveGatewayHandler(gatewayThing);
+        when(gatewayThing.getHandler()).thenReturn(gateway);
+        when(bridge.getHandler()).thenReturn(handler);
+        when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
+        doReturn(List.of(gatewayThing)).when(bridge).getThings();
+        ThingHandlerCallback callback = mock(ThingHandlerCallback.class);
+        when(callback.getBridge(bridge.getUID())).thenReturn(bridge);
+        doAnswer(invocation -> {
+            gatewayThing.setStatusInfo(invocation.getArgument(1));
+            return null;
+        }).when(callback).statusUpdated(any(), any());
+        gateway.setCallback(callback);
+        gateway.initialize();
+        return gateway;
+    }
+
     private VeluxActiveOpeningHandler opening() {
+        Bridge parent = bridge.getThings().isEmpty() ? gateway("home", "gateway").getThing()
+                : (Bridge) bridge.getThings().getFirst();
         var opening = mock(VeluxActiveOpeningHandler.class);
-        var target = new VeluxActiveModuleHandler.Target(opening, "home", "opening", 1);
+        var target = new VeluxActiveModuleHandler.Target(opening, "home", "opening", 1, null);
         when(opening.target()).thenReturn(target);
         when(opening.current(target)).thenReturn(true);
         var child = mock(org.openhab.core.thing.Thing.class);
         when(child.getHandler()).thenReturn(opening);
-        var children = new ArrayList<>(bridge.getThings());
+        var children = new ArrayList<>(parent.getThings());
         children.add(child);
-        doReturn(children).when(bridge).getThings();
+        doReturn(children).when(parent).getThings();
         return opening;
     }
 
     private VeluxActiveGatewayHandler gateway(String homeId, String moduleId) {
         var gateway = mock(VeluxActiveGatewayHandler.class);
-        when(gateway.target()).thenReturn(new VeluxActiveGatewayHandler.Target(gateway, homeId, moduleId, 1));
-        var child = mock(org.openhab.core.thing.Thing.class);
+        when(gateway.target()).thenReturn(new VeluxActiveGatewayHandler.Target(gateway, homeId, moduleId, 1, null));
+        var child = mock(Bridge.class);
         when(child.getHandler()).thenReturn(gateway);
+        when(gateway.getThing()).thenReturn(child);
         var children = new ArrayList<>(bridge.getThings());
         children.add(child);
         doReturn(children).when(bridge).getThings();

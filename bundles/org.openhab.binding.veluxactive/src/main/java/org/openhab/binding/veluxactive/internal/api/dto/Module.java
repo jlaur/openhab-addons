@@ -12,6 +12,8 @@
  */
 package org.openhab.binding.veluxactive.internal.api.dto;
 
+import java.util.List;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
@@ -28,6 +30,8 @@ public class Module {
     public @Nullable String name;
     public @Nullable String type;
     public @Nullable String bridge;
+    @SerializedName("modules_bridged")
+    public @Nullable List<String> modulesBridged;
     @SerializedName("room_id")
     public @Nullable String roomId;
     public @Nullable Boolean reachable;

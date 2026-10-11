@@ -55,10 +55,11 @@ import com.google.gson.Gson;
  */
 @NonNullByDefault
 class VeluxActiveIndoorSensorHandlerTest {
-    private final ThingUID bridgeUID = new ThingUID(THING_TYPE_ACCOUNT, "test");
+    private final ThingUID bridgeUID = new ThingUID(THING_TYPE_GATEWAY, "test");
     private final Thing thing = ThingBuilder.create(THING_TYPE_INDOOR_SENSOR, "gateway").withBridge(bridgeUID)
-            .withConfiguration(new Configuration(Map.of("homeId", "home", "moduleId", "gateway"))).build();
+            .withConfiguration(new Configuration(Map.of("moduleId", "gateway"))).build();
     private final Bridge bridge = mock(Bridge.class);
+    private final VeluxActiveGatewayHandler gateway = mock(VeluxActiveGatewayHandler.class);
     private final VeluxActiveAccountHandler account = mock(VeluxActiveAccountHandler.class);
     private final ThingHandlerCallback callback = mock(ThingHandlerCallback.class);
     private final VeluxActiveIndoorSensorHandler handler = new VeluxActiveIndoorSensorHandler(thing);
@@ -67,7 +68,11 @@ class VeluxActiveIndoorSensorHandlerTest {
     @BeforeEach
     void setup() {
         when(callback.getBridge(bridgeUID)).thenReturn(bridge);
-        when(bridge.getHandler()).thenReturn(account);
+        when(bridge.getHandler()).thenReturn(gateway);
+        when(gateway.getThing()).thenReturn(bridge);
+        when(gateway.account()).thenReturn(account);
+        when(gateway.target()).thenReturn(new VeluxActiveModuleHandler.Target(gateway, "home", "gateway", 1, null));
+        when(gateway.current(any())).thenReturn(true);
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         doAnswer(invocation -> {
             ChannelUID channel = invocation.getArgument(0);
@@ -174,8 +179,8 @@ class VeluxActiveIndoorSensorHandlerTest {
     }
 
     private void topology(String roomId) {
-        handler.updateTopology(requireNonNull(handler.target()),
-                List.of(new VeluxActiveApi.ModuleInfo("home", "gateway", "Indoor sensor", "NXS", roomId, roomId)));
+        handler.updateTopology(requireNonNull(handler.target()), List
+                .of(new VeluxActiveApi.ModuleInfo("home", "gateway", "Indoor sensor", "NXS", roomId, roomId, null)));
     }
 
     private void update(String json) {
