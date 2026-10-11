@@ -39,6 +39,7 @@ import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
+import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.ThingStatusInfo;
 import org.openhab.core.thing.ThingUID;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
@@ -57,10 +58,11 @@ import com.google.gson.Gson;
  */
 @NonNullByDefault
 class VeluxActiveOpeningHandlerTest {
-    private final ThingUID bridgeUID = new ThingUID(THING_TYPE_ACCOUNT, "test");
+    private final ThingUID bridgeUID = new ThingUID(THING_TYPE_GATEWAY, "test");
     private final Thing thing = ThingBuilder.create(THING_TYPE_OPENING, "opening").withBridge(bridgeUID)
-            .withConfiguration(new Configuration(Map.of("homeId", "home", "moduleId", "opening"))).build();
+            .withConfiguration(new Configuration(Map.of("moduleId", "opening"))).build();
     private final Bridge bridge = mock(Bridge.class);
+    private final VeluxActiveGatewayHandler gateway = mock(VeluxActiveGatewayHandler.class);
     private final VeluxActiveAccountHandler account = mock(VeluxActiveAccountHandler.class);
     private final ThingHandlerCallback callback = mock(ThingHandlerCallback.class);
     private final VeluxActiveOpeningHandler handler = new VeluxActiveOpeningHandler(thing);
@@ -69,7 +71,11 @@ class VeluxActiveOpeningHandlerTest {
     @BeforeEach
     void setup() {
         when(callback.getBridge(bridgeUID)).thenReturn(bridge);
-        when(bridge.getHandler()).thenReturn(account);
+        when(bridge.getHandler()).thenReturn(gateway);
+        when(gateway.getThing()).thenReturn(bridge);
+        when(gateway.account()).thenReturn(account);
+        when(gateway.target()).thenReturn(new VeluxActiveModuleHandler.Target(gateway, "home", "gateway", 1, null));
+        when(gateway.current(any())).thenReturn(true);
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         doAnswer(invocation -> {
             ChannelUID channel = invocation.getArgument(0);
@@ -172,14 +178,15 @@ class VeluxActiveOpeningHandlerTest {
     }
 
     @Test
-    void retainsKnownRoutingForPartialStatusButRequiresGatewayBeforeCommands() {
+    void inheritsGatewayRoutingEvenWhenStatusOmitsBridge() {
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter","current_position":0}]}}
                 """);
         clearInvocations(account);
         command(UpDownType.DOWN);
         command(StopMoveType.STOP);
-        verifyNoInteractions(account);
+        verify(account).setPosition(requireNonNull(handler.target()), "gateway", 100);
+        verify(account).stopMovements(requireNonNull(handler.target()), "gateway");
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","bridge":"gateway","current_position":100}]}}
                 """);
@@ -260,6 +267,61 @@ class VeluxActiveOpeningHandlerTest {
         command(UpDownType.UP);
         command(StopMoveType.STOP);
         verifyNoInteractions(callback, account);
+    }
+
+    @Test
+    void parentInvalidationSuppressesOldResponsesAndRecoveryUsesNewParent() {
+        var old = requireNonNull(handler.target());
+        when(gateway.current(requireNonNull(old.parent()))).thenReturn(false);
+        clearInvocations(callback);
+        handler.update(old, new HomeStatus());
+        handler.positionAccepted(old, 0);
+        handler.failed(old, "late");
+        verifyNoInteractions(callback);
+
+        var parent = new VeluxActiveModuleHandler.Target(gateway, "other-home", "other-gateway", 2, null);
+        when(gateway.target()).thenReturn(parent);
+        when(gateway.current(parent)).thenReturn(true);
+        handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        assertThat(requireNonNull(handler.target()).homeId(), is("other-home"));
+        update("""
+                {"home":{"id":"other-home","modules":[{"id":"opening","velux_type":"shutter",
+                "bridge":"other-gateway","current_position":25}]}}
+                """);
+        command(UpDownType.DOWN);
+        verify(account).setPosition(requireNonNull(handler.target()), "other-gateway", 100);
+    }
+
+    @Test
+    void wrongGatewayAssignmentBlocksCommands() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter",
+                "bridge":"another-gateway","current_position":25}]}}
+                """);
+        assertThat(thing.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.CONFIGURATION_ERROR));
+        clearInvocations(account);
+        command(UpDownType.DOWN);
+        verifyNoInteractions(account);
+    }
+
+    @Test
+    void offlineGatewaySuppressesUpdatesUntilRecovery() {
+        var target = requireNonNull(handler.target());
+        when(bridge.getStatus()).thenReturn(ThingStatus.OFFLINE);
+        handler.bridgeStatusChanged(
+                new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, null));
+        assertThat(thing.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.BRIDGE_OFFLINE));
+        clearInvocations(callback);
+        handler.positionAccepted(target, 0);
+        handler.update(target, new HomeStatus());
+        verifyNoInteractions(callback);
+        when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
+        handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter","current_position":25}]}}
+                """);
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(25)));
     }
 
     private void command(Command command) {
