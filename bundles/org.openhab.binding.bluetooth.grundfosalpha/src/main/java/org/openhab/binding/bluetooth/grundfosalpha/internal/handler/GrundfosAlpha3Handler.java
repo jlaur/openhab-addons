@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.bluetooth.BluetoothAdapter;
 import org.openhab.binding.bluetooth.BluetoothCharacteristic;
 import org.openhab.binding.bluetooth.BluetoothDevice;
 import org.openhab.binding.bluetooth.BluetoothDevice.ConnectionState;
@@ -70,9 +71,11 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     private static final int DEFAULT_REFRESH_INTERVAL_SECONDS = 30;
 
     private final Logger logger = LoggerFactory.getLogger(GrundfosAlpha3Handler.class);
-    private final GeniSession session;
     private final ScheduledExecutorService requestScheduler;
-    private volatile boolean disposed;
+
+    private volatile @Nullable GeniSession session;
+    private volatile boolean disposed = true;
+    private volatile long sessionGeneration;
 
     private @Nullable ScheduledFuture<?> refreshFuture;
 
@@ -83,13 +86,25 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     GrundfosAlpha3Handler(Thing thing, @Nullable ScheduledExecutorService requestScheduler) {
         super(thing);
         this.requestScheduler = requestScheduler == null ? scheduler : requestScheduler;
-        session = new GeniSession(this.requestScheduler, this::writePacket, this::updateChannels, this::disconnect);
+    }
+
+    @Override
+    public synchronized void initialize() {
+        long generation = ++sessionGeneration;
+        session = new GeniSession(requestScheduler, this::writePacket, values -> updateChannels(generation, values),
+                this::disconnect);
+        disposed = false;
+        super.initialize();
     }
 
     @Override
     public synchronized void dispose() {
         disposed = true;
-        session.close();
+        GeniSession session = this.session;
+        if (session != null) {
+            session.close();
+            this.session = null;
+        }
         cancelFuture();
         super.dispose();
     }
@@ -109,7 +124,7 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
         return device.writeCharacteristic(characteristic, packet);
     }
 
-    private void scheduleFuture() {
+    private void scheduleFuture(GeniSession session) {
         cancelFuture();
 
         Object refreshIntervalRaw = getConfig().get(CONFIGURATION_REFRESH_INTERVAL);
@@ -118,7 +133,7 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
             refreshInterval = number.intValue();
         }
 
-        refreshFuture = requestScheduler.scheduleWithFixedDelay(this::refreshChannels, 0, refreshInterval,
+        refreshFuture = requestScheduler.scheduleWithFixedDelay(() -> refreshChannels(session), 0, refreshInterval,
                 TimeUnit.SECONDS);
     }
 
@@ -132,7 +147,14 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        super.handleCommand(channelUID, command);
+        GeniSession session;
+        synchronized (this) {
+            session = this.session;
+            if (disposed || session == null) {
+                return;
+            }
+            super.handleCommand(channelUID, command);
+        }
 
         BluetoothDevice device = this.device;
         if (disposed || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
@@ -180,8 +202,9 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     @Override
     public synchronized void onServicesDiscovered() {
         logger.debug("onServicesDiscovered");
+        GeniSession session = this.session;
         BluetoothDevice device = this.device;
-        if (disposed || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
+        if (disposed || session == null || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
             return;
         }
         super.onServicesDiscovered();
@@ -200,7 +223,7 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
                         }
                         updateStatus(ThingStatus.ONLINE);
                         session.start();
-                        scheduleFuture();
+                        scheduleFuture(session);
                     }
                 }
             }
@@ -208,7 +231,10 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     }
 
     @Override
-    public void onScanRecordReceived(BluetoothScanNotification scanNotification) {
+    public synchronized void onScanRecordReceived(BluetoothScanNotification scanNotification) {
+        if (disposed) {
+            return;
+        }
         logger.debug("onScanRecordReceived");
 
         // Avoid calling super method when it would set Thing status to online.
@@ -220,17 +246,26 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     }
 
     @Override
+    public synchronized void onAdapterChanged(BluetoothAdapter adapter) {
+        if (!disposed) {
+            super.onAdapterChanged(adapter);
+        }
+    }
+
+    @Override
     public void onCharacteristicUpdate(BluetoothCharacteristic characteristic, byte[] value) {
+        GeniSession session = this.session;
         super.onCharacteristicUpdate(characteristic, value);
 
-        if (!disposed && UUID_CHARACTERISTIC_GENI.equals(characteristic.getUuid())) {
+        if (!disposed && session != null && UUID_CHARACTERISTIC_GENI.equals(characteristic.getUuid())) {
             session.accept(value);
         }
     }
 
-    private void refreshChannels() {
+    private void refreshChannels(GeniSession session) {
         BluetoothDevice device = this.device;
-        if (disposed || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
+        if (disposed || !session.equals(this.session) || device == null
+                || device.getConnectionState() != ConnectionState.CONNECTED) {
             return;
         }
 
@@ -259,8 +294,12 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
         }
     }
 
-    private void updateChannels(Map<GeniMeasurand, BigDecimal> values) {
+    private void updateChannels(long generation, Map<GeniMeasurand, BigDecimal> values) {
         for (Entry<GeniMeasurand, BigDecimal> entry : values.entrySet()) {
+            // A state callback can dispose and reinitialize the handler before the remaining values are published.
+            if (disposed || generation != sessionGeneration) {
+                return;
+            }
             BigDecimal stateValue = entry.getValue();
             QuantityType<?> quantity = new QuantityType<>(stateValue, entry.getKey().unit());
             switch (entry.getKey()) {
@@ -281,7 +320,8 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
 
     @Override
     public synchronized void onConnectionStateChange(BluetoothConnectionStatusNotification connectionNotification) {
-        if (disposed) {
+        GeniSession session = this.session;
+        if (disposed || session == null) {
             return;
         }
         if (connectionNotification.getConnectionState() != ConnectionState.CONNECTED) {

@@ -53,6 +53,7 @@ class GeniSessionTest {
     private final List<String> packets = new ArrayList<>();
     private final List<Map<GeniMeasurand, BigDecimal>> updates = new ArrayList<>();
     private final Queue<CompletableFuture<@Nullable Void>> writes = new ArrayDeque<>();
+    private final ScheduledFuture<?> timeoutFuture = mock(ScheduledFuture.class);
     private final Runnable connectionFailed = mock(Runnable.class);
     private Runnable afterUpdate = () -> {
     };
@@ -67,7 +68,7 @@ class GeniSessionTest {
         });
         when(scheduler.schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS))).thenAnswer(call -> {
             timeouts.add(call.getArgument(0));
-            return mock(ScheduledFuture.class);
+            return timeoutFuture;
         });
         session = new GeniSession(scheduler, packet -> {
             packets.add(HexUtils.bytesToHex(packet));
@@ -78,6 +79,25 @@ class GeniSessionTest {
             afterUpdate.run();
         }, connectionFailed);
         session.start();
+    }
+
+    @Test
+    void closeCancelsTimeoutAndIgnoresLateWriteCompletion() {
+        var write = new CompletableFuture<@Nullable Void>();
+        writes.add(write);
+        session.read(GeniReadRequest.OperatingMode);
+        sends.remove().run();
+        session.accept(HexUtils.hexToBytes(OPERATING_REPLY));
+
+        session.close();
+
+        verify(timeoutFuture).cancel(false);
+        write.complete(null);
+        timeouts.remove().run();
+        session.accept(HexUtils.hexToBytes(OPERATING_REPLY));
+        assertThat(updates, empty());
+        assertThat(sends, empty());
+        verifyNoInteractions(connectionFailed);
     }
 
     @Test

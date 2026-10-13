@@ -21,6 +21,7 @@ import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -29,27 +30,35 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.openhab.binding.bluetooth.BluetoothAdapter;
+import org.openhab.binding.bluetooth.BluetoothAddress;
 import org.openhab.binding.bluetooth.BluetoothCharacteristic;
 import org.openhab.binding.bluetooth.BluetoothDevice;
 import org.openhab.binding.bluetooth.BluetoothDevice.ConnectionState;
 import org.openhab.binding.bluetooth.BluetoothService;
 import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.CRC16Calculator;
+import org.openhab.binding.bluetooth.notification.BluetoothScanNotification;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.unit.SIUnits;
 import org.openhab.core.library.unit.Units;
+import org.openhab.core.thing.Bridge;
+import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingUID;
+import org.openhab.core.thing.binding.BridgeHandler;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
 import org.openhab.core.types.RefreshType;
 import org.openhab.core.util.HexUtils;
@@ -60,6 +69,7 @@ import org.openhab.core.util.HexUtils;
  * @author Jacob Laursen - Initial contribution
  * @author Jacob Laursen - Cover motor current and operating counters
  * @author Jacob Laursen - Cover writable modes and request sequencing
+ * @author Jacob Laursen - Cover disposal and reinitialization
  */
 @NonNullByDefault
 @ExtendWith(MockitoExtension.class)
@@ -70,12 +80,15 @@ class GrundfosAlpha3HandlerTest {
     private @Mock @NonNullByDefault({}) BluetoothDevice device;
     private @Mock @NonNullByDefault({}) ScheduledExecutorService scheduler;
     private final Queue<Runnable> sends = new ArrayDeque<>();
+    private final Queue<Runnable> polls = new ArrayDeque<>();
+    private final Queue<Runnable> timeouts = new ArrayDeque<>();
     private @NonNullByDefault({}) GrundfosAlpha3Handler handler;
 
     @BeforeEach
     void prepareHandler() {
         when(thing.getUID()).thenReturn(new ThingUID(THING_TYPE_ALPHA3, "dummy"));
-        when(thing.getConfiguration()).thenReturn(new Configuration());
+        when(thing.getConfiguration())
+                .thenReturn(new Configuration(Map.of("address", "12:34:56:78:9A:BC", "alwaysConnected", false)));
         when(device.getConnectionState()).thenReturn(ConnectionState.CONNECTED);
         var characteristic = new BluetoothCharacteristic(UUID.fromString("859cffd1-036e-432a-aa28-1a0085b87ba9"), 1);
         var service = mock(BluetoothService.class);
@@ -90,10 +103,19 @@ class GrundfosAlpha3HandlerTest {
                     sends.add(invocation.getArgument(0));
                     return mock(ScheduledFuture.class);
                 });
-        lenient().when(scheduler.schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS)))
-                .thenReturn(mock(ScheduledFuture.class));
-        handler = new TestHandler(thing, scheduler, device);
+        lenient().when(scheduler.schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS))).thenAnswer(invocation -> {
+            timeouts.add(invocation.getArgument(0));
+            return mock(ScheduledFuture.class);
+        });
+        when(scheduler.scheduleWithFixedDelay(any(Runnable.class), eq(0L), eq(30L), eq(TimeUnit.SECONDS)))
+                .thenAnswer(invocation -> {
+                    polls.add(invocation.getArgument(0));
+                    return mock(ScheduledFuture.class);
+                });
+        prepareInitialization();
+        handler = new TestHandler(thing, scheduler);
         handler.setCallback(callback);
+        handler.initialize();
         handler.onServicesDiscovered();
         clearInvocations(callback);
     }
@@ -106,6 +128,83 @@ class GrundfosAlpha3HandlerTest {
     private void request(String channel) {
         handler.handleCommand(new ChannelUID(thing.getUID(), channel), RefreshType.REFRESH);
         sends.remove().run();
+    }
+
+    @Test
+    void callbacksAfterDisposalDoNotPublishStatesOrRestartPolling() {
+        handler.dispose();
+        clearInvocations(callback, device, scheduler);
+        var scan = new BluetoothScanNotification();
+        scan.setRssi(-60);
+
+        handler.onScanRecordReceived(scan);
+        handler.onAdapterChanged(mock(BluetoothAdapter.class));
+        handler.handleCommand(new ChannelUID(thing.getUID(), "rssi"), RefreshType.REFRESH);
+        handler.onServicesDiscovered();
+        polls.remove().run();
+
+        verifyNoInteractions(callback, device, scheduler);
+    }
+
+    @Test
+    void reinitializationAcceptsNewRepliesAndIgnoresOldWork() {
+        var characteristic = new BluetoothCharacteristic(UUID.fromString("859cffd1-036e-432a-aa28-1a0085b87ba9"), 1);
+        var oldWrite = new CompletableFuture<@Nullable Void>();
+        when(device.writeCharacteristic(eq(characteristic), any(byte[].class))).thenReturn(oldWrite)
+                .thenReturn(CompletableFuture.completedFuture(null));
+        request(CHANNEL_OPERATING_MODE);
+        byte[] response = HexUtils.hexToBytes("2412F8E70A0E00012F0100000700000046E5C600C536");
+        handler.onCharacteristicUpdate(characteristic, response);
+        Runnable oldPoll = polls.remove();
+        Runnable oldTimeout = timeouts.remove();
+
+        handler.dispose();
+        handler.initialize();
+        handler.onServicesDiscovered();
+        clearInvocations(callback, device);
+
+        oldWrite.complete(null);
+        oldTimeout.run();
+        oldPoll.run();
+        verifyNoInteractions(callback, device);
+        assertThat(sends.isEmpty(), is(true));
+
+        request(CHANNEL_OPERATING_MODE);
+        handler.onCharacteristicUpdate(characteristic, response);
+        verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_OPERATING_MODE), DecimalType.ZERO);
+        verifyNoMoreInteractions(callback);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
+    void disposalDuringPublicationStopsRemainingChannelUpdates(boolean reinitialize) {
+        doAnswer(invocation -> {
+            handler.dispose();
+            if (reinitialize) {
+                handler.initialize();
+            }
+            return null;
+        }).when(callback).stateUpdated(any(), any());
+        var characteristic = new BluetoothCharacteristic(UUID.fromString("859cffd1-036e-432a-aa28-1a0085b87ba9"), 1);
+        request(CHANNEL_MOTOR_CURRENT);
+
+        handler.onCharacteristicUpdate(characteristic, HexUtils.hexToBytes(
+                "2430F8E70A2C000100010000254357878B439781803D21B00040F19C0040EA4A404536FDB4FFC00000421C000042040000017317"));
+
+        verify(callback, times(1)).stateUpdated(any(), any());
+    }
+
+    private void prepareInitialization() {
+        when(thing.getThingTypeUID()).thenReturn(THING_TYPE_ALPHA3);
+        var bridgeUID = new ThingUID("bluetooth:bluez:adapter");
+        when(thing.getBridgeUID()).thenReturn(bridgeUID);
+        var bridge = mock(Bridge.class);
+        var adapter = mock(BluetoothAdapter.class, withSettings().extraInterfaces(BridgeHandler.class));
+        when(callback.getBridge(bridgeUID)).thenReturn(bridge);
+        when(bridge.getHandler()).thenReturn((BridgeHandler) adapter);
+        when(adapter.getDevice(new BluetoothAddress("12:34:56:78:9A:BC"))).thenReturn(device);
+        when(device.isServicesDiscovered()).thenReturn(true);
+        when(thing.getChannel(new ChannelUID(thing.getUID(), "rssi"))).thenReturn(mock(Channel.class));
     }
 
     @ParameterizedTest
@@ -154,14 +253,13 @@ class GrundfosAlpha3HandlerTest {
     }
 
     private static class TestHandler extends GrundfosAlpha3Handler {
-        TestHandler(Thing thing, ScheduledExecutorService scheduler, BluetoothDevice device) {
+        TestHandler(Thing thing, ScheduledExecutorService scheduler) {
             super(thing, scheduler);
-            this.device = device;
         }
 
         @Override
         public void disconnect() {
-            // The mock device does not need the base handler's connection executor.
+            // Service discovery must not disconnect the mock device used for request tests.
         }
     }
 
