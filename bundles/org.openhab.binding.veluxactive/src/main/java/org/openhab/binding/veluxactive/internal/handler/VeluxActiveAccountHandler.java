@@ -136,12 +136,12 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         previousConfiguration = configuration;
         if (configuration.refreshInterval < 10) {
             finish(session, configuration, ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Refresh interval must be at least 10 seconds.", 0);
+                    "@text/offline.conf-error.account.refresh-interval", 0);
             return;
         }
         if (!configuration.isComplete()) {
             finish(session, configuration, ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Client ID, client secret, username and password are required.", 0);
+                    "@text/offline.conf-error.account.credentials-required", 0);
             return;
         }
         // Include the account identity so editing a Thing while openHAB is stopped cannot reuse another user's token.
@@ -211,8 +211,8 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             };
             finish(session, configuration, ThingStatus.OFFLINE,
                     configurationError ? ThingStatusDetail.CONFIGURATION_ERROR : ThingStatusDetail.COMMUNICATION_ERROR,
-                    configurationError ? "Authentication rejected. Check account and client credentials."
-                            : "Authentication service unavailable. Retrying.",
+                    configurationError ? "@text/offline.conf-error.account.authentication-rejected"
+                            : "@text/offline.comm-error.account.authentication-unavailable",
                     configurationError ? 0 : RETRY_SECONDS);
         } catch (IOException | OAuthException e) {
             accessToken = null;
@@ -226,7 +226,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 }
             }
             finish(session, configuration, ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    "Could not authenticate with VELUX ACTIVE.", interrupted ? 0 : RETRY_SECONDS);
+                    "@text/offline.comm-error.account.authentication-error", interrupted ? 0 : RETRY_SECONDS);
         }
     }
 
@@ -271,7 +271,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 synchronized (this) {
                     if (session == generation) {
                         updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                                "Unexpected authentication failure.");
+                                "@text/offline.comm-error.account.unexpected-authentication-error");
                     }
                 }
             }
@@ -404,7 +404,8 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 } catch (ApiException e) {
                     synchronized (this) {
                         if (isCurrent(session)) {
-                            entry.getValue().forEach(target -> target.handler().failed(target, e.getMessage()));
+                            entry.getValue().forEach(target -> target.handler().failed(target,
+                                    "@text/offline.comm-error.module.status-error"));
                         }
                     }
                     recoverAuthentication(session, e);
@@ -533,7 +534,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             } catch (ApiException e) {
                 synchronized (this) {
                     if (isCurrent(session)) {
-                        target.handler().failed(target, e.getMessage());
+                        target.handler().failed(target, "@text/offline.comm-error.module.command-error");
                     }
                 }
                 recoverAuthentication(session, e);

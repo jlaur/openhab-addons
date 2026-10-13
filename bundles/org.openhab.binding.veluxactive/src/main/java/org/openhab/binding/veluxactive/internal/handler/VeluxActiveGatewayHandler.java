@@ -132,11 +132,10 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         }
         if (target.homeId().isBlank()) {
             clearState();
-            updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE,
-                    "Waiting for the gateway's home to be resolved from account topology.");
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                    "@text/offline.comm-error.gateway.home-unresolved");
         } else if (homeChanged) {
             clearState();
-            updateStatus(ThingStatus.UNKNOWN);
         }
     }
 
@@ -149,11 +148,11 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         if (error != null || module != null && Boolean.FALSE.equals(module.reachable)) {
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    error != null && !Integer.valueOf(6).equals(error.code) ? "Gateway status could not be read."
-                            : "Gateway is unreachable.");
+                    error != null && !Integer.valueOf(6).equals(error.code)
+                            ? "@text/offline.comm-error.gateway.status-error"
+                            : "@text/offline.comm-error.gateway.unreachable");
         } else if (module == null) {
-            clearState();
-            updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Gateway is absent from the latest home status.");
+            missingStatus("@text/status.gateway.missing");
         } else {
             var properties = editProperties();
             Integer firmware = module.firmwareRevisionNetatmo;

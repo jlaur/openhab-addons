@@ -58,7 +58,9 @@ For manual configuration, obtain it from `homesdata` or `homestatus`.
 The binding resolves the home automatically from account topology.
 Existing `homeId` configuration is ignored and can be removed.
 Topology is refreshed during shared polling; communication failures retain the last successful association.
-An unresolved or ambiguous gateway remains UNKNOWN and cannot send commands until its home is resolved.
+An unresolved or ambiguous gateway is OFFLINE until its home is resolved and a status response confirms connectivity.
+Commands require a resolved home.
+Its children remain OFFLINE until the gateway recovers.
 
 | Parameter | Required | Description |
 | --- | --- | --- |
@@ -85,7 +87,7 @@ After a successful command, the binding requests status immediately and then pol
 
 A gateway present in a successful home status response is considered reachable unless it reports `reachable=false` or an error for that gateway.
 Error code 6 marks a gateway unreachable.
-A gateway absent from a partial response has UNKNOWN status.
+A gateway absent from a partial response retains ONLINE status if previously online; otherwise it is OFFLINE until connectivity is confirmed.
 Unavailable or missing channel values are UNDEF, rather than interpreted as unlocked.
 Channel refresh commands request a shared status update.
 
@@ -95,7 +97,7 @@ The physical NXS sensor combines module diagnostics and measurements from its as
 Discovery provides `moduleId`, which is the only required parameter for manual configuration under a Gateway Bridge.
 The binding resolves the room from `room_id`, falling back to room membership when needed.
 The module ID determines the Thing identity, so room reassignment preserves Item links.
-The assigned room ID and name appear as Thing properties, along with the sensor firmware version.
+The assigned room name appears as a Thing property, along with the sensor firmware version.
 
 | Channel | Item type | Description |
 | --- | --- | --- |
@@ -137,7 +139,7 @@ Reported properties include `veluxType`, `gatewayId`, `firmwareVersion` and `ven
 | Channel | Item type | Access | Description |
 | --- | --- | --- | --- |
 | position | Rollershutter | Read/write | Current position: 0% open, 100% closed |
-| mode | String | Read-only | Reported operating mode, for example `algo_available` or `algo_disabled` |
+| mode | String | Read-only | Reported operating mode, for example `algo-available` or `algo-disabled` |
 | last-seen | DateTime | Read-only | Last contact timestamp reported by the service |
 
 The binding normalizes the different API position conventions for windows and covers.
@@ -156,7 +158,8 @@ Automatic state prediction is disabled.
 Successful commands trigger an immediate shared poll and five-second polling for up to 30 seconds.
 Missing or out-of-range positions become UNDEF.
 An unknown subtype also produces UNDEF positions and prevents position commands rather than guessing the direction.
-Unreachable modules clear their channels; modules absent from a response have UNKNOWN status.
+Unreachable modules go OFFLINE and clear their channels.
+Modules absent from a partial response clear their channels and retain ONLINE status if previously online; otherwise they are OFFLINE until connectivity is confirmed.
 
 ## Gateway Properties
 
