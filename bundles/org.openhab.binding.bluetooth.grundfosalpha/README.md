@@ -62,31 +62,29 @@ Pairing successful
 | energy           | Number:Energy             | R          | Accumulated electrical energy consumed by the pump | kWh  |
 | operating-time   | Number:Time               | R          | Accumulated running time of the pump               | s    |
 | start-count      | Number                    | R          | Accumulated number of pump starts                  |      |
-| operating-mode   | Number                    | RW         | Pump operating mode                                |      |
-| control-mode     | Number                    | RW         | Pump control mode, including AUTOADAPT             |      |
+| operating-mode   | String                    | RW         | Pump operating mode                                |      |
+| control-mode     | String                    | RW         | Pump control mode, including AUTOADAPT             |      |
 
 #### Pump Modes
 
-The mode channels provide the following numeric options:
+The mode channels provide the following String options:
 
-| Operating Mode | Value |
-|----------------|-------|
-| Normal         | 0     |
-| Stop           | 1     |
-| Min            | 2     |
-| Max            | 3     |
+| Operating Mode | Value    |
+|----------------|----------|
+| Normal         | `NORMAL` |
+| Stop           | `STOP`   |
+| Min            | `MIN`    |
+| Max            | `MAX`    |
 
-| Control Mode                                   | Value |
-|------------------------------------------------|-------|
-| Constant pressure                              | 0     |
-| Proportional pressure                          | 1     |
-| Constant curve                                 | 2     |
-| Radiator (AUTOADAPT)                           | 13    |
-| Underfloor (AUTOADAPT)                         | 14    |
-| Combined radiator and underfloor (AUTOADAPT)   | 15    |
+| Control Mode                                 | Value                    |
+|----------------------------------------------|--------------------------|
+| Constant pressure                            | `CONSTANT_PRESSURE`      |
+| Proportional pressure                        | `PROPORTIONAL_PRESSURE`  |
+| Constant curve                               | `CONSTANT_CURVE`         |
+| Radiator (AUTOADAPT)                         | `RADIATOR`               |
+| Underfloor (AUTOADAPT)                       | `UNDERFLOOR`             |
+| Combined radiator and underfloor (AUTOADAPT) | `RADIATOR_AND_UNDERFLOOR` |
 
-After a command, the binding reads back the setting from the pump before publishing the resulting state.
-Other values and fractional commands are ignored.
 Commands require an active Bluetooth connection and are discarded if that connection is lost; they are not replayed on reconnection.
 
 ### `mi401` Channels
@@ -142,4 +140,6 @@ Number:Energy Alpha3_Energy "Energy" <energy> ["Measurement", "Energy"] { channe
 Number:Frequency Alpha3_MotorSpeed "Pump speed" <fan> { channel="bluetooth:alpha3:hci0:alpha3:motor-speed", unit="rpm" }
 Number:Time Alpha3_OperatingTime "Operating time" <time> { channel="bluetooth:alpha3:hci0:alpha3:operating-time", unit="d" }
 Number Alpha3_StartCount "Start count" { channel="bluetooth:alpha3:hci0:alpha3:start-count" }
+String Alpha3_OperatingMode "Operating mode" { channel="bluetooth:alpha3:hci0:alpha3:operating-mode" }
+String Alpha3_ControlMode "Control mode" { channel="bluetooth:alpha3:hci0:alpha3:control-mode" }
 ```

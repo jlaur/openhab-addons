@@ -13,7 +13,8 @@
 package org.openhab.binding.bluetooth.grundfosalpha.internal.protocol;
 
 import java.nio.ByteBuffer;
-import java.util.Set;
+import java.util.Map;
+import java.util.Optional;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 
@@ -24,8 +25,9 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  */
 @NonNullByDefault
 public enum ModeSetting {
-    OperatingMode(GeniReadRequest.OperatingMode, 6, 1, Set.of(0, 1, 2, 3)),
-    ControlMode(GeniReadRequest.ControlMode, 10, 2, Set.of(0, 1, 2, 13, 14, 15));
+    OperatingMode(GeniReadRequest.OperatingMode, 6, 1, Map.of("NORMAL", 0, "STOP", 1, "MIN", 2, "MAX", 3)),
+    ControlMode(GeniReadRequest.ControlMode, 10, 2, Map.of("CONSTANT_PRESSURE", 0, "PROPORTIONAL_PRESSURE", 1,
+            "CONSTANT_CURVE", 2, "RADIATOR", 13, "UNDERFLOOR", 14, "RADIATOR_AND_UNDERFLOOR", 15));
 
     private static final int OBJECT_TYPE = 0x012f;
     private static final int OBJECT_VERSION = 1;
@@ -36,9 +38,9 @@ public enum ModeSetting {
     private final GeniReadRequest readRequest;
     private final int subId;
     private final int offset;
-    private final Set<Integer> options;
+    private final Map<String, Integer> options;
 
-    ModeSetting(GeniReadRequest readRequest, int subId, int offset, Set<Integer> options) {
+    ModeSetting(GeniReadRequest readRequest, int subId, int offset, Map<String, Integer> options) {
         this.readRequest = readRequest;
         this.subId = subId;
         this.offset = offset;
@@ -50,7 +52,16 @@ public enum ModeSetting {
     }
 
     public boolean accepts(int value) {
-        return options.contains(value);
+        return options.containsValue(value);
+    }
+
+    public Optional<Integer> protocolValue(String option) {
+        return Optional.ofNullable(options.get(option));
+    }
+
+    public Optional<String> option(int value) {
+        return options.entrySet().stream().filter(entry -> entry.getValue() == value).map(Map.Entry::getKey)
+                .findFirst();
     }
 
     byte[] writeRequest(byte[] currentObject, int value) {

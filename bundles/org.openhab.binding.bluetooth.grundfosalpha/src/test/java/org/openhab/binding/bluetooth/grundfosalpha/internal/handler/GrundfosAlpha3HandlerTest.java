@@ -51,6 +51,7 @@ import org.openhab.binding.bluetooth.notification.BluetoothScanNotification;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.QuantityType;
+import org.openhab.core.library.types.StringType;
 import org.openhab.core.library.unit.SIUnits;
 import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Bridge;
@@ -61,6 +62,7 @@ import org.openhab.core.thing.ThingUID;
 import org.openhab.core.thing.binding.BridgeHandler;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
 import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.UnDefType;
 import org.openhab.core.util.HexUtils;
 
 /**
@@ -171,7 +173,7 @@ class GrundfosAlpha3HandlerTest {
 
         request(CHANNEL_OPERATING_MODE);
         handler.onCharacteristicUpdate(characteristic, response);
-        verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_OPERATING_MODE), DecimalType.ZERO);
+        verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_OPERATING_MODE), new StringType("NORMAL"));
         verifyNoMoreInteractions(callback);
     }
 
@@ -208,35 +210,40 @@ class GrundfosAlpha3HandlerTest {
     }
 
     @ParameterizedTest
-    @CsvSource({ "operating-mode,0,14", "operating-mode,1,14", "operating-mode,2,14", "operating-mode,3,14",
-            "control-mode,0,15", "control-mode,1,15", "control-mode,2,15", "control-mode,13,15", "control-mode,14,15",
-            "control-mode,15,15" })
-    void modeCommandsPublishOnlyPumpReadings(String channel, int value, int offset) {
+    @CsvSource({ "operating-mode,NORMAL,0,14", "operating-mode,STOP,1,14", "operating-mode,MIN,2,14",
+            "operating-mode,MAX,3,14", "control-mode,CONSTANT_PRESSURE,0,15", "control-mode,PROPORTIONAL_PRESSURE,1,15",
+            "control-mode,CONSTANT_CURVE,2,15", "control-mode,RADIATOR,13,15", "control-mode,UNDERFLOOR,14,15",
+            "control-mode,RADIATOR_AND_UNDERFLOOR,15,15" })
+    void modeCommandsPublishOnlyPumpReadings(String channel, String option, int value, int offset) {
         var uid = new ChannelUID(thing.getUID(), channel);
         var characteristic = new BluetoothCharacteristic(UUID.fromString("859cffd1-036e-432a-aa28-1a0085b87ba9"), 1);
-        handler.handleCommand(uid, new DecimalType(value));
+        handler.handleCommand(uid, new StringType(option));
         verifyNoInteractions(callback);
         sends.remove().run();
         byte[] response = HexUtils.hexToBytes("2412F8E70A0E00012F0100000700000046E5C600C536");
         handler.onCharacteristicUpdate(characteristic, response);
-        verify(callback).stateUpdated(uid, DecimalType.ZERO);
+        verify(callback).stateUpdated(uid,
+                new StringType(channel.equals(CHANNEL_OPERATING_MODE) ? "NORMAL" : "CONSTANT_PRESSURE"));
         clearInvocations(callback);
         sends.remove().run();
+        verify(device).writeCharacteristic(eq(characteristic),
+                argThat(packet -> packet.length == 20 && packet[offset + 2] == (byte) value));
         handler.onCharacteristicUpdate(characteristic, HexUtils.hexToBytes("2405F8E70A0100AEA2"));
         verifyNoInteractions(callback);
         sends.remove().run();
         response[offset] = (byte) value;
         CRC16Calculator.put(response, 18);
         handler.onCharacteristicUpdate(characteristic, response);
-        verify(callback).stateUpdated(uid, new DecimalType(value));
+        verify(callback).stateUpdated(uid, new StringType(option));
         verifyNoMoreInteractions(callback);
     }
 
     @ParameterizedTest
-    @CsvSource({ "operating-mode,-1", "operating-mode,4", "operating-mode,1.5", "operating-mode,4294967296",
-            "control-mode,3", "control-mode,12", "control-mode,16", "control-mode,13.1" })
+    @CsvSource({ "operating-mode,normal", "operating-mode,UNKNOWN", "operating-mode,0",
+            "operating-mode,CONSTANT_PRESSURE", "control-mode,NORMAL", "control-mode,radiator", "control-mode,13",
+            "control-mode,UNKNOWN" })
     void invalidModeCommandsDoNotSendRequests(String channel, String value) {
-        handler.handleCommand(new ChannelUID(thing.getUID(), channel), new DecimalType(value));
+        handler.handleCommand(new ChannelUID(thing.getUID(), channel), new StringType(value));
         assertThat(sends.isEmpty(), is(true));
         verify(device, never()).writeCharacteristic(any(), any());
         verifyNoInteractions(callback);
@@ -245,11 +252,33 @@ class GrundfosAlpha3HandlerTest {
     @Test
     void disconnectedModeCommandsAreNotQueuedForReconnect() {
         when(device.getConnectionState()).thenReturn(ConnectionState.DISCONNECTED);
-        handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_OPERATING_MODE), new DecimalType(1));
+        handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_OPERATING_MODE), new StringType("STOP"));
         when(device.getConnectionState()).thenReturn(ConnectionState.CONNECTED);
         handler.onServicesDiscovered();
         assertThat(sends.isEmpty(), is(true));
         verify(device, never()).writeCharacteristic(any(), any());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { CHANNEL_OPERATING_MODE, CHANNEL_CONTROL_MODE })
+    void numericModeCommandsAreIgnored(String channel) {
+        handler.handleCommand(new ChannelUID(thing.getUID(), channel), new DecimalType(1));
+        assertThat(sends.isEmpty(), is(true));
+        verify(device, never()).writeCharacteristic(any(), any());
+        verifyNoInteractions(callback);
+    }
+
+    @ParameterizedTest
+    @CsvSource({ "operating-mode,14", "control-mode,15" })
+    void unknownPumpModesArePublishedAsUndefined(String channel, int offset) {
+        var characteristic = new BluetoothCharacteristic(UUID.fromString("859cffd1-036e-432a-aa28-1a0085b87ba9"), 1);
+        request(channel);
+        byte[] response = HexUtils.hexToBytes("2412F8E70A0E00012F0100000700000046E5C600C536");
+        response[offset] = (byte) 255;
+        CRC16Calculator.put(response, 18);
+        handler.onCharacteristicUpdate(characteristic, response);
+        verify(callback).stateUpdated(new ChannelUID(thing.getUID(), channel), UnDefType.UNDEF);
+        verifyNoMoreInteractions(callback);
     }
 
     private static class TestHandler extends GrundfosAlpha3Handler {

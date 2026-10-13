@@ -42,11 +42,13 @@ import org.openhab.binding.bluetooth.notification.BluetoothConnectionStatusNotif
 import org.openhab.binding.bluetooth.notification.BluetoothScanNotification;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.QuantityType;
+import org.openhab.core.library.types.StringType;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.UnDefType;
 import org.openhab.core.util.HexUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -170,17 +172,9 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
         if (setting != null) {
             if (command == RefreshType.REFRESH) {
                 session.read(setting.readRequest());
-            } else if (command instanceof DecimalType decimal && !(command instanceof QuantityType<?>)) {
-                try {
-                    int value = decimal.toBigDecimal().intValueExact();
-                    if (setting.accepts(value)) {
-                        session.write(setting, value);
-                    } else {
-                        logger.debug("Ignoring unsupported {} value {}", setting, command);
-                    }
-                } catch (ArithmeticException e) {
-                    logger.debug("Ignoring non-integer {} value {}", setting, command);
-                }
+            } else if (command instanceof StringType) {
+                setting.protocolValue(command.toString()).ifPresentOrElse(value -> session.write(setting, value),
+                        () -> logger.debug("Ignoring unsupported {} value {}", setting, command));
             }
             return;
         }
@@ -312,8 +306,14 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
                 case Energy -> updateState(CHANNEL_ENERGY, quantity);
                 case OperatingTime -> updateState(CHANNEL_OPERATING_TIME, quantity);
                 case StartCount -> updateState(CHANNEL_START_COUNT, new DecimalType(stateValue));
-                case OperatingMode -> updateState(CHANNEL_OPERATING_MODE, new DecimalType(stateValue));
-                case ControlMode -> updateState(CHANNEL_CONTROL_MODE, new DecimalType(stateValue));
+                case OperatingMode -> {
+                    String option = ModeSetting.OperatingMode.option(stateValue.intValue()).orElse(null);
+                    updateState(CHANNEL_OPERATING_MODE, option != null ? new StringType(option) : UnDefType.UNDEF);
+                }
+                case ControlMode -> {
+                    String option = ModeSetting.ControlMode.option(stateValue.intValue()).orElse(null);
+                    updateState(CHANNEL_CONTROL_MODE, option != null ? new StringType(option) : UnDefType.UNDEF);
+                }
             }
         }
     }
