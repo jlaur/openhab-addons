@@ -29,7 +29,6 @@ import org.openhab.core.library.types.UpDownType;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
-import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
 import org.openhab.core.types.UnDefType;
@@ -127,13 +126,11 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             return;
         }
         if (status.error(target.moduleId()) != null || module != null && Boolean.FALSE.equals(module.reachable)) {
-            failed(target, "Window/cover is unreachable.");
+            failed(target, "@text/offline.comm-error.opening.unreachable");
             return;
         }
         if (module == null) {
-            clearState();
-            updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE,
-                    "Window/cover is absent from the latest home status.");
+            missingStatus("@text/status.opening.missing");
             return;
         }
         var properties = editProperties();
@@ -159,7 +156,7 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         Integer position = position(module.currentPosition);
         updateState(CHANNEL_POSITION, position == null ? UnDefType.UNDEF : new PercentType(position));
         String mode = module.mode;
-        updateState(CHANNEL_MODE, mode == null ? UnDefType.UNDEF : new StringType(mode));
+        updateState(CHANNEL_MODE, mode == null ? UnDefType.UNDEF : new StringType(mode.replace('_', '-')));
         Long seen = module.lastSeen;
         try {
             updateState(CHANNEL_LAST_SEEN,

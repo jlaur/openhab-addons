@@ -26,7 +26,9 @@ import org.openhab.core.thing.Thing;
 import org.openhab.core.types.UnDefType;
 
 /**
- * Shared diagnostics for battery-powered NXS and NXD modules.
+ * Shared diagnostics for battery-powered {@link org.openhab.binding.veluxactive.internal.api.ModuleType#INDOOR_SENSOR}
+ * and
+ * {@link org.openhab.binding.veluxactive.internal.api.ModuleType#DEPARTURE_SWITCH} modules.
  *
  * @author Jacob Laursen - Initial contribution
  */

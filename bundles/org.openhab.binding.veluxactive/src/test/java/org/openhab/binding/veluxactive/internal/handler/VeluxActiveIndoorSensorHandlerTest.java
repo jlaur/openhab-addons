@@ -26,6 +26,8 @@ import java.util.Map;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
@@ -107,7 +109,6 @@ class VeluxActiveIndoorSensorHandlerTest {
         assertThat(states.get(CHANNEL_LOW_BATTERY), is(OnOffType.OFF));
         assertThat(states.get(CHANNEL_SIGNAL), is(new DecimalType(4)));
         assertThat(thing.getProperties().get(Thing.PROPERTY_FIRMWARE_VERSION), is("16"));
-        assertThat(thing.getProperties().get("roomId"), is("hall"));
     }
 
     @Test
@@ -182,6 +183,25 @@ class VeluxActiveIndoorSensorHandlerTest {
     private void topology(String roomId) {
         handler.updateTopology(requireNonNull(handler.captureRequestContext()), List.of(
                 new ModuleInfo("home", "gateway", "Indoor sensor", ModuleType.INDOOR_SENSOR, roomId, roomId, null)));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ThingStatus.class, names = { "UNKNOWN", "ONLINE", "OFFLINE" })
+    void missingModuleDoesNotResetConnectivityAndRecovers(ThingStatus initialStatus) {
+        if (initialStatus != ThingStatus.UNKNOWN) {
+            update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"reachable\":true}]}}");
+            if (initialStatus == ThingStatus.OFFLINE) {
+                handler.failed(requireNonNull(handler.captureRequestContext()), "failure");
+            }
+        }
+        assertThat(thing.getStatus(), is(initialStatus));
+        update("{\"home\":{\"modules\":[]}}");
+        assertThat(thing.getStatus(),
+                is(initialStatus == ThingStatus.ONLINE ? ThingStatus.ONLINE : ThingStatus.OFFLINE));
+        assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
+        update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"reachable\":true}]}}");
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        assertThat(thing.getStatusInfo().getDescription(), is((String) null));
     }
 
     private void update(String json) {

@@ -51,12 +51,7 @@
 			<channel id="locking" typeId="locking"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
-		<config-description>
-			<parameter name="moduleId" type="text" required="true">
-				<label>Module ID</label>
-				<description>NXG gateway module identifier</description>
-			</parameter>
-		</config-description>
+		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</bridge-type>
 
 	<thing-type id="indoor-sensor">
@@ -82,12 +77,7 @@
 			<channel id="signal-strength" typeId="system.signal-strength"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
-		<config-description>
-			<parameter name="moduleId" type="text" required="true">
-				<label>Module ID</label>
-				<description>NXS sensor module identifier</description>
-			</parameter>
-		</config-description>
+		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
 	<thing-type id="departure-switch">
@@ -103,12 +93,7 @@
 			<channel id="signal-strength" typeId="system.signal-strength"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
-		<config-description>
-			<parameter name="moduleId" type="text" required="true">
-				<label>Module ID</label>
-				<description>NXD departure switch module identifier</description>
-			</parameter>
-		</config-description>
+		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
 	<thing-type id="opening">
@@ -123,12 +108,7 @@
 			<channel id="mode" typeId="operating-mode"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
-		<config-description>
-			<parameter name="moduleId" type="text" required="true">
-				<label>Module ID</label>
-				<description>NXO window or cover module identifier</description>
-			</parameter>
-		</config-description>
+		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
 </thing:thing-descriptions>

@@ -17,7 +17,6 @@ import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
-import org.openhab.core.thing.ThingStatusDetail;
 
 /**
  * Reports the physical NXD departure switch's battery and connectivity diagnostics.
@@ -31,19 +30,19 @@ public class VeluxActiveDepartureSwitchHandler extends VeluxActiveBatteryModuleH
     }
 
     @Override
-    synchronized void update(ModuleRequestContext target, HomeStatus status) {
-        if (!isRequestContextCurrent(target)) {
+    synchronized void update(ModuleRequestContext moduleRequestContext, HomeStatus status) {
+        if (!isRequestContextCurrent(moduleRequestContext)) {
             return;
         }
-        Module module = status.module(target.moduleId());
-        if (module != null && !checkGateway(target, module)) {
+        Module module = status.module(moduleRequestContext.moduleId());
+        if (module != null && !checkGateway(moduleRequestContext, module)) {
             return;
         }
-        if (status.error(target.moduleId()) != null || module != null && Boolean.FALSE.equals(module.reachable)) {
-            failed(target, "Departure switch is unreachable.");
+        if (status.error(moduleRequestContext.moduleId()) != null
+                || module != null && Boolean.FALSE.equals(module.reachable)) {
+            failed(moduleRequestContext, "@text/offline.comm-error.departure-switch.unreachable");
         } else if (module == null) {
-            clearState();
-            updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Switch is absent from the latest home status.");
+            missingStatus("@text/status.departure-switch.missing");
         } else {
             updateDiagnostics(module);
             updateStatus(ThingStatus.ONLINE);

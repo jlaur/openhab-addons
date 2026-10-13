@@ -27,6 +27,8 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.core.config.core.Configuration;
@@ -100,7 +102,7 @@ class VeluxActiveOpeningHandlerTest {
                 """);
         assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType(80)));
-        assertThat(states.get(CHANNEL_MODE), is(new StringType("algo_available")));
+        assertThat(states.get(CHANNEL_MODE), is(new StringType("algo-available")));
         assertThat(states.get(CHANNEL_LAST_SEEN), is(new DateTimeType(Instant.ofEpochSecond(1791635702L))));
         assertThat(thing.getProperties().get(Thing.PROPERTY_FIRMWARE_VERSION), is("53"));
         assertThat(thing.getProperties().get(Thing.PROPERTY_VENDOR), is("Netatmo"));
@@ -231,7 +233,7 @@ class VeluxActiveOpeningHandlerTest {
         update("""
                 {"home":{"id":"home","modules":[]}}
                 """);
-        assertThat(thing.getStatus(), is(ThingStatus.UNKNOWN));
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","current_position":35,"reachable":true}]}}
                 """);
@@ -324,8 +326,54 @@ class VeluxActiveOpeningHandlerTest {
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType(25)));
     }
 
+    @ParameterizedTest
+    @CsvSource({ "algo_active,algo-active", "algo_available,algo-available", "algo_disabled,algo-disabled",
+            "manual,manual", "unavailable,unavailable" })
+    void publishesHyphenatedOperatingModes(String apiMode, String publishedMode) {
+        update("""
+                {"home":{"modules":[{"id":"opening","mode":"%s"}]}}
+                """.formatted(apiMode));
+        assertThat(states.get(CHANNEL_MODE), is(new StringType(publishedMode)));
+    }
+
     private void command(Command command) {
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_POSITION), command);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ThingStatus.class, names = { "UNKNOWN", "ONLINE", "OFFLINE" })
+    void missingModuleDoesNotResetConnectivityAndRecovers(ThingStatus initialStatus) {
+        if (initialStatus != ThingStatus.UNKNOWN) {
+            update("{\"home\":{\"modules\":[{\"id\":\"opening\",\"reachable\":true}]}}");
+            if (initialStatus == ThingStatus.OFFLINE) {
+                handler.failed(requireNonNull(handler.captureRequestContext()), "failure");
+            }
+        }
+        assertThat(thing.getStatus(), is(initialStatus));
+        update("{\"home\":{\"modules\":[]}}");
+        assertThat(thing.getStatus(),
+                is(initialStatus == ThingStatus.ONLINE ? ThingStatus.ONLINE : ThingStatus.OFFLINE));
+        assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
+        update("{\"home\":{\"modules\":[{\"id\":\"opening\",\"reachable\":true}]}}");
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        assertThat(thing.getStatusInfo().getDescription(), is((String) null));
+    }
+
+    @Test
+    void bridgeRecoveryWaitsForStatusWithoutReturningToUnknown() {
+        update("{\"home\":{\"modules\":[{\"id\":\"opening\",\"reachable\":true}]}}");
+        handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        when(bridge.getStatus()).thenReturn(ThingStatus.OFFLINE);
+        handler.bridgeStatusChanged(
+                new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, null));
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        assertThat(thing.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.BRIDGE_OFFLINE));
+        when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
+        handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        update("{\"home\":{\"modules\":[{\"id\":\"opening\",\"reachable\":true}]}}");
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
     }
 
     private void update(String json) {

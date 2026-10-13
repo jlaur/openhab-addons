@@ -50,6 +50,7 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
             configuration = getConfigAs(VeluxActiveModuleConfiguration.class);
             generation++;
             active = true;
+            updateStatus(ThingStatus.UNKNOWN);
         }
         refreshFromBridge();
     }
@@ -69,7 +70,8 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
             accountHandler = account;
             ModuleRequestContext target = captureRequestContext();
             if (config.moduleId.isBlank()) {
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Module ID is required.");
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                        "@text/offline.conf-error.module.missing-id");
                 return;
             }
             if (bridge == null || account == null || target == null) {
@@ -85,7 +87,9 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
             if (!isRequestContextCurrent(target)) {
                 return;
             }
-            updateStatus(ThingStatus.UNKNOWN);
+            if (getThing().getStatus() == ThingStatus.OFFLINE) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.NONE, "@text/status.module.awaiting-status");
+            }
         }
         // Never acquire the account monitor while holding the child monitor.
         account.requestPoll();
@@ -165,7 +169,7 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
         if (parent != null && reportedBridge != null && !parent.moduleId().equals(reportedBridge)) {
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Module belongs to another gateway; discover it under that gateway.");
+                    "@text/offline.conf-error.module.wrong-gateway");
             return false;
         }
         return true;
@@ -177,6 +181,16 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
         if (isRequestContextCurrent(target)) {
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, message);
+        }
+    }
+
+    protected void missingStatus(String description) {
+        clearState();
+        // A partial response does not establish loss or restoration of connectivity.
+        if (getThing().getStatus() == ThingStatus.ONLINE) {
+            updateStatus(ThingStatus.ONLINE, ThingStatusDetail.NONE, description);
+        } else {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, description);
         }
     }
 
