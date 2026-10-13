@@ -20,12 +20,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -34,10 +33,10 @@ import org.openhab.binding.bluetooth.BluetoothDevice;
 import org.openhab.binding.bluetooth.BluetoothDevice.ConnectionState;
 import org.openhab.binding.bluetooth.BluetoothService;
 import org.openhab.binding.bluetooth.ConnectedBluetoothHandler;
-import org.openhab.binding.bluetooth.grundfosalpha.internal.CharacteristicRequest;
 import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.GeniMeasurand;
 import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.GeniReadRequest;
-import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.GeniResponseDecoder;
+import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.GeniSession;
+import org.openhab.binding.bluetooth.grundfosalpha.internal.protocol.ModeSetting;
 import org.openhab.binding.bluetooth.notification.BluetoothConnectionStatusNotification;
 import org.openhab.binding.bluetooth.notification.BluetoothScanNotification;
 import org.openhab.core.library.types.DecimalType;
@@ -71,34 +70,43 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     private static final int DEFAULT_REFRESH_INTERVAL_SECONDS = 30;
 
     private final Logger logger = LoggerFactory.getLogger(GrundfosAlpha3Handler.class);
-    private final Lock stateLock = new ReentrantLock();
-    private final BlockingQueue<CharacteristicRequest> sendQueue = new LinkedBlockingQueue<>();
+    private final GeniSession session;
+    private final ScheduledExecutorService requestScheduler;
+    private volatile boolean disposed;
 
     private @Nullable ScheduledFuture<?> refreshFuture;
-    private @Nullable WriteCharacteristicThread senderThread;
-    private GeniResponseDecoder responseDecoder = new GeniResponseDecoder();
 
     public GrundfosAlpha3Handler(Thing thing) {
+        this(thing, null);
+    }
+
+    GrundfosAlpha3Handler(Thing thing, @Nullable ScheduledExecutorService requestScheduler) {
         super(thing);
+        this.requestScheduler = requestScheduler == null ? scheduler : requestScheduler;
+        session = new GeniSession(this.requestScheduler, this::writePacket, this::updateChannels, this::disconnect);
     }
 
     @Override
-    public void initialize() {
-        super.initialize();
-
-        WriteCharacteristicThread senderThread = this.senderThread = new WriteCharacteristicThread(device);
-        senderThread.start();
-    }
-
-    @Override
-    public void dispose() {
-        WriteCharacteristicThread senderThread = this.senderThread;
-        if (senderThread != null) {
-            senderThread.interrupt();
-            this.senderThread = null;
-        }
+    public synchronized void dispose() {
+        disposed = true;
+        session.close();
         cancelFuture();
         super.dispose();
+    }
+
+    private CompletionStage<?> writePacket(byte[] packet) {
+        BluetoothDevice device = this.device;
+        if (disposed || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Device is not connected"));
+        }
+        BluetoothCharacteristic characteristic = device.getCharacteristic(UUID_CHARACTERISTIC_GENI);
+        if (characteristic == null) {
+            return CompletableFuture.failedFuture(new IllegalStateException("GENI characteristic is missing"));
+        }
+        if (logger.isDebugEnabled()) {
+            logger.debug("Writing characteristic {}: {}", UUID_CHARACTERISTIC_GENI, HexUtils.bytesToHex(packet));
+        }
+        return device.writeCharacteristic(characteristic, packet);
     }
 
     private void scheduleFuture() {
@@ -110,7 +118,8 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
             refreshInterval = number.intValue();
         }
 
-        refreshFuture = scheduler.scheduleWithFixedDelay(this::refreshChannels, 0, refreshInterval, TimeUnit.SECONDS);
+        refreshFuture = requestScheduler.scheduleWithFixedDelay(this::refreshChannels, 0, refreshInterval,
+                TimeUnit.SECONDS);
     }
 
     private void cancelFuture() {
@@ -125,32 +134,57 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     public void handleCommand(ChannelUID channelUID, Command command) {
         super.handleCommand(channelUID, command);
 
-        if (command != RefreshType.REFRESH) {
-            // Currently no writable channels
+        BluetoothDevice device = this.device;
+        if (disposed || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
+            logger.debug("Cannot send command {} because device is not connected", command);
             return;
         }
 
-        if (device.getConnectionState() != ConnectionState.CONNECTED) {
-            logger.info("Cannot send command {} because device is not connected", command);
+        ModeSetting setting = switch (channelUID.getId()) {
+            case CHANNEL_OPERATING_MODE -> ModeSetting.OperatingMode;
+            case CHANNEL_CONTROL_MODE -> ModeSetting.ControlMode;
+            default -> null;
+        };
+        if (setting != null) {
+            if (command == RefreshType.REFRESH) {
+                session.read(setting.readRequest());
+            } else if (command instanceof DecimalType decimal && !(command instanceof QuantityType<?>)) {
+                try {
+                    int value = decimal.toBigDecimal().intValueExact();
+                    if (setting.accepts(value)) {
+                        session.write(setting, value);
+                    } else {
+                        logger.debug("Ignoring unsupported {} value {}", setting, command);
+                    }
+                } catch (ArithmeticException e) {
+                    logger.debug("Ignoring non-integer {} value {}", setting, command);
+                }
+            }
+            return;
+        }
+        if (command != RefreshType.REFRESH) {
             return;
         }
 
         if (FLOW_HEAD_CHANNELS.contains(channelUID.getId())) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.FlowHead));
+            session.read(GeniReadRequest.FlowHead);
         } else if (MOTOR_CHANNELS.contains(channelUID.getId())) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.Motor));
+            session.read(GeniReadRequest.Motor);
         } else if (CHANNEL_ENERGY.equals(channelUID.getId())) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.Energy));
+            session.read(GeniReadRequest.Energy);
         } else if (COUNTER_CHANNELS.contains(channelUID.getId())) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.Counters));
+            session.read(GeniReadRequest.Counters);
         }
     }
 
     @Override
-    public void onServicesDiscovered() {
+    public synchronized void onServicesDiscovered() {
         logger.debug("onServicesDiscovered");
+        BluetoothDevice device = this.device;
+        if (disposed || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
+            return;
+        }
         super.onServicesDiscovered();
-
         for (BluetoothService service : device.getServices()) {
             logger.debug("Supported service for {}: {}", device.getName(), service.getUuid());
             if (UUID_SERVICE_GENI.equals(service.getUuid())) {
@@ -165,6 +199,7 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
                             updateProperty(Thing.PROPERTY_MODEL_ID, deviceName);
                         }
                         updateStatus(ThingStatus.ONLINE);
+                        session.start();
                         scheduleFuture();
                     }
                 }
@@ -188,45 +223,39 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
     public void onCharacteristicUpdate(BluetoothCharacteristic characteristic, byte[] value) {
         super.onCharacteristicUpdate(characteristic, value);
 
-        stateLock.lock();
-        try {
-            if (!UUID_CHARACTERISTIC_GENI.equals(characteristic.getUuid())) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Received update {} to unknown characteristic {} of device {}",
-                            HexUtils.bytesToHex(value), characteristic.getUuid(), address);
-                }
-                return;
-            }
-
-            if (responseDecoder.addPacket(value)) {
-                Map<GeniMeasurand, BigDecimal> values = responseDecoder.decode();
-                updateChannels(values);
-                responseDecoder = new GeniResponseDecoder();
-            }
-        } finally {
-            stateLock.unlock();
+        if (!disposed && UUID_CHARACTERISTIC_GENI.equals(characteristic.getUuid())) {
+            session.accept(value);
         }
     }
 
     private void refreshChannels() {
-        if (device.getConnectionState() != ConnectionState.CONNECTED) {
+        BluetoothDevice device = this.device;
+        if (disposed || device == null || device.getConnectionState() != ConnectionState.CONNECTED) {
             return;
         }
 
         if (FLOW_HEAD_CHANNELS.stream().anyMatch(this::isLinked)) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.FlowHead));
+            session.read(GeniReadRequest.FlowHead);
         }
 
         if (MOTOR_CHANNELS.stream().anyMatch(this::isLinked)) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.Motor));
+            session.read(GeniReadRequest.Motor);
         }
 
         if (isLinked(CHANNEL_ENERGY)) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.Energy));
+            session.read(GeniReadRequest.Energy);
         }
 
         if (COUNTER_CHANNELS.stream().anyMatch(this::isLinked)) {
-            sendQueue.add(new CharacteristicRequest(UUID_CHARACTERISTIC_GENI, GeniReadRequest.Counters));
+            session.read(GeniReadRequest.Counters);
+        }
+
+        if (isLinked(CHANNEL_OPERATING_MODE)) {
+            session.read(GeniReadRequest.OperatingMode);
+        }
+
+        if (isLinked(CHANNEL_CONTROL_MODE)) {
+            session.read(GeniReadRequest.ControlMode);
         }
     }
 
@@ -244,60 +273,27 @@ public class GrundfosAlpha3Handler extends ConnectedBluetoothHandler {
                 case Energy -> updateState(CHANNEL_ENERGY, quantity);
                 case OperatingTime -> updateState(CHANNEL_OPERATING_TIME, quantity);
                 case StartCount -> updateState(CHANNEL_START_COUNT, new DecimalType(stateValue));
+                case OperatingMode -> updateState(CHANNEL_OPERATING_MODE, new DecimalType(stateValue));
+                case ControlMode -> updateState(CHANNEL_CONTROL_MODE, new DecimalType(stateValue));
             }
         }
     }
 
     @Override
-    public void onConnectionStateChange(BluetoothConnectionStatusNotification connectionNotification) {
+    public synchronized void onConnectionStateChange(BluetoothConnectionStatusNotification connectionNotification) {
+        if (disposed) {
+            return;
+        }
+        if (connectionNotification.getConnectionState() != ConnectionState.CONNECTED) {
+            session.stop();
+            cancelFuture();
+        }
         super.onConnectionStateChange(connectionNotification);
         logger.debug("{}", connectionNotification.getConnectionState());
-    }
-
-    private class WriteCharacteristicThread extends Thread {
-        private static final int REQUEST_DELAY_MS = 700;
-
-        private final BluetoothDevice device;
-
-        public WriteCharacteristicThread(BluetoothDevice device) {
-            super("OH-binding-" + getThing().getUID() + "-WriteCharacteristicThread");
-            this.device = device;
-        }
-
-        @Override
-        public void run() {
-            logger.debug("Starting sender thread");
-            while (!interrupted()) {
-                try {
-                    processQueue();
-                    Thread.sleep(REQUEST_DELAY_MS);
-                } catch (InterruptedException e) {
-                    break;
-                }
-            }
-            logger.debug("Sender thread finished");
-        }
-
-        private void processQueue() throws InterruptedException {
-            logger.trace("Processing/await queue, size: {}", sendQueue.size());
-            CharacteristicRequest request = sendQueue.take();
-            if (logger.isDebugEnabled()) {
-                logger.debug("Writing characteristic {}: {}", request.getUUID(),
-                        HexUtils.bytesToHex(request.getValue()));
-            }
-            if (request.send(device)) {
-                removeDuplicates(request);
-            }
-        }
-
-        private void removeDuplicates(CharacteristicRequest request) {
-            int duplicates = 0;
-            while (sendQueue.remove(request)) {
-                duplicates++;
-            }
-            if (duplicates > 0 && logger.isDebugEnabled()) {
-                logger.debug("Removed {} duplicate characteristic requests for '{}' from queue", duplicates, request);
-            }
+        BluetoothDevice device = this.device;
+        if (connectionNotification.getConnectionState() == ConnectionState.CONNECTED && device != null
+                && device.isServicesDiscovered()) {
+            onServicesDiscovered();
         }
     }
 }

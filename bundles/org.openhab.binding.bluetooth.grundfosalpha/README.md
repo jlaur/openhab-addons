@@ -1,6 +1,7 @@
 # Bluetooth Grundfos Alpha Adapter
 
 This binding supports reading data from Grundfos Alpha pumps with a [Grundfos Alpha Reader](https://product-selection.grundfos.com/products/alpha-reader) or [Alpha3 pump](https://product-selection.grundfos.com/products/alpha/alpha3) with built-in Bluetooth.
+For Alpha3 pumps, it also supports changing the operating mode and control mode.
 
 The reverse engineering of the Alpha Reader protocol was taken from [https://github.com/JsBergbau/AlphaDecoder](https://github.com/JsBergbau/AlphaDecoder).
 
@@ -61,6 +62,32 @@ Pairing successful
 | energy           | Number:Energy             | R          | Accumulated electrical energy consumed by the pump | kWh  |
 | operating-time   | Number:Time               | R          | Accumulated running time of the pump               | s    |
 | start-count      | Number                    | R          | Accumulated number of pump starts                  |      |
+| operating-mode   | Number                    | RW         | Pump operating mode                                |      |
+| control-mode     | Number                    | RW         | Pump control mode, including AUTOADAPT             |      |
+
+#### Pump Modes
+
+The mode channels provide the following numeric options:
+
+| Operating Mode | Value |
+|----------------|-------|
+| Normal         | 0     |
+| Stop           | 1     |
+| Min            | 2     |
+| Max            | 3     |
+
+| Control Mode                                   | Value |
+|------------------------------------------------|-------|
+| Constant pressure                              | 0     |
+| Proportional pressure                          | 1     |
+| Constant curve                                 | 2     |
+| Radiator (AUTOADAPT)                           | 13    |
+| Underfloor (AUTOADAPT)                         | 14    |
+| Combined radiator and underfloor (AUTOADAPT)   | 15    |
+
+After a command, the binding reads back the setting from the pump before publishing the resulting state.
+Other values and fractional commands are ignored.
+Commands require an active Bluetooth connection and are discarded if that connection is lost; they are not replayed on reconnection.
 
 ### `mi401` Channels
 
