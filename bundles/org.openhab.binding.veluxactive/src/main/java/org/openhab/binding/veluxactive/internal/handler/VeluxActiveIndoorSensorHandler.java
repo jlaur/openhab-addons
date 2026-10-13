@@ -29,7 +29,6 @@ import org.openhab.core.library.unit.SIUnits;
 import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
-import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.types.UnDefType;
 
 /**
@@ -57,19 +56,13 @@ public class VeluxActiveIndoorSensorHandler extends VeluxActiveBatteryModuleHand
         if (!isRequestContextCurrent(target)) {
             return;
         }
-        var info = modules
+        ModuleInfo moduleInfo = modules
                 .stream().filter(module -> target.homeId().equals(module.homeId())
                         && target.moduleId().equals(module.moduleId()) && module.type() == ModuleType.INDOOR_SENSOR)
                 .findFirst().orElse(null);
-        roomId = info == null ? null : info.roomId();
-        String roomName = info == null ? null : info.roomName();
+        roomId = moduleInfo == null ? null : moduleInfo.roomId();
+        String roomName = moduleInfo == null ? null : moduleInfo.roomName();
         var properties = editProperties();
-        String room = roomId;
-        if (room != null && !room.isBlank()) {
-            properties.put("roomId", room);
-        } else {
-            properties.remove("roomId");
-        }
         if (roomName != null && !roomName.isBlank()) {
             properties.put("roomName", roomName);
         } else {
@@ -88,12 +81,11 @@ public class VeluxActiveIndoorSensorHandler extends VeluxActiveBatteryModuleHand
             return;
         }
         if (status.error(target.moduleId()) != null || module != null && Boolean.FALSE.equals(module.reachable)) {
-            failed(target, "Indoor climate sensor is unreachable.");
+            failed(target, "@text/offline.comm-error.indoor-sensor.unreachable");
             return;
         }
         if (module == null) {
-            clearState();
-            updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Sensor is absent from the latest home status.");
+            missingStatus("@text/status.indoor-sensor.missing");
             return;
         }
         updateDiagnostics(module);
