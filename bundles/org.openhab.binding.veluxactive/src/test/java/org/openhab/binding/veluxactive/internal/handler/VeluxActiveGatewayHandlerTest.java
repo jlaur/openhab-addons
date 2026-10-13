@@ -29,6 +29,8 @@ import java.util.function.Consumer;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
@@ -38,6 +40,7 @@ import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
+import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.ThingStatusInfo;
 import org.openhab.core.thing.ThingUID;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
@@ -114,9 +117,9 @@ class VeluxActiveGatewayHandlerTest {
     }
 
     @Test
-    void missingGatewayIsUnknownNotUnlocked() {
+    void missingGatewayBeforeFirstStatusIsOfflineNotUnlocked() {
         update("{\"home\":{\"id\":\"home\",\"modules\":[]}}");
-        assertThat(thing.getStatus(), is(ThingStatus.UNKNOWN));
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
         assertThat(states.get(CHANNEL_LOCKED), is(UnDefType.UNDEF));
     }
 
@@ -190,6 +193,60 @@ class VeluxActiveGatewayHandlerTest {
         handler.discover(results::addAll);
         assertThat(results.size(), is(1));
         assertThat(results.getFirst().moduleId(), is("sensor"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ThingStatus.class, names = { "UNKNOWN", "ONLINE", "OFFLINE" })
+    void missingModuleDoesNotResetConnectivityAndRecovers(ThingStatus initialStatus) {
+        if (initialStatus != ThingStatus.UNKNOWN) {
+            update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"reachable\":true}]}}");
+            if (initialStatus == ThingStatus.OFFLINE) {
+                handler.failed(requireNonNull(handler.captureRequestContext()), "failure");
+            }
+        }
+        assertThat(thing.getStatus(), is(initialStatus));
+        update("{\"home\":{\"modules\":[]}}");
+        assertThat(thing.getStatus(),
+                is(initialStatus == ThingStatus.ONLINE ? ThingStatus.ONLINE : ThingStatus.OFFLINE));
+        assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
+        update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"reachable\":true}]}}");
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        assertThat(thing.getStatusInfo().getDescription(), is((String) null));
+    }
+
+    @Test
+    void bridgeRecoveryWaitsForStatusWithoutReturningToUnknown() {
+        update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"reachable\":true}]}}");
+        handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        when(bridge.getStatus()).thenReturn(ThingStatus.OFFLINE);
+        handler.bridgeStatusChanged(
+                new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, null));
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        assertThat(thing.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.BRIDGE_OFFLINE));
+        when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
+        handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"reachable\":true}]}}");
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+    }
+
+    @Test
+    void homeChangesPreserveOnlineButUnresolvedHomeRequiresStatusRecovery() {
+        update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"locked\":true}]}}");
+        when(account.homeId("gateway")).thenReturn("other-home");
+        handler.homeResolved(true);
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
+        assertThat(states.get(CHANNEL_LOCKED), is(UnDefType.UNDEF));
+        when(account.homeId("gateway")).thenReturn("");
+        handler.homeResolved(true);
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        assertThat(thing.getStatusInfo().getDescription(), is("@text/offline.comm-error.gateway.home-unresolved"));
+        when(account.homeId("gateway")).thenReturn("other-home");
+        handler.homeResolved(true);
+        assertThat(thing.getStatus(), is(ThingStatus.OFFLINE));
+        update("{\"home\":{\"modules\":[{\"id\":\"gateway\",\"locked\":false}]}}");
+        assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
     }
 
     private void update(String json) {

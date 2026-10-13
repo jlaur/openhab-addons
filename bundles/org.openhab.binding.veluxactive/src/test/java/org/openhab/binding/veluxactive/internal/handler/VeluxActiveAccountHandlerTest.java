@@ -309,7 +309,7 @@ class VeluxActiveAccountHandlerTest {
         when(api.homeStatus("access", "home")).thenThrow(new ApiException("Unavailable")).thenReturn(response);
         handler.initialize();
         executor.runAll();
-        verify(gateway).failed(any(), eq("Unavailable"));
+        verify(gateway).failed(any(), eq("@text/offline.comm-error.module.status-error"));
         handler.requestPoll();
         handler.requestPoll();
         executor.runAll();
@@ -382,7 +382,7 @@ class VeluxActiveAccountHandlerTest {
         handler.lock(target);
         executor.runAll();
         verify(gateway, never()).lockAccepted(any());
-        verify(gateway).failed(target, "Rejected");
+        verify(gateway).failed(target, "@text/offline.comm-error.module.command-error");
     }
 
     @Test
@@ -491,7 +491,7 @@ class VeluxActiveAccountHandlerTest {
                 "gateway", 30, "Europe/Copenhagen");
         handler.setPosition(target, "gateway", 30);
         executor.runAll();
-        verify(opening).failed(target, "Rejected");
+        verify(opening).failed(target, "@text/offline.comm-error.module.command-error");
         verify(opening, never()).positionAccepted(any(), anyInt());
         verify(client).refreshToken();
         clearInvocations(opening);
@@ -588,7 +588,7 @@ class VeluxActiveAccountHandlerTest {
         executor.runAll();
         assertThat(handler.homeId("gateway"), is(""));
         assertThat(gateway.getThing().getProperties().get("homeId"), nullValue());
-        assertThat(gateway.getThing().getStatus(), is(ThingStatus.UNKNOWN));
+        assertThat(gateway.getThing().getStatus(), is(ThingStatus.OFFLINE));
         handler.requestPoll();
         executor.runAll();
         assertThat(handler.homeId("gateway"), is("second"));
