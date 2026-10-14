@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.openhab.addons.bundles</groupId>
+    <artifactId>org.openhab.addons.reactor.bundles</artifactId>
+    <version>5.3.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>org.openhab.binding.danfosslink</artifactId>
+
+  <name>openHAB Add-ons :: Bundles :: Danfoss Link Binding</name>
+
+  <properties>
+    <!-- Keep the embedded cryptography implementation private to this binding. -->
+    <bnd.importpackage>!org.bouncycastle.*,*</bnd.importpackage>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bctls-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcutil-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>embed-dependencies</id>
+            <configuration>
+              <!-- Original dependency signatures do not authenticate the repackaged binding. -->
+              <excludes>**/module-info.class,META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA</excludes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

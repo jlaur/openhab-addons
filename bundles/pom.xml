@@ -120,6 +120,7 @@
     <module>org.openhab.binding.daikin</module>
     <module>org.openhab.binding.dali</module>
     <module>org.openhab.binding.danfossairunit</module>
+    <module>org.openhab.binding.danfosslink</module>
     <module>org.openhab.binding.dbquery</module>
     <module>org.openhab.binding.ddwrt</module>
     <module>org.openhab.binding.deconz</module>
