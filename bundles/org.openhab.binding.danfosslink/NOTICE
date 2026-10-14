@@ -1,0 +1,20 @@
+This content is produced and maintained by the openHAB project.
+
+* Project home: https://www.openhab.org
+
+== Declared Project Licenses
+
+This program and the accompanying materials are made available under the terms
+of the Eclipse Public License 2.0 which is available at
+https://www.eclipse.org/legal/epl-2.0/.
+
+== Source Code
+
+https://github.com/openhab/openhab-addons
+
+== Bundled Public Trust Anchor
+
+src/main/resources/certificates/mdg-ca.pem contains the public MDG CA certificate
+distributed in the Danfoss Link Android application, version 1.3.10.
+It is used to authenticate the application's cloud control service.
+It contains no private key or controller-specific pairing material.
