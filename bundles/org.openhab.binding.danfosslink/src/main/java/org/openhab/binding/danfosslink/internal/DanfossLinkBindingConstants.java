@@ -21,15 +21,24 @@ import org.openhab.core.thing.ThingTypeUID;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class DanfossLinkBindingConstants {
-    static final String BINDING_ID = "danfosslink";
-    static final ThingTypeUID CONTROLLER = new ThingTypeUID(BINDING_ID, "controller");
-    static final ThingTypeUID ROOM = new ThingTypeUID(BINDING_ID, "room");
-    static final String TEMPERATURE = "temperature";
-    static final String SETPOINT = "setpoint";
-    static final String REGULATION_STATE = "regulation-state";
-    static final String ROOM_ID = "roomId";
+public final class DanfossLinkBindingConstants {
+    public static final String BINDING_ID = "danfosslink";
 
-    private DanfossLinkBindingConstants() {
-    }
+    public static final ThingTypeUID THING_TYPE_CONTROLLER = new ThingTypeUID(BINDING_ID, "controller");
+    public static final ThingTypeUID THING_TYPE_LIVING_ZONE = new ThingTypeUID(BINDING_ID, "living-zone");
+    public static final ThingTypeUID THING_TYPE_ROOM = new ThingTypeUID(BINDING_ID, "room");
+
+    public static final String CHANNEL_TEMPERATURE = "temperature";
+    public static final String CHANNEL_SETPOINT = "setpoint";
+    public static final String CHANNEL_HOME_SETPOINT = "home-setpoint";
+    public static final String CHANNEL_AWAY_SETPOINT = "away-setpoint";
+    public static final String CHANNEL_MANUAL_SETPOINT = "manual-setpoint";
+    public static final String CHANNEL_MANUAL = "manual";
+    public static final String CHANNEL_LIVING_ZONE = "living-zone";
+    public static final String CHANNEL_REGULATION_STATE = "regulation-state";
+
+    public static final String PARAMETER_ROOM_ID = "roomId";
+
+    /** App name shown on the Link CC Controller after pairing */
+    public static final String APP_NAME = "openHAB";
 }

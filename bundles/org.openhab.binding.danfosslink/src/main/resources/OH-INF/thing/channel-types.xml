@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<thing:thing-descriptions bindingId="danfosslink"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:thing="https://openhab.org/schemas/thing-description/v1.0.0"
+	xsi:schemaLocation="https://openhab.org/schemas/thing-description/v1.0.0 https://openhab.org/schemas/thing-description-1.0.0.xsd">
+
+	<channel-type id="temperature">
+		<item-type>Number:Temperature</item-type>
+		<label>Temperature</label>
+		<description>Measured room temperature</description>
+		<category>Temperature</category>
+		<tags>
+			<tag>Measurement</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state readOnly="true" pattern="%.1f %unit%"/>
+	</channel-type>
+
+	<channel-type id="setpoint">
+		<item-type>Number:Temperature</item-type>
+		<label>Setpoint</label>
+		<description>Requested room temperature</description>
+		<category>Temperature</category>
+		<tags>
+			<tag>Setpoint</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state step="0.5" pattern="%.1f %unit%"/>
+	</channel-type>
+
+	<channel-type id="regulation-state">
+		<item-type>String</item-type>
+		<label>Regulation State</label>
+		<description>Regulation state reported by the controller</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="home-setpoint">
+		<item-type>Number:Temperature</item-type>
+		<label>Home Setpoint</label>
+		<description>Persistent temperature used during Home periods</description>
+		<category>Temperature</category>
+		<tags>
+			<tag>Setpoint</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state step="0.5" pattern="%.1f %unit%"/>
+	</channel-type>
+
+	<channel-type id="away-setpoint">
+		<item-type>Number:Temperature</item-type>
+		<label>Away/Sleeping Setpoint</label>
+		<description>Persistent temperature used during Away and Sleeping periods</description>
+		<category>Temperature</category>
+		<tags>
+			<tag>Setpoint</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state step="0.5" pattern="%.1f %unit%"/>
+	</channel-type>
+
+	<channel-type id="manual-setpoint">
+		<item-type>Number:Temperature</item-type>
+		<label>Manual Setpoint</label>
+		<description>Persistent temperature used in manual mode</description>
+		<category>Temperature</category>
+		<tags>
+			<tag>Setpoint</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state step="0.5" pattern="%.1f %unit%"/>
+	</channel-type>
+
+	<channel-type id="manual">
+		<item-type>Switch</item-type>
+		<label>Manual Mode</label>
+		<description>Enable manual temperature or resume the schedule. For Living-zone rooms, this changes the entire Living
+			zone.</description>
+	</channel-type>
+
+	<channel-type id="living-zone">
+		<item-type>Switch</item-type>
+		<label>Living Zone</label>
+		<description>Include the room in the shared Living zone (ON), or make it independent (OFF)</description>
+	</channel-type>
+
+	<channel-type id="zone-manual">
+		<item-type>Switch</item-type>
+		<label>Manual Mode</label>
+		<description>Enable manual operation for the Living zone (ON), or resume its schedule (OFF)</description>
+	</channel-type>
+
+</thing:thing-descriptions>
