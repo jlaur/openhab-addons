@@ -49,9 +49,9 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class Identity {
+public final class Identity {
     static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
-    final X509CertificateHolder certificate;
+    public final X509CertificateHolder certificate;
     final AsymmetricKeyParameter privateKey;
 
     Identity(X509CertificateHolder certificate, AsymmetricKeyParameter privateKey) {
@@ -59,7 +59,7 @@ final class Identity {
         this.privateKey = privateKey;
     }
 
-    static Identity generate() throws Exception {
+    public static Identity generate() throws Exception {
         var generator = KeyPairGenerator.getInstance("EC", PROVIDER);
         generator.initialize(new ECGenParameterSpec("secp256r1"));
         var pair = generator.generateKeyPair();

@@ -21,6 +21,8 @@ import java.util.concurrent.Future;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.core.common.ThreadPoolManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -32,13 +34,14 @@ import com.google.gson.JsonParser;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class CloudClient implements AutoCloseable {
+public final class CloudClient implements AutoCloseable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(CloudClient.class);
     private static final ExecutorService CONTROL = ThreadPoolManager.getPool("binding-danfosslink-control");
     private final Operation operation;
     private final Grid grid;
     private int requestId;
 
-    CloudClient(Identity identity, Operation operation) throws Exception {
+    public CloudClient(Identity identity, Operation operation) throws Exception {
         this.operation = operation;
         try (var resource = CloudClient.class.getResourceAsStream("/certificates/mdg-ca.pem")) {
             if (resource == null) {
@@ -48,11 +51,11 @@ final class CloudClient implements AutoCloseable {
         }
     }
 
-    X509CertificateHolder pair(String pin) throws Exception {
+    public X509CertificateHolder pair(String pin) throws Exception {
         return grid.pair(pin);
     }
 
-    Session open(X509CertificateHolder controller) throws Exception {
+    public Session open(X509CertificateHolder controller) throws Exception {
         Transport peer = grid.call(controller);
         Future<?> maintenance = CONTROL.submit(() -> {
             try {
@@ -69,26 +72,21 @@ final class CloudClient implements AutoCloseable {
         operation.close();
     }
 
-    final class Session implements AutoCloseable {
+    public final class Session implements AutoCloseable {
         private final Transport peer;
         private final Future<?> maintenance;
 
-        Session(Transport peer, Future<?> maintenance) {
+        public Session(Transport peer, Future<?> maintenance) {
             this.peer = peer;
             this.maintenance = maintenance;
         }
 
-        WorldState world() throws IOException {
+        public WorldState world() throws IOException {
             return WorldState.parse(request("GET", "/api/world", new JsonObject()).getAsJsonObject());
         }
 
-        void setpoint(int roomId, java.math.BigDecimal value) throws IOException {
-            JsonObject setpoint = new JsonObject();
-            setpoint.addProperty("temperature", value);
-            JsonObject body = new JsonObject();
-            body.addProperty("id", roomId);
-            body.add("setpoint", setpoint);
-            request("PATCH", "/api/rooms/" + roomId, body);
+        public void apply(WorldState.Patch patch) throws IOException {
+            request("PATCH", patch.uri(), patch.body());
         }
 
         private JsonElement request(String method, String uri, JsonObject content) throws IOException {
@@ -109,7 +107,12 @@ final class CloudClient implements AutoCloseable {
             JsonObject envelope = new JsonObject();
             envelope.addProperty("id", id);
             envelope.add("data", data);
+            LOGGER.trace("Controller request {}: {} {}", id, method, uri);
+            if ("PATCH".equals(method)) {
+                LOGGER.trace("Controller request {} patch: {}", id, content);
+            }
             peer.send(envelope.toString().getBytes(StandardCharsets.UTF_8));
+            LOGGER.trace("Controller request {} sent; waiting for response", id);
             return response(peer.receive(), id);
         }
 
@@ -120,7 +123,23 @@ final class CloudClient implements AutoCloseable {
         }
     }
 
+    public static final class ControllerResponseException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        private final int status;
+
+        public ControllerResponseException(int status) {
+            super("Controller returned HTTP status " + status);
+            this.status = status;
+        }
+
+        public int status() {
+            return status;
+        }
+    }
+
     static JsonElement response(byte[] bytes, int id) throws IOException {
+        LOGGER.trace("Controller response for request {}: {} bytes", id, bytes.length);
         try {
             String json = new String(bytes, StandardCharsets.UTF_8);
             // The controller's cc_json encoder emits an omitted value on empty write responses.
@@ -128,19 +147,25 @@ final class CloudClient implements AutoCloseable {
             json = json.replace("\"content\":}}", "\"content\":null}}");
             JsonObject envelope = JsonParser.parseString(json).getAsJsonObject();
             if (envelope.get("id").getAsInt() != id) {
+                LOGGER.debug("Controller response ID {} does not match request {}", envelope.get("id").getAsInt(), id);
                 throw new IOException("Mismatched controller response ID");
             }
             JsonObject data = envelope.getAsJsonObject("data");
             if (!"JsonWebResponse".equals(data.get("type").getAsString())) {
+                LOGGER.debug("Controller request {} received an unexpected response type", id);
                 throw new IOException("Unexpected controller response type");
             }
             JsonObject response = data.getAsJsonObject("data");
             int status = response.get("status").getAsInt();
+            LOGGER.trace("Controller response {}: HTTP {}", id, status);
             if (status < 200 || status >= 300) {
-                throw new IOException("Controller returned HTTP status " + status);
+                LOGGER.debug("Controller rejected request {} with HTTP {}", id, status);
+                throw new ControllerResponseException(status);
             }
             return Objects.requireNonNull(response.get("content"));
         } catch (RuntimeException e) {
+            LOGGER.debug("Cannot parse controller response for request {} ({}; {} bytes)", id,
+                    e.getClass().getSimpleName(), bytes.length);
             throw new IOException("Malformed controller response", e);
         }
     }

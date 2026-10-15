@@ -8,9 +8,11 @@ The implementation is based on the reverse-engineered Android app protocol and h
 
 - `controller`: Bridge representing a paired Danfoss Link CC.
 - `room`: A room belonging to that Bridge.
+- `living-zone`: The controller's built-in Living zone, also a child of the Bridge.
 
 Create a controller Bridge manually, then pair it.
-Rooms are discovered after the first successful refresh and on subsequent refreshes.
+Rooms and the Living zone are discovered after the first successful refresh and on subsequent refreshes.
+The Living-zone Thing needs no configuration parameters.
 
 ## Pairing
 
@@ -51,8 +53,14 @@ The Bridge exposes the controller's serial number and firmware version as Thing 
 | Thing | Channel | Item Type | Access | Description |
 | --- | --- | --- | --- | --- |
 | room | temperature | Number:Temperature | Read | Measured room temperature |
-| room | setpoint | Number:Temperature | Read/Write | Requested room temperature |
+| room | setpoint | Number:Temperature | Read/Write | Current target temperature; temporary override during scheduled operation |
+| room | home-setpoint | Number:Temperature | Read/Write | Persistent temperature for Home periods |
+| room | away-setpoint | Number:Temperature | Read/Write | Persistent temperature for Away/Sleeping periods |
+| room | manual-setpoint | Number:Temperature | Read/Write | Persistent temperature for manual operation |
+| room | manual | Switch | Read/Write | ON selects manual operation; OFF resumes the schedule |
+| room | living-zone | Switch | Read/Write | ON includes the room in the Living zone; OFF makes it independent |
 | room | regulation-state | String | Read | Controller's regulation state |
+| living-zone | manual | Switch | Read/Write | ON selects manual operation for the Living zone; OFF resumes its schedule |
 
 Temperature states use the controller's reported temperature scale.
 The observed protocol value is `Celcius`.
@@ -62,15 +70,66 @@ Missing temperatures or unknown scales produce `UNDEF`, not zero.
 Setpoint commands with units are converted to the controller's scale.
 Unitless numeric commands use that scale directly.
 Commands outside the room's reported minimum and maximum, commands with incompatible units, or commands without known room limits are rejected.
+The four setpoint channels also expose these room-specific limits as dynamic state-description minimum and maximum values.
+Their display pattern uses the controller's temperature unit so the bounds and displayed values use the same scale.
+The bounds are refreshed when the controller reports changes; no step size is inferred from them.
 The binding reads the controller again after a write to publish its reported state.
 It does not automatically replay a failed write because the controller may already have applied it.
-The controller's own schedules and modes may subsequently change the setpoint.
+The controller's own schedules and modes may subsequently change the current setpoint.
+The three persistent setpoints are separate settings; writing one does not change the operating mode.
+The controller may adjust related values, for example lowering Away/Sleeping when Home is lowered below it.
+Reported values are refreshed after writes.
+
+The manual switch follows the app's behaviour: for an independent room it changes only that room, but for a room in the Living zone it changes manual/scheduled operation for the entire Living zone.
+The binding refreshes all rooms afterwards.
+An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
+Manual commands are rejected when zone membership is unknown.
+
+The `living-zone` switch changes membership of the controller's shared Living zone.
+Rooms in that zone share its schedule and manual/scheduled mode.
+Missing or unrecognized membership is reported as `UNDEF`.
+After a membership change, the binding reads the controller again before sending subsequent commands, including manual-mode changes.
+The switch does not create an openHAB Thing or change the room Thing's parent Bridge.
+
+### Living Zone
+
+The `living-zone` Thing controls the shared Living zone without selecting a representative room.
+Its `manual` switch uses the same zone command as the manual switch of a member room.
+ON selects manual operation; OFF selects automatic operation following the zone's schedule.
+Each room keeps its own temperature setpoints.
+Room membership is managed through the `living-zone` switch on each room Thing.
+
+The controller's world response reports regulation on the member rooms rather than a separate zone object.
+The zone's manual state is therefore derived from its members: all must report Manual for ON or Schedule for OFF.
+An empty zone, conflicting member modes, or missing/unknown member modes produce `UNDEF`.
+The Thing remains available when the zone is empty.
+
+The app's At Home override is a separate system-wide mode with its own selected-room list and timing.
+It is not the Living zone's manual/automatic setting and is not exposed by this Thing.
+Schedule editing is not yet implemented.
+
+### Regulation State
+
+The `regulation-state` channel publishes the controller's value unchanged.
+The Android app defines the following values; other firmware versions may report additional values.
+
+| Value | Meaning |
+| --- | --- |
+| `Heating` | Heating demand. The app displays its heating indicator only for this value. |
+| `Deadband` | Idle/no heating or cooling demand. Also observed during Pause. |
+| `Cooling` | Cooling state. This does not establish that an installation supports active cooling. |
+| `ForecastHeating` | Apparently predictive/preheating operation; its precise meaning has not been verified. |
+| `Invalid` | The app's fallback for missing or unrecognized values; not necessarily a value sent by the controller. |
+
+The binding publishes `UNDEF` when the value is missing or the room/controller is unavailable.
+It does not replace unrecognized values with `Invalid`.
 
 ## Example
 
 ```java
 Bridge danfosslink:controller:home "Danfoss Link" [ refreshInterval=60 ] {
     Thing room living "Living Room" [ roomId=0 ]
+    Thing living-zone living "Living Zone"
 }
 ```
 
@@ -78,6 +137,7 @@ Bridge danfosslink:controller:home "Danfoss Link" [ refreshInterval=60 ] {
 Number:Temperature LivingTemperature "Temperature [%.1f %unit%]" { channel="danfosslink:room:home:living:temperature" }
 Number:Temperature LivingSetpoint "Setpoint [%.1f %unit%]" { channel="danfosslink:room:home:living:setpoint" }
 String LivingRegulation "Regulation [%s]" { channel="danfosslink:room:home:living:regulation-state" }
+Switch LivingZoneManual "Living Zone Manual" { channel="danfosslink:living-zone:home:living:manual" }
 ```
 
 ## Transport and Certificates
@@ -94,3 +154,24 @@ The binding keeps this compatibility handling local rather than changing global 
 
 Cloud service availability and future protocol compatibility are outside the binding's control.
 Communication failures mark the Bridge offline; polling retries automatically.
+
+## Troubleshooting Commands
+
+To trace a command, enable binding logging in the openHAB console:
+
+```text
+log:set TRACE org.openhab.binding.danfosslink
+```
+
+Send the command once and inspect `openhab.log`.
+The log records receipt at the room handler, queuing, the PATCH URI and body, response HTTP status, and the membership reported after a zone change.
+A failed operation identifies its stage; HTTP rejections also appear in the controller Bridge status.
+A rejection or communication failure makes the Bridge offline and room channel states undefined until communication recovers.
+Failed writes are not automatically replayed.
+
+The trace includes room IDs and control values, but does not log pairing PINs, credentials, or complete world responses.
+Restore the usual logging level after collecting the trace:
+
+```text
+log:set INFO org.openhab.binding.danfosslink
+```
