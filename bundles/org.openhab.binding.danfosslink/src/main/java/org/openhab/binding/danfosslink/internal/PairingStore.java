@@ -30,15 +30,15 @@ import com.google.gson.JsonParser;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class PairingStore {
+public final class PairingStore {
     private final Storage<String> storage;
     private final Gson gson = new Gson();
 
-    PairingStore(Storage<String> storage) {
+    public PairingStore(Storage<String> storage) {
         this.storage = storage;
     }
 
-    synchronized Credentials load(String uid) throws Exception {
+    public synchronized Credentials load(String uid) throws Exception {
         String value = storage.get(uid);
         if (value == null) {
             Identity identity = Identity.generate();
@@ -58,7 +58,7 @@ final class PairingStore {
         }
     }
 
-    synchronized void save(String uid, Credentials credentials) throws IOException {
+    public synchronized void save(String uid, Credentials credentials) throws IOException {
         var object = new JsonObject();
         object.addProperty("identity", credentials.identity.encode());
         X509CertificateHolder controller = credentials.controller;
@@ -68,11 +68,11 @@ final class PairingStore {
         storage.put(uid, gson.toJson(object));
     }
 
-    static final class Credentials {
-        final Identity identity;
-        final @Nullable X509CertificateHolder controller;
+    public static final class Credentials {
+        public final Identity identity;
+        public final @Nullable X509CertificateHolder controller;
 
-        Credentials(Identity identity, @Nullable X509CertificateHolder controller) {
+        public Credentials(Identity identity, @Nullable X509CertificateHolder controller) {
             this.identity = identity;
             this.controller = controller;
         }

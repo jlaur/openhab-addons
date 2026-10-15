@@ -10,10 +10,11 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.handler;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -22,6 +23,15 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.CloudClient;
+import org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants;
+import org.openhab.binding.danfosslink.internal.Identity;
+import org.openhab.binding.danfosslink.internal.Operation;
+import org.openhab.binding.danfosslink.internal.PairingStore;
+import org.openhab.binding.danfosslink.internal.WorldState;
+import org.openhab.binding.danfosslink.internal.action.PairingActions;
+import org.openhab.binding.danfosslink.internal.config.ControllerConfiguration;
+import org.openhab.binding.danfosslink.internal.discovery.RoomDiscoveryService;
 import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
@@ -47,25 +57,34 @@ public class ControllerHandler extends BaseBridgeHandler {
     private final ExecutorService worker = ThreadPoolManager.getPool("binding-danfosslink");
     private final PairingStore store;
     private final Object lifecycle = new Object();
-    private final Map<Integer, Command> commands = new HashMap<>();
+
+    private record CommandTarget(@Nullable Integer roomId, String channel) {
+        WorldState.Patch patch(WorldState snapshot, Command command) {
+            Integer id = roomId;
+            return id == null ? WorldState.livingZonePatch(channel, command) : snapshot.patch(id, channel, command);
+        }
+    }
+
+    private final Map<CommandTarget, Command> commands = new LinkedHashMap<>();
+
     private boolean running;
     private @Nullable Operation active;
     private @Nullable ScheduledFuture<?> polling;
     private @Nullable WorldState world;
     private @Nullable RoomDiscoveryService discovery;
 
-    ControllerHandler(Bridge bridge, PairingStore store) {
+    public ControllerHandler(Bridge bridge, PairingStore store) {
         super(bridge);
         this.store = store;
     }
 
     @Override
     public void initialize() {
-        dispose();
-        int interval = getConfigAs(DanfossLinkConfiguration.class).refreshInterval;
-        if (interval < 10) {
+        int interval = getConfigAs(ControllerConfiguration.class).refreshInterval;
+        if (interval < ControllerConfiguration.MINIMUM_REFRESH_INTERVAL) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Refresh interval must be at least 10 seconds");
+                    "Refresh interval must be at least " + ControllerConfiguration.MINIMUM_REFRESH_INTERVAL
+                            + " seconds");
             return;
         }
         synchronized (lifecycle) {
@@ -110,17 +129,23 @@ public class ControllerHandler extends BaseBridgeHandler {
 
     @Override
     public void childHandlerInitialized(ThingHandler child, Thing childThing) {
-        if (child instanceof RoomHandler room) {
-            synchronized (lifecycle) {
-                WorldState snapshot = world;
-                if (running && snapshot != null && getThing().getStatus() == ThingStatus.ONLINE) {
-                    room.publish(snapshot);
-                }
+        synchronized (lifecycle) {
+            WorldState snapshot = world;
+            if (running && snapshot != null && getThing().getStatus() == ThingStatus.ONLINE) {
+                publishChild(child, snapshot);
             }
         }
     }
 
-    void discovery(@Nullable RoomDiscoveryService service) {
+    private void publishChild(@Nullable ThingHandler child, WorldState snapshot) {
+        if (child instanceof RoomHandler room) {
+            room.publish(snapshot);
+        } else if (child instanceof LivingZoneHandler zone) {
+            zone.publish(snapshot);
+        }
+    }
+
+    public void discovery(@Nullable RoomDiscoveryService service) {
         synchronized (lifecycle) {
             discovery = service;
             WorldState snapshot = world;
@@ -130,7 +155,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         }
     }
 
-    String pair(String pin) {
+    public String pair(String pin) {
         if (!pin.matches("[0-9]{9}")) {
             return "Pairing code must contain exactly nine digits.";
         }
@@ -152,33 +177,47 @@ public class ControllerHandler extends BaseBridgeHandler {
         return "Pairing started. Check the controller Thing status for the result.";
     }
 
-    void refresh() {
+    public void refresh() {
         synchronized (lifecycle) {
             if (!running || active != null) {
                 return;
             }
             Operation operation = new Operation();
             active = operation;
-            Map<Integer, Command> pending = Map.copyOf(commands);
+            Map<CommandTarget, Command> pending = new LinkedHashMap<>(commands);
             commands.clear();
             worker.execute(() -> run(operation, null, pending));
         }
     }
 
-    void setpoint(int roomId, Command command) {
+    void roomCommand(int roomId, String channel, Command command) {
+        queueCommand(new CommandTarget(roomId, channel), command);
+    }
+
+    void livingZoneCommand(String channel, Command command) {
+        queueCommand(new CommandTarget(null, channel), command);
+    }
+
+    private void queueCommand(CommandTarget target, Command command) {
         synchronized (lifecycle) {
             WorldState snapshot = world;
-            if (!running || snapshot == null || !snapshot.rooms().containsKey(roomId)) {
+            if (!running || snapshot == null) {
+                logger.debug("Ignoring command for {}: running={}, controller snapshot available={}", target, running,
+                        snapshot != null);
                 return;
             }
             try {
-                snapshot.command(roomId, command);
+                target.patch(snapshot, command);
             } catch (IllegalArgumentException e) {
-                logger.debug("Ignoring invalid setpoint for room {}: {}", roomId, e.getMessage());
+                logger.debug("Ignoring invalid command for {}: {}", target, e.getMessage());
                 return;
             }
-            // One pending value per discovered room bounds the queue and coalesces rapid UI changes.
-            commands.put(roomId, command);
+            // Coalesce each channel independently, keeping the order of the latest commands.
+            var key = target;
+            commands.remove(key);
+            commands.put(key, command);
+            logger.trace("Controller {} queued {} for {}; operation active={}", getThing().getUID(), command, target,
+                    active != null);
         }
         refresh();
     }
@@ -187,8 +226,9 @@ public class ControllerHandler extends BaseBridgeHandler {
         return new CloudClient(identity, operation);
     }
 
-    private void run(Operation operation, @Nullable String pin, Map<Integer, Command> pending) {
+    private void run(Operation operation, @Nullable String pin, Map<CommandTarget, Command> pending) {
         boolean paired = false;
+        String stage = "loading pairing";
         try (operation) {
             operation.check();
             PairingStore.Credentials credentials = store.load(getThing().getUID().toString());
@@ -202,8 +242,12 @@ public class ControllerHandler extends BaseBridgeHandler {
                 }
                 return;
             }
+            stage = "connecting to cloud";
+            logger.trace("Controller {} starting operation with {} pending commands", getThing().getUID(),
+                    pending.size());
             try (var client = connect(credentials.identity, operation)) {
                 if (pin != null) {
+                    stage = "pairing";
                     controller = client.pair(pin);
                     synchronized (lifecycle) {
                         if (!current(operation)) {
@@ -214,17 +258,39 @@ public class ControllerHandler extends BaseBridgeHandler {
                     }
                     paired = true;
                 } else if (controller != null) {
+                    stage = "opening controller session";
                     try (var session = client.open(controller)) {
+                        stage = "reading controller state";
                         WorldState snapshot = session.world();
+                        boolean refreshRequired = false;
                         for (var entry : pending.entrySet()) {
                             operation.check();
                             try {
-                                session.setpoint(entry.getKey(), snapshot.command(entry.getKey(), entry.getValue()));
+                                var key = entry.getKey();
+                                var patch = key.patch(snapshot, entry.getValue());
+                                stage = "writing " + patch.uri();
+                                logger.trace("Controller {} applying {} for {}", getThing().getUID(), entry.getValue(),
+                                        key);
+                                session.apply(patch);
+                                refreshRequired = true;
+                                if (DanfossLinkBindingConstants.CHANNEL_LIVING_ZONE.equals(key.channel())) {
+                                    // Later manual commands must use the confirmed membership for their scope.
+                                    stage = "reading back zone membership";
+                                    snapshot = session.world();
+                                    Integer roomId = key.roomId();
+                                    var room = roomId == null ? null : snapshot.rooms().get(roomId);
+                                    String actual = room == null ? null : room.zone();
+                                    String expected = patch.body().get("zone").getAsString();
+                                    logger.debug("Controller {} room {} membership readback: requested={}, reported={}",
+                                            getThing().getUID(), roomId, expected, actual);
+                                    refreshRequired = false;
+                                }
                             } catch (IllegalArgumentException e) {
-                                logger.debug("Ignoring setpoint after updated room limits: {}", e.getMessage());
+                                logger.debug("Ignoring command after updated room configuration: {}", e.getMessage());
                             }
                         }
-                        if (!pending.isEmpty()) {
+                        if (refreshRequired) {
+                            stage = "reading back controller state";
                             snapshot = session.world();
                         }
                         publish(operation, snapshot);
@@ -234,9 +300,13 @@ public class ControllerHandler extends BaseBridgeHandler {
         } catch (Exception e) {
             synchronized (lifecycle) {
                 if (current(operation)) {
-                    logger.debug("Danfoss Link operation failed ({})", e.getClass().getSimpleName());
+                    logger.debug("Controller {} operation failed during {} ({})", getThing().getUID(), stage,
+                            e.getClass().getSimpleName());
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                            pin == null ? "Cloud communication failed; will retry"
+                            pin == null
+                                    ? e instanceof CloudClient.ControllerResponseException rejection
+                                            ? "Controller returned HTTP " + rejection.status() + " while " + stage
+                                            : "Cloud communication failed while " + stage + "; will retry"
                                     : "Pairing failed; obtain a fresh code and retry the pair action");
                 }
             }
@@ -277,9 +347,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             updateProperties(properties);
             updateStatus(ThingStatus.ONLINE);
             for (Thing child : getThing().getThings()) {
-                if (child.getHandler() instanceof RoomHandler room) {
-                    room.publish(snapshot);
-                }
+                publishChild(child.getHandler(), snapshot);
             }
             RoomDiscoveryService service = discovery;
             if (service != null) {

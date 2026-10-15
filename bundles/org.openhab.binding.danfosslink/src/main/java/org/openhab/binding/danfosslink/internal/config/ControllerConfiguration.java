@@ -10,16 +10,18 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.config;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 
 /**
- * Controller polling configuration.
+ * Danfoss Link CC Controller configuration.
  *
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class DanfossLinkConfiguration {
+public class ControllerConfiguration {
+    public static final int MINIMUM_REFRESH_INTERVAL = 10;
+
     public int refreshInterval = 60;
 }

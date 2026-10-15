@@ -10,12 +10,15 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.discovery;
 
 import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants;
+import org.openhab.binding.danfosslink.internal.WorldState;
+import org.openhab.binding.danfosslink.internal.handler.ControllerHandler;
 import org.openhab.core.config.discovery.AbstractDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
 import org.openhab.core.thing.ThingUID;
@@ -23,7 +26,7 @@ import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerService;
 
 /**
- * Discovers stable room identifiers under their paired controller Bridge.
+ * Discovers rooms and the built-in Living zone under their paired controller Bridge.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -33,7 +36,8 @@ public class RoomDiscoveryService extends AbstractDiscoveryService implements Th
     private volatile @Nullable ControllerHandler handler;
 
     public RoomDiscoveryService() {
-        super(Set.of(DanfossLinkBindingConstants.ROOM), 90, false);
+        super(Set.of(DanfossLinkBindingConstants.THING_TYPE_ROOM, DanfossLinkBindingConstants.THING_TYPE_LIVING_ZONE),
+                90, false);
     }
 
     @Override
@@ -57,18 +61,22 @@ public class RoomDiscoveryService extends AbstractDiscoveryService implements Th
         }
     }
 
-    void publish(WorldState snapshot) {
+    public void publish(WorldState snapshot) {
         ControllerHandler controller = handler;
         if (controller == null) {
             return;
         }
         ThingUID bridge = controller.getThing().getUID();
+        thingDiscovered(DiscoveryResultBuilder
+                .create(new ThingUID(DanfossLinkBindingConstants.THING_TYPE_LIVING_ZONE, bridge, "living"))
+                .withBridge(bridge).withLabel("Living Zone").build());
         for (WorldState.Room room : snapshot.rooms().values()) {
             thingDiscovered(DiscoveryResultBuilder
-                    .create(new ThingUID(DanfossLinkBindingConstants.ROOM, bridge, Integer.toString(room.id())))
+                    .create(new ThingUID(DanfossLinkBindingConstants.THING_TYPE_ROOM, bridge,
+                            Integer.toString(room.id())))
                     .withBridge(bridge).withLabel(room.name())
-                    .withProperty(DanfossLinkBindingConstants.ROOM_ID, room.id())
-                    .withRepresentationProperty(DanfossLinkBindingConstants.ROOM_ID).build());
+                    .withProperty(DanfossLinkBindingConstants.PARAMETER_ROOM_ID, room.id())
+                    .withRepresentationProperty(DanfossLinkBindingConstants.PARAMETER_ROOM_ID).build());
         }
     }
 

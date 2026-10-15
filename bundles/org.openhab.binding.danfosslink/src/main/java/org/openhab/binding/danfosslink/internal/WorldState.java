@@ -12,6 +12,8 @@
  */
 package org.openhab.binding.danfosslink.internal;
 
+import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
+
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -23,10 +25,13 @@ import javax.measure.quantity.Temperature;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.core.library.types.DecimalType;
+import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.unit.ImperialUnits;
 import org.openhab.core.library.unit.SIUnits;
 import org.openhab.core.types.Command;
+import org.openhab.core.types.State;
+import org.openhab.core.types.UnDefType;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -37,13 +42,15 @@ import com.google.gson.JsonObject;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String serialNumber,
+public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String serialNumber,
         @Nullable String firmware) {
-    record Room(int id, String name, @Nullable BigDecimal temperature, @Nullable BigDecimal setpoint,
-            @Nullable BigDecimal minimum, @Nullable BigDecimal maximum, @Nullable String regulationState) {
+    public record Room(int id, String name, @Nullable BigDecimal temperature, @Nullable BigDecimal setpoint,
+            @Nullable BigDecimal minimum, @Nullable BigDecimal maximum, @Nullable String regulationState,
+            @Nullable BigDecimal homeSetpoint, @Nullable BigDecimal awaySetpoint, @Nullable BigDecimal manualSetpoint,
+            @Nullable String regulationType, @Nullable String zone) {
     }
 
-    static WorldState parse(JsonObject world) throws IOException {
+    public static WorldState parse(JsonObject world) throws IOException {
         try {
             Unit<Temperature> unit = null;
             JsonObject settings = world.getAsJsonObject("temperatureSettings");
@@ -66,13 +73,18 @@ record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @N
                 }
                 String name = text(room, "name");
                 JsonObject setpoint = room.getAsJsonObject("setpoint");
+                JsonObject regulation = room.getAsJsonObject("regulation");
                 BigDecimal temperature = decimal(room, "ambientTemperature");
                 if (room.has("hasTemperatureSensor") && !room.get("hasTemperatureSensor").getAsBoolean()) {
                     temperature = null;
                 }
                 rooms.put(id, new Room(id, name == null ? "Room " + id : name, temperature,
                         setpoint == null ? null : decimal(setpoint, "temperature"), decimal(room, "minSetpoint"),
-                        decimal(room, "maxSetpoint"), text(room, "regulationState")));
+                        decimal(room, "maxSetpoint"), text(room, "regulationState"),
+                        regulation == null ? null : decimal(regulation, "atHomeSetpoint"),
+                        regulation == null ? null : decimal(regulation, "awaySetpoint"),
+                        regulation == null ? null : decimal(regulation, "manualSetpoint"),
+                        regulation == null ? null : text(regulation, "type"), text(room, "zone")));
             }
             JsonObject info = world.getAsJsonObject("systemInfo");
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : text(info, "serialNo"),
@@ -80,6 +92,74 @@ record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @N
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
+    }
+
+    public record Patch(String uri, JsonObject body) {
+    }
+
+    public Patch patch(int roomId, String channel, Command command) {
+        Room room = rooms.get(roomId);
+        if (room == null) {
+            throw new IllegalArgumentException("Room unavailable");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("id", roomId);
+        JsonObject values = new JsonObject();
+        if (CHANNEL_LIVING_ZONE.equals(channel)) {
+            if (!(command instanceof OnOffType onOff)) {
+                throw new IllegalArgumentException("Living zone membership requires ON or OFF");
+            }
+            body.addProperty("zone", onOff == OnOffType.ON ? "Living" : "None");
+        } else if (CHANNEL_MANUAL.equals(channel)) {
+            if (!(command instanceof OnOffType onOff)) {
+                throw new IllegalArgumentException("Manual mode requires ON or OFF");
+            }
+            String type = onOff == OnOffType.ON ? "Manual" : "Schedule";
+            if ("Living".equals(room.zone())) {
+                return livingZonePatch(channel, command);
+            }
+            if (!"None".equals(room.zone())) {
+                throw new IllegalArgumentException("Room zone unavailable or unknown");
+            }
+            values.addProperty("type", type);
+            body.add("regulation", values);
+        } else {
+            String field = switch (channel) {
+                case CHANNEL_SETPOINT -> "temperature";
+                case CHANNEL_HOME_SETPOINT -> "atHomeSetpoint";
+                case CHANNEL_AWAY_SETPOINT -> "awaySetpoint";
+                case CHANNEL_MANUAL_SETPOINT -> "manualSetpoint";
+                default -> throw new IllegalArgumentException("Unsupported room channel");
+            };
+            values.addProperty(field, command(roomId, command));
+            body.add(CHANNEL_SETPOINT.equals(channel) ? "setpoint" : "regulation", values);
+        }
+        return new Patch("/api/rooms/" + roomId, body);
+    }
+
+    public State livingZoneManualState() {
+        String type = null;
+        for (Room room : rooms.values()) {
+            if ("Living".equals(room.zone())) {
+                String memberType = room.regulationType();
+                if ((!"Manual".equals(memberType) && !"Schedule".equals(memberType))
+                        || (type != null && !type.equals(memberType))) {
+                    return UnDefType.UNDEF;
+                }
+                type = memberType;
+            }
+        }
+        return "Manual".equals(type) ? OnOffType.ON : "Schedule".equals(type) ? OnOffType.OFF : UnDefType.UNDEF;
+    }
+
+    public static Patch livingZonePatch(String channel, Command command) {
+        if (!CHANNEL_MANUAL.equals(channel) || !(command instanceof OnOffType onOff)) {
+            throw new IllegalArgumentException("Living zone supports manual mode ON or OFF");
+        }
+        JsonObject body = new JsonObject();
+        body.addProperty("name", "Living");
+        body.addProperty("regulationType", onOff == OnOffType.ON ? "Manual" : "Schedule");
+        return new Patch("/api/zones/living", body);
     }
 
     BigDecimal command(int roomId, Command command) {

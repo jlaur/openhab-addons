@@ -26,7 +26,7 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class Operation implements Closeable {
+public final class Operation implements Closeable {
     private final List<Socket> sockets = new ArrayList<>();
     private boolean closed;
 
@@ -38,7 +38,7 @@ final class Operation implements Closeable {
         sockets.add(socket);
     }
 
-    synchronized void check() throws IOException {
+    public synchronized void check() throws IOException {
         if (closed || Thread.currentThread().isInterrupted()) {
             throw new IOException("Operation cancelled");
         }

@@ -3,9 +3,11 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xmlns:thing="https://openhab.org/schemas/thing-description/v1.0.0"
 	xsi:schemaLocation="https://openhab.org/schemas/thing-description/v1.0.0 https://openhab.org/schemas/thing-description-1.0.0.xsd">
+
 	<bridge-type id="controller">
 		<label>Danfoss Link Controller</label>
 		<description>Danfoss Link CC connected through the cloud relay</description>
+
 		<config-description>
 			<parameter name="refreshInterval" type="integer" unit="s" min="10">
 				<label>Refresh Interval</label>
@@ -14,17 +16,39 @@
 			</parameter>
 		</config-description>
 	</bridge-type>
+
+	<thing-type id="living-zone">
+		<supported-bridge-type-refs>
+			<bridge-type-ref id="controller"/>
+		</supported-bridge-type-refs>
+
+		<label>Danfoss Link Living Zone</label>
+		<description>Shared regulation for rooms in the controller's Living zone</description>
+
+		<channels>
+			<channel id="manual" typeId="zone-manual"/>
+		</channels>
+	</thing-type>
+
 	<thing-type id="room">
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="controller"/>
 		</supported-bridge-type-refs>
+
 		<label>Danfoss Link Room</label>
 		<description>A room managed by the controller</description>
+
 		<channels>
 			<channel id="temperature" typeId="temperature"/>
 			<channel id="setpoint" typeId="setpoint"/>
+			<channel id="home-setpoint" typeId="home-setpoint"/>
+			<channel id="away-setpoint" typeId="away-setpoint"/>
+			<channel id="manual-setpoint" typeId="manual-setpoint"/>
+			<channel id="manual" typeId="manual"/>
+			<channel id="living-zone" typeId="living-zone"/>
 			<channel id="regulation-state" typeId="regulation-state"/>
 		</channels>
+
 		<config-description>
 			<parameter name="roomId" type="integer" min="0" required="true">
 				<label>Room ID</label>
@@ -32,32 +56,5 @@
 			</parameter>
 		</config-description>
 	</thing-type>
-	<channel-type id="temperature">
-		<item-type>Number:Temperature</item-type>
-		<label>Temperature</label>
-		<description>Measured room temperature</description>
-		<category>Temperature</category>
-		<tags>
-			<tag>Measurement</tag>
-			<tag>Temperature</tag>
-		</tags>
-		<state readOnly="true" pattern="%.1f %unit%"/>
-	</channel-type>
-	<channel-type id="setpoint">
-		<item-type>Number:Temperature</item-type>
-		<label>Setpoint</label>
-		<description>Requested room temperature</description>
-		<category>Temperature</category>
-		<tags>
-			<tag>Setpoint</tag>
-			<tag>Temperature</tag>
-		</tags>
-		<state pattern="%.1f %unit%"/>
-	</channel-type>
-	<channel-type id="regulation-state">
-		<item-type>String</item-type>
-		<label>Regulation State</label>
-		<description>Regulation state reported by the controller</description>
-		<state readOnly="true"/>
-	</channel-type>
+
 </thing:thing-descriptions>

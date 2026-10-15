@@ -83,8 +83,9 @@ class ProtocolTest {
                 """;
         assertTrue(CloudClient.response(response.getBytes(StandardCharsets.UTF_8), 1).getAsJsonObject()
                 .getAsJsonArray("allRooms").isEmpty());
-        assertThrows(IOException.class,
+        var rejected = assertThrows(CloudClient.ControllerResponseException.class,
                 () -> CloudClient.response(response.replace("200", "403").getBytes(StandardCharsets.UTF_8), 1));
+        assertEquals(403, rejected.status());
         assertThrows(IOException.class, () -> CloudClient
                 .response(response.replace("\"id\":1", "\"id\":2").getBytes(StandardCharsets.UTF_8), 1));
         assertThrows(IOException.class, () -> CloudClient.response("{}".getBytes(StandardCharsets.UTF_8), 1));

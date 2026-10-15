@@ -121,4 +121,119 @@ class WorldStateTest {
         assertTrue(later.isClosed());
         operation.close();
     }
+
+    @Test
+    void persistentSetpointsAreParsedAndPatchedIndependently() throws Exception {
+        var json = world();
+        var room = json.getAsJsonArray("allRooms").get(0).getAsJsonObject();
+        room.add("regulation", JsonParser.parseString("""
+                {"type":"Schedule","atHomeSetpoint":22,"awaySetpoint":17,"manualSetpoint":20}
+                """));
+        room.addProperty("zone", "Living");
+        var state = WorldState.parse(json);
+        var parsed = java.util.Objects.requireNonNull(state.rooms().get(0));
+        assertEquals(new BigDecimal("22"), parsed.homeSetpoint());
+        assertEquals(new BigDecimal("17"), parsed.awaySetpoint());
+        assertEquals(new BigDecimal("20"), parsed.manualSetpoint());
+        assertEquals("Schedule", parsed.regulationType());
+        for (var entry : Map.of("home-setpoint", "atHomeSetpoint", "away-setpoint", "awaySetpoint", "manual-setpoint",
+                "manualSetpoint").entrySet()) {
+            var patch = state.patch(0, entry.getKey(), new QuantityType<>("68 °F"));
+            assertEquals("/api/rooms/0", patch.uri());
+            assertEquals(JsonParser.parseString("{\"id\":0,\"regulation\":{\"" + entry.getValue() + "\":20}}"),
+                    patch.body());
+            assertThrows(IllegalArgumentException.class, () -> state.patch(0, entry.getKey(), new DecimalType(40)));
+        }
+        assertEquals(JsonParser.parseString("{\"id\":0,\"setpoint\":{\"temperature\":21}}"),
+                state.patch(0, "setpoint", new DecimalType(21)).body());
+    }
+
+    @Test
+    void manualModeUsesDifferentRoomAndZoneRequests() throws Exception {
+        var json = world();
+        var room = json.getAsJsonArray("allRooms").get(0).getAsJsonObject();
+        room.addProperty("zone", "None");
+        for (var mode : org.openhab.core.library.types.OnOffType.values()) {
+            String type = mode == org.openhab.core.library.types.OnOffType.ON ? "Manual" : "Schedule";
+            room.addProperty("zone", "None");
+            var patch = WorldState.parse(json).patch(0, "manual", mode);
+            assertEquals("/api/rooms/0", patch.uri());
+            assertEquals(JsonParser.parseString("{\"id\":0,\"regulation\":{\"type\":\"" + type + "\"}}"), patch.body());
+            room.addProperty("zone", "Living");
+            patch = WorldState.parse(json).patch(0, "manual", mode);
+            assertEquals("/api/zones/living", patch.uri());
+            assertEquals(JsonParser.parseString("{\"name\":\"Living\",\"regulationType\":\"" + type + "\"}"),
+                    patch.body());
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> WorldState.parse(json).patch(0, "manual", new DecimalType(1)));
+        room.remove("zone");
+        assertThrows(IllegalArgumentException.class,
+                () -> WorldState.parse(json).patch(0, "manual", org.openhab.core.library.types.OnOffType.ON));
+        room.addProperty("zone", "Unexpected");
+        assertThrows(IllegalArgumentException.class,
+                () -> WorldState.parse(json).patch(0, "manual", org.openhab.core.library.types.OnOffType.OFF));
+    }
+
+    @Test
+    void absentRegulationDoesNotInventPersistentSettings() throws Exception {
+        var parsed = java.util.Objects.requireNonNull(WorldState.parse(world()).rooms().get(0));
+        assertNull(parsed.homeSetpoint());
+        assertNull(parsed.awaySetpoint());
+        assertNull(parsed.manualSetpoint());
+        assertNull(parsed.regulationType());
+        assertNull(parsed.zone());
+    }
+
+    @Test
+    void livingZoneMembershipUsesRoomPatchWithoutTemperatureRequirements() throws Exception {
+        var json = world();
+        json.remove("temperatureSettings");
+        var room = json.getAsJsonArray("allRooms").get(0).getAsJsonObject();
+        room.remove("minSetpoint");
+        room.remove("maxSetpoint");
+        for (var mode : org.openhab.core.library.types.OnOffType.values()) {
+            String zone = mode == org.openhab.core.library.types.OnOffType.ON ? "Living" : "None";
+            var patch = WorldState.parse(json).patch(0, "living-zone", mode);
+            assertEquals("/api/rooms/0", patch.uri());
+            assertEquals(JsonParser.parseString("{\"id\":0,\"zone\":\"" + zone + "\"}"), patch.body());
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> WorldState.parse(json).patch(0, "living-zone", new DecimalType(1)));
+        assertThrows(IllegalArgumentException.class,
+                () -> WorldState.parse(json).patch(1, "living-zone", org.openhab.core.library.types.OnOffType.ON));
+    }
+
+    @Test
+    void livingZoneStateRequiresConsistentKnownMemberModes() throws Exception {
+        var json = JsonParser.parseString("""
+                {"allRooms":[
+                {"id":0,"zone":"Living","regulation":{"type":"Manual"}},
+                {"id":1,"zone":"Living","regulation":{"type":"Manual"}},
+                {"id":2,"zone":"None","regulation":{"type":"Schedule"}}]}
+                """).getAsJsonObject();
+        assertEquals(org.openhab.core.library.types.OnOffType.ON, WorldState.parse(json).livingZoneManualState());
+        var rooms = json.getAsJsonArray("allRooms");
+        rooms.get(0).getAsJsonObject().getAsJsonObject("regulation").addProperty("type", "Schedule");
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).livingZoneManualState());
+        rooms.get(1).getAsJsonObject().getAsJsonObject("regulation").addProperty("type", "Schedule");
+        assertEquals(org.openhab.core.library.types.OnOffType.OFF, WorldState.parse(json).livingZoneManualState());
+        rooms.get(1).getAsJsonObject().getAsJsonObject("regulation").addProperty("type", "Unknown");
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).livingZoneManualState());
+        rooms.get(1).getAsJsonObject().remove("regulation");
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).livingZoneManualState());
+        rooms.get(0).getAsJsonObject().addProperty("zone", "None");
+        rooms.get(1).getAsJsonObject().addProperty("zone", "None");
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).livingZoneManualState());
+        for (var mode : org.openhab.core.library.types.OnOffType.values()) {
+            var patch = WorldState.livingZonePatch("manual", mode);
+            assertEquals("/api/zones/living", patch.uri());
+            assertEquals("Living", patch.body().get("name").getAsString());
+            assertEquals(mode == org.openhab.core.library.types.OnOffType.ON ? "Manual" : "Schedule",
+                    patch.body().get("regulationType").getAsString());
+        }
+        assertThrows(IllegalArgumentException.class, () -> WorldState.livingZonePatch("manual", new DecimalType(1)));
+        assertThrows(IllegalArgumentException.class,
+                () -> WorldState.livingZonePatch("setpoint", org.openhab.core.library.types.OnOffType.ON));
+    }
 }

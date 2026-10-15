@@ -12,8 +12,15 @@
  */
 package org.openhab.binding.danfosslink.internal;
 
+import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
+
+import java.util.Set;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.handler.ControllerHandler;
+import org.openhab.binding.danfosslink.internal.handler.LivingZoneHandler;
+import org.openhab.binding.danfosslink.internal.handler.RoomHandler;
 import org.openhab.core.storage.StorageService;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
@@ -33,24 +40,37 @@ import org.osgi.service.component.annotations.Reference;
 @Component(service = ThingHandlerFactory.class, configurationPid = "binding.danfosslink")
 @NonNullByDefault
 public class DanfossLinkHandlerFactory extends BaseThingHandlerFactory {
+
+    private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(THING_TYPE_CONTROLLER, THING_TYPE_ROOM,
+            THING_TYPE_LIVING_ZONE);
+
     private final PairingStore store;
+    private final DanfossLinkStateDescriptionProvider descriptions;
 
     @Activate
-    public DanfossLinkHandlerFactory(@Reference StorageService storageService) {
+    public DanfossLinkHandlerFactory(@Reference StorageService storageService,
+            @Reference DanfossLinkStateDescriptionProvider descriptions) {
+        this.descriptions = descriptions;
         store = new PairingStore(
                 storageService.getStorage("org.openhab.binding.danfosslink.pairings", getClass().getClassLoader()));
     }
 
     @Override
     public boolean supportsThingType(ThingTypeUID type) {
-        return DanfossLinkBindingConstants.CONTROLLER.equals(type) || DanfossLinkBindingConstants.ROOM.equals(type);
+        return SUPPORTED_THING_TYPES_UIDS.contains(type);
     }
 
     @Override
     protected @Nullable ThingHandler createHandler(Thing thing) {
-        if (DanfossLinkBindingConstants.CONTROLLER.equals(thing.getThingTypeUID()) && thing instanceof Bridge bridge) {
+        if (DanfossLinkBindingConstants.THING_TYPE_CONTROLLER.equals(thing.getThingTypeUID())
+                && thing instanceof Bridge bridge) {
             return new ControllerHandler(bridge, store);
         }
-        return DanfossLinkBindingConstants.ROOM.equals(thing.getThingTypeUID()) ? new RoomHandler(thing) : null;
+        if (DanfossLinkBindingConstants.THING_TYPE_LIVING_ZONE.equals(thing.getThingTypeUID())) {
+            return new LivingZoneHandler(thing);
+        }
+        return DanfossLinkBindingConstants.THING_TYPE_ROOM.equals(thing.getThingTypeUID())
+                ? new RoomHandler(thing, descriptions)
+                : null;
     }
 }

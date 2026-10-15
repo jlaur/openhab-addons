@@ -94,7 +94,7 @@ final class Pairing {
         } finally {
             Arrays.fill(macKey, (byte) 0);
         }
-        connection.send(Wire.message(6).text(1, "openHAB").build());
+        connection.send(Wire.message(6).text(1, DanfossLinkBindingConstants.APP_NAME).build());
         receive(connection, 6).text(1);
     }
 
