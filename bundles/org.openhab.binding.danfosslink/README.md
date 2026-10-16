@@ -47,11 +47,18 @@ Removing a Thing does not revoke its app registration on the physical controller
 | room | roomId | Yes | | Non-negative room ID supplied by discovery |
 
 The Bridge exposes the controller's serial number and firmware version as Thing properties.
+The `systemTime` property contains the last controller-reported timestamp, including its UTC offset (for example, `2026-10-16T14:30:00+02:00`).
+It updates when controller data is refreshed; it is not a continuously advancing clock and retains its last value during communication outages.
+The binding does not set or correct the controller's clock.
 
 ## Channels
 
 | Thing | Channel | Item Type | Access | Description |
 | --- | --- | --- | --- | --- |
+| controller | vacation | Switch | Read/Write | ON enables vacation; OFF cancels vacation and clears staged dates |
+| controller | vacation-state | String | Read | Inactive, Planned, or Active |
+| controller | vacation-start | DateTime | Read/Write | Staged or controller-reported vacation start |
+| controller | vacation-end | DateTime | Read/Write | Staged or controller-reported vacation end |
 | room | temperature | Number:Temperature | Read | Measured room temperature |
 | room | setpoint | Number:Temperature | Read/Write | Current target temperature; temporary override during scheduled operation |
 | room | home-setpoint | Number:Temperature | Read/Write | Persistent temperature for Home periods |
@@ -83,6 +90,36 @@ The manual switch follows the app's behaviour: for an independent room it change
 The binding refreshes all rooms afterwards.
 An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
 Manual commands are rejected when zone membership is unknown.
+
+### Vacation
+
+Vacation controls are on the controller Bridge and affect the whole system.
+The `vacation` switch is ON for both Planned and Active vacations, and OFF for Inactive.
+Use `vacation-state` to distinguish those states.
+Missing or unknown vacation data produces `UNDEF`.
+
+While Inactive, commands to `vacation-start` and `vacation-end` stage dates locally without writing to the controller.
+Routine Inactive refreshes preserve these staged dates.
+Sending ON with neither date staged starts vacation immediately without an end time.
+Sending ON with both dates staged plans the interval: both dates must be in the future, with end later than start.
+Incomplete, expired, or reversed intervals are rejected and logged at DEBUG; they never fall back to indefinite vacation.
+DateTime commands identify absolute times.
+Requests follow the controller's UTC or local-time convention using the offset in `systemInfo.systemTime`, with whole-second precision.
+
+While Planned, changing either date immediately submits the updated interval using the other date from a fresh controller response.
+Each command must leave a valid future interval.
+For example, to move a vacation beyond its current end, move the end first, then the start.
+Accepted dates are refreshed from the controller, including any normalization.
+Rejected edits restore the controller-reported dates.
+Date edits while Active are not supported; cancel and configure a new vacation instead.
+Sending ON when already Planned or Active leaves the vacation unchanged.
+
+Sending OFF cancels an active or planned vacation and clears locally staged dates.
+To discard staged dates and start an indefinite vacation, send OFF, wait for confirmation, then send ON.
+A vacation created or changed in the app or on the Link CC replaces staged values when polled.
+When a reported vacation completes or is cancelled, the date channels are cleared to `UNDEF`.
+Staged dates are held in memory and are cleared when the Bridge handler is restarted or disposed.
+The binding does not cancel Home or Pause or change room Manual/Schedule regulation when controlling Vacation.
 
 ### Living Zone
 
@@ -161,7 +198,7 @@ log:set TRACE org.openhab.binding.danfosslink
 ```
 
 Send the command once and inspect `openhab.log`.
-The log records commands being applied, request URIs, PATCH bodies, response HTTP status, and bounded controller error details.
+The log records commands being applied, request URIs, write bodies, response HTTP status, and bounded controller error details.
 A failed operation identifies its stage; HTTP rejections also appear in the controller Bridge status.
 A rejection or communication failure makes the Bridge offline and room channel states undefined until communication recovers.
 Failed writes are not automatically replayed.

@@ -84,4 +84,48 @@
 		<description>Enable manual operation for the Living zone (ON), or resume its schedule (OFF)</description>
 	</channel-type>
 
+	<channel-type id="vacation">
+		<item-type>Switch</item-type>
+		<label>Vacation</label>
+		<description>Enable a planned or immediate vacation, or cancel vacation and clear staged dates</description>
+		<command>
+			<options>
+				<option value="ON">Enable Vacation</option>
+				<option value="OFF">Cancel Vacation</option>
+			</options>
+		</command>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
+	<channel-type id="vacation-state">
+		<item-type>String</item-type>
+		<label>Vacation State</label>
+		<description>Vacation state reported by the controller</description>
+		<state readOnly="true">
+			<options>
+				<option value="Inactive">Inactive</option>
+				<option value="Planned">Planned</option>
+				<option value="Active">Active</option>
+			</options>
+		</state>
+	</channel-type>
+
+	<channel-type id="vacation-start">
+		<item-type>DateTime</item-type>
+		<label>Vacation Start</label>
+		<description>Stage the start while inactive, or update the start of a planned vacation</description>
+		<category>Time</category>
+		<state pattern="%1$tF %1$tR"/>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
+	<channel-type id="vacation-end">
+		<item-type>DateTime</item-type>
+		<label>Vacation End</label>
+		<description>Stage the end while inactive, or update the end of a planned vacation</description>
+		<category>Time</category>
+		<state pattern="%1$tF %1$tR"/>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
 </thing:thing-descriptions>

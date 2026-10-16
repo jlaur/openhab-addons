@@ -16,6 +16,11 @@ import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstan
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -43,7 +48,11 @@ import com.google.gson.JsonObject;
  */
 @NonNullByDefault
 public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String serialNumber,
-        @Nullable String firmware) {
+        @Nullable String firmware, @Nullable String systemTime, @Nullable Vacation vacation) {
+    public record Vacation(String state, @Nullable Instant start, @Nullable Instant end,
+            @Nullable ZoneOffset localOffset) {
+    }
+
     public record Room(int id, String name, @Nullable BigDecimal temperature, @Nullable BigDecimal setpoint,
             @Nullable BigDecimal minimum, @Nullable BigDecimal maximum, @Nullable String regulationState,
             @Nullable BigDecimal homeSetpoint, @Nullable BigDecimal awaySetpoint, @Nullable BigDecimal manualSetpoint,
@@ -88,10 +97,59 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             }
             JsonObject info = world.getAsJsonObject("systemInfo");
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : text(info, "serialNo"),
-                    info == null ? null : text(info, "version"));
+                    info == null ? null : text(info, "version"), info == null ? null : text(info, "systemTime"),
+                    vacation(world));
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
+    }
+
+    private static @Nullable Vacation vacation(JsonObject world) {
+        // Optional mode data must not prevent room polling on older or unexpected controller responses.
+        try {
+            var modes = world.getAsJsonArray("modes");
+            if (modes == null) {
+                return null;
+            }
+            JsonObject info = world.getAsJsonObject("systemInfo");
+            String systemTime = info == null ? null : text(info, "systemTime");
+            // The app uses offset-free local requests when the controller reports a numeric time offset.
+            ZoneOffset localOffset = systemTime == null || systemTime.endsWith("Z") ? null
+                    : OffsetDateTime.parse(systemTime).getOffset();
+            Vacation vacation = null;
+            for (JsonElement element : modes) {
+                JsonObject mode = element.getAsJsonObject();
+                if ("Vacation".equals(text(mode, "type"))) {
+                    String state = text(mode, "state");
+                    if (vacation != null
+                            || !("Inactive".equals(state) || "Planned".equals(state) || "Active".equals(state))) {
+                        return null;
+                    }
+                    String start = text(mode,
+                            localOffset == null && mode.has("startTimeUtc") ? "startTimeUtc" : "startTime");
+                    String end = text(mode, localOffset == null && mode.has("endTimeUtc") ? "endTimeUtc" : "endTime");
+                    vacation = new Vacation(java.util.Objects.requireNonNull(state), vacationTime(start, localOffset),
+                            vacationTime(end, localOffset), localOffset);
+                }
+            }
+            return vacation;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static @Nullable Instant vacationTime(@Nullable String value, @Nullable ZoneOffset localOffset) {
+        if (value == null) {
+            return null;
+        }
+        OffsetDateTime timestamp;
+        try {
+            timestamp = OffsetDateTime.parse(value);
+        } catch (DateTimeParseException e) {
+            timestamp = LocalDateTime.parse(value).atOffset(localOffset == null ? ZoneOffset.UTC : localOffset);
+        }
+        // Like the app, treat out-of-range sentinel dates as an unspecified interval boundary.
+        return timestamp.getYear() < 1970 || timestamp.getYear() > 2099 ? null : timestamp.toInstant();
     }
 
     public record Patch(String uri, JsonObject body) {

@@ -224,4 +224,81 @@ class WorldStateTest {
         assertThrows(IllegalArgumentException.class,
                 () -> WorldState.livingZonePatch("setpoint", org.openhab.core.library.types.OnOffType.ON));
     }
+
+    @Test
+    void vacationModesAreOptionalAndTimestampsRespectOffsets() throws Exception {
+        var json = world();
+        assertNull(WorldState.parse(json).vacation());
+        json.add("modes", JsonParser.parseString("""
+                [{"type":"Pause","state":"Inactive"},{"type":"Vacation","state":"Planned",
+                "startTime":"2026-10-20T14:00:00+02:00","endTime":"2026-10-22T12:00:00Z"}]
+                """));
+        var vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertEquals("Planned", vacation.state());
+        assertEquals(java.time.Instant.parse("2026-10-20T12:00:00Z"), vacation.start());
+        var mode = json.getAsJsonArray("modes").get(1).getAsJsonObject();
+        mode.addProperty("state", "Unknown");
+        assertNull(WorldState.parse(json).vacation());
+        mode.addProperty("state", "Planned");
+        mode.addProperty("startTime", "not-a-date");
+        assertNull(WorldState.parse(json).vacation());
+        mode.remove("startTime");
+        mode.remove("endTime");
+        mode.addProperty("state", "Inactive");
+        vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertNull(vacation.start());
+        assertNull(vacation.end());
+        json.getAsJsonArray("modes").add(mode.deepCopy());
+        assertNull(WorldState.parse(json).vacation());
+        assertFalse(WorldState.parse(json).rooms().isEmpty());
+    }
+
+    @Test
+    void localVacationDatesUseControllerOffsetAndLegacyDatesUseUtc() throws Exception {
+        var json = world();
+        json.add("systemInfo", JsonParser.parseString("{\"systemTime\":\"2026-10-16T14:00:00+02:00\"}"));
+        json.add("modes", JsonParser.parseString("""
+                [{"type":"Vacation","state":"Planned", "startTime":"2026-10-20T14:00:00",
+                "endTime":"2026-10-22T14:00:00"}]
+                """));
+        var vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertEquals(java.time.Instant.parse("2026-10-20T12:00:00Z"), vacation.start());
+        assertEquals(java.time.ZoneOffset.ofHours(2), vacation.localOffset());
+        json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-16T12:00:00Z");
+        vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertNull(vacation.localOffset());
+        assertEquals(java.time.Instant.parse("2026-10-20T14:00:00Z"), vacation.start());
+    }
+
+    @Test
+    void legacyUtcFieldsAndUnspecifiedDateSentinelsAreRecognized() throws Exception {
+        var json = world();
+        json.add("systemInfo", JsonParser.parseString("{\"systemTime\":\"2026-10-16T12:00:00Z\"}"));
+        json.add("modes", JsonParser.parseString("""
+                [{"type":"Vacation","state":"Planned", "startTimeUtc":"2026-10-20T14:00:00Z",
+                "endTimeUtc":"2026-10-22T14:00:00Z", "startTime":"ignored", "endTime":"ignored"}]
+                """));
+        var vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertEquals(java.time.Instant.parse("2026-10-20T14:00:00Z"), vacation.start());
+        var mode = json.getAsJsonArray("modes").get(0).getAsJsonObject();
+        mode.addProperty("state", "Active");
+        mode.addProperty("startTimeUtc", "0001-01-01T00:00:00Z");
+        mode.addProperty("endTimeUtc", "9999-12-31T23:59:59Z");
+        vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertEquals("Active", vacation.state());
+        assertNull(vacation.start());
+        assertNull(vacation.end());
+    }
+
+    @Test
+    void controllerTimePreservesReportedOffsetAndRemainsOptional() throws Exception {
+        var json = world();
+        assertNull(WorldState.parse(json).systemTime());
+        json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-16T14:30:00+02:00");
+        assertEquals("2026-10-16T14:30:00+02:00", WorldState.parse(json).systemTime());
+        json.getAsJsonObject("systemInfo").add("systemTime", com.google.gson.JsonNull.INSTANCE);
+        assertNull(WorldState.parse(json).systemTime());
+        json.remove("systemInfo");
+        assertNull(WorldState.parse(json).systemTime());
+    }
 }
