@@ -105,12 +105,7 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
         JsonObject body = new JsonObject();
         body.addProperty("id", roomId);
         JsonObject values = new JsonObject();
-        if (CHANNEL_LIVING_ZONE.equals(channel)) {
-            if (!(command instanceof OnOffType onOff)) {
-                throw new IllegalArgumentException("Living zone membership requires ON or OFF");
-            }
-            body.addProperty("zone", onOff == OnOffType.ON ? "Living" : "None");
-        } else if (CHANNEL_MANUAL.equals(channel)) {
+        if (CHANNEL_MANUAL.equals(channel)) {
             if (!(command instanceof OnOffType onOff)) {
                 throw new IllegalArgumentException("Manual mode requires ON or OFF");
             }

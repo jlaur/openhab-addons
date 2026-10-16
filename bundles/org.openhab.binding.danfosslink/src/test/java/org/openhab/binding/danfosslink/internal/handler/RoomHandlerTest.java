@@ -12,6 +12,7 @@
  */
 package org.openhab.binding.danfosslink.internal.handler;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
@@ -59,7 +60,6 @@ class RoomHandlerTest {
         try {
             handler.initialize();
             handler.publish(WorldState.parse(json));
-            verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_LIVING_ZONE), UnDefType.UNDEF);
             verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_HOME_SETPOINT),
                     new QuantityType<>(22, SIUnits.CELSIUS));
             verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_AWAY_SETPOINT),
@@ -67,17 +67,6 @@ class RoomHandlerTest {
             verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_MANUAL_SETPOINT),
                     new QuantityType<>(20, SIUnits.CELSIUS));
             verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_MANUAL), OnOffType.ON);
-            var room = json.getAsJsonArray("allRooms").get(0).getAsJsonObject();
-            room.addProperty("zone", "Living");
-            handler.publish(WorldState.parse(json));
-            verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_LIVING_ZONE), OnOffType.ON);
-            room.addProperty("zone", "None");
-            handler.publish(WorldState.parse(json));
-            verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_LIVING_ZONE), OnOffType.OFF);
-            clearInvocations(callback);
-            room.addProperty("zone", "Unexpected");
-            handler.publish(WorldState.parse(json));
-            verify(callback).stateUpdated(new ChannelUID(thing.getUID(), CHANNEL_LIVING_ZONE), UnDefType.UNDEF);
             var regulation = json.getAsJsonArray("allRooms").get(0).getAsJsonObject().getAsJsonObject("regulation");
             regulation.addProperty("type", "Schedule");
             handler.publish(WorldState.parse(json));
@@ -89,13 +78,13 @@ class RoomHandlerTest {
             clearInvocations(callback);
             handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.NONE, null));
             for (String channel : new String[] { CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT, CHANNEL_MANUAL_SETPOINT,
-                    CHANNEL_MANUAL, CHANNEL_LIVING_ZONE }) {
+                    CHANNEL_MANUAL }) {
                 verify(callback).stateUpdated(new ChannelUID(thing.getUID(), channel), UnDefType.UNDEF);
             }
             clearInvocations(callback);
             handler.publish(new WorldState(Map.of(), SIUnits.CELSIUS, null, null));
             for (String channel : new String[] { CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT, CHANNEL_MANUAL_SETPOINT,
-                    CHANNEL_MANUAL, CHANNEL_LIVING_ZONE }) {
+                    CHANNEL_MANUAL }) {
                 verify(callback).stateUpdated(new ChannelUID(thing.getUID(), channel), UnDefType.UNDEF);
             }
             handler.dispose();
@@ -103,6 +92,50 @@ class RoomHandlerTest {
             clearInvocations(callback, descriptions);
             handler.publish(WorldState.parse(json));
             verifyNoInteractions(callback, descriptions);
+        } finally {
+            handler.dispose();
+        }
+    }
+
+    @Test
+    void livingZonePropertyTracksReportedMembership() throws Exception {
+        var thing = ThingBuilder.create(THING_TYPE_ROOM, "test")
+                .withConfiguration(new Configuration(Map.of(PARAMETER_ROOM_ID, BigDecimal.ZERO))).build();
+        var callback = mock(ThingHandlerCallback.class);
+        var handler = new RoomHandler(thing, mock(DanfossLinkStateDescriptionProvider.class));
+        handler.setCallback(callback);
+        var json = JsonParser.parseString("{\"allRooms\":[{\"id\":0}]}").getAsJsonObject();
+        var room = json.getAsJsonArray("allRooms").get(0).getAsJsonObject();
+        try {
+            handler.initialize();
+            handler.publish(WorldState.parse(json));
+            assertNull(thing.getProperties().get("livingZone"));
+            verify(callback, never()).thingUpdated(any());
+            room.addProperty("zone", "Living");
+            handler.publish(WorldState.parse(json));
+            assertEquals("true", thing.getProperties().get("livingZone"));
+            clearInvocations(callback);
+            handler.publish(WorldState.parse(json));
+            verify(callback, never()).thingUpdated(any());
+            handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.NONE, null));
+            assertEquals("true", thing.getProperties().get("livingZone"));
+            room.addProperty("zone", "None");
+            handler.publish(WorldState.parse(json));
+            assertEquals("false", thing.getProperties().get("livingZone"));
+            room.addProperty("zone", "Unexpected");
+            handler.publish(WorldState.parse(json));
+            assertNull(thing.getProperties().get("livingZone"));
+            room.addProperty("zone", "Living");
+            handler.publish(WorldState.parse(json));
+            room.remove("zone");
+            handler.publish(WorldState.parse(json));
+            assertNull(thing.getProperties().get("livingZone"));
+            handler.dispose();
+            clearInvocations(callback);
+            room.addProperty("zone", "Living");
+            handler.publish(WorldState.parse(json));
+            assertNull(thing.getProperties().get("livingZone"));
+            verifyNoInteractions(callback);
         } finally {
             handler.dispose();
         }
