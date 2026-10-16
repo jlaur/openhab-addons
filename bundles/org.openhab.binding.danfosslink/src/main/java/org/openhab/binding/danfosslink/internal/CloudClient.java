@@ -90,6 +90,10 @@ public final class CloudClient implements AutoCloseable {
             request("PATCH", patch.uri(), patch.body());
         }
 
+        public void vacation(JsonObject body) throws IOException {
+            request("PUT", "/api/modes/vacation", body);
+        }
+
         private JsonElement request(String method, String uri, JsonObject content) throws IOException {
             operation.check();
             int id = ++requestId;
@@ -109,8 +113,8 @@ public final class CloudClient implements AutoCloseable {
             envelope.addProperty("id", id);
             envelope.add("data", data);
             logger.trace("Controller request {}: {} {}", id, method, uri);
-            if ("PATCH".equals(method)) {
-                logger.trace("Controller request {} patch: {}", id, content);
+            if (!"GET".equals(method)) {
+                logger.trace("Controller request {} body: {}", id, content);
             }
             peer.send(envelope.toString().getBytes(StandardCharsets.UTF_8));
             return response(peer.receive(), id);

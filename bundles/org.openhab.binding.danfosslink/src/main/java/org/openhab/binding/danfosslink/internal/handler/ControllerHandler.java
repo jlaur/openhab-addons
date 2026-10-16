@@ -12,6 +12,9 @@
  */
 package org.openhab.binding.danfosslink.internal.handler;
 
+import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
+
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -42,6 +45,7 @@ import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerService;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.UnDefType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +56,10 @@ import org.slf4j.LoggerFactory;
  */
 @NonNullByDefault
 public class ControllerHandler extends BaseBridgeHandler {
+
+    private static final Set<String> VACATION_CHANNELS = Set.of(CHANNEL_VACATION, CHANNEL_VACATION_STATE,
+            CHANNEL_VACATION_START, CHANNEL_VACATION_END);
+
     private final Logger logger = LoggerFactory.getLogger(ControllerHandler.class);
     private final ExecutorService worker = ThreadPoolManager.getPool("binding-danfosslink");
     private final PairingStore store;
@@ -65,6 +73,9 @@ public class ControllerHandler extends BaseBridgeHandler {
     }
 
     private final Map<CommandTarget, Command> commands = new LinkedHashMap<>();
+
+    private final Map<String, VacationState.Request> vacationCommands = new LinkedHashMap<>();
+    private VacationState vacation = new VacationState();
 
     private boolean running;
     private @Nullable Operation active;
@@ -107,6 +118,8 @@ public class ControllerHandler extends BaseBridgeHandler {
             closing = active;
             active = null;
             commands.clear();
+            vacationCommands.clear();
+            vacation = new VacationState();
             world = null;
         }
         if (closing != null) {
@@ -118,6 +131,35 @@ public class ControllerHandler extends BaseBridgeHandler {
     public void handleCommand(ChannelUID channelUID, Command command) {
         if (command == RefreshType.REFRESH) {
             refresh();
+        } else if (VACATION_CHANNELS.contains(channelUID.getId())) {
+            synchronized (lifecycle) {
+                if (!running) {
+                    return;
+                }
+                try {
+                    var request = vacation.command(channelUID.getId(), command, Instant.now());
+                    if (request != null) {
+                        if (command == org.openhab.core.library.types.OnOffType.OFF) {
+                            vacationCommands.clear();
+                        }
+                        vacationCommands.remove(channelUID.getId());
+                        vacationCommands.put(channelUID.getId(), request);
+                    }
+                } catch (IllegalArgumentException e) {
+                    logger.debug("Controller {} rejected vacation command: {}", getThing().getUID(), e.getMessage());
+                }
+                publishVacation();
+                if (vacationCommands.isEmpty()) {
+                    return;
+                }
+            }
+            refresh();
+        }
+    }
+
+    private void publishVacation() {
+        for (String channel : VACATION_CHANNELS) {
+            updateState(channel, vacation.state(channel));
         }
     }
 
@@ -171,7 +213,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             Operation operation = new Operation();
             active = operation;
             updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Pairing in progress");
-            worker.execute(() -> run(operation, pin, Map.of()));
+            worker.execute(() -> run(operation, pin, Map.of(), Map.of()));
         }
         return "Pairing started. Check the controller Thing status for the result.";
     }
@@ -185,7 +227,9 @@ public class ControllerHandler extends BaseBridgeHandler {
             active = operation;
             Map<CommandTarget, Command> pending = new LinkedHashMap<>(commands);
             commands.clear();
-            worker.execute(() -> run(operation, null, pending));
+            Map<String, VacationState.Request> pendingVacation = new LinkedHashMap<>(vacationCommands);
+            vacationCommands.clear();
+            worker.execute(() -> run(operation, null, pending, pendingVacation));
         }
     }
 
@@ -223,7 +267,8 @@ public class ControllerHandler extends BaseBridgeHandler {
         return new CloudClient(identity, operation);
     }
 
-    private void run(Operation operation, @Nullable String pin, Map<CommandTarget, Command> pending) {
+    private void run(Operation operation, @Nullable String pin, Map<CommandTarget, Command> pending,
+            Map<String, VacationState.Request> pendingVacation) {
         boolean paired = false;
         String stage = "loading pairing";
         try (operation) {
@@ -257,6 +302,24 @@ public class ControllerHandler extends BaseBridgeHandler {
                     try (var session = client.open(controller)) {
                         stage = "reading controller state";
                         WorldState snapshot = session.world();
+                        for (var request : pendingVacation.values()) {
+                            operation.check();
+                            try {
+                                var body = request.body(snapshot.vacation(), Instant.now());
+                                stage = "writing /api/modes/vacation";
+                                session.vacation(body);
+                                stage = "reading back vacation";
+                                snapshot = session.world();
+                            } catch (IllegalArgumentException e) {
+                                logger.debug("Controller {} rejected vacation command: {}", getThing().getUID(),
+                                        e.getMessage());
+                            } catch (CloudClient.ControllerResponseException e) {
+                                logger.debug("Controller {} rejected vacation request with HTTP {}",
+                                        getThing().getUID(), e.status());
+                                stage = "reading state after rejected vacation request";
+                                snapshot = session.world();
+                            }
+                        }
                         boolean refreshRequired = false;
                         for (var entry : pending.entrySet()) {
                             operation.check();
@@ -283,6 +346,9 @@ public class ControllerHandler extends BaseBridgeHandler {
         } catch (Exception e) {
             synchronized (lifecycle) {
                 if (current(operation)) {
+                    for (String channel : VACATION_CHANNELS) {
+                        updateState(channel, UnDefType.UNDEF);
+                    }
                     logger.debug("Controller {} operation failed during {} ({})", getThing().getUID(), stage,
                             e.getClass().getSimpleName());
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
@@ -296,7 +362,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         } finally {
             boolean again;
             synchronized (lifecycle) {
-                again = current(operation) && (paired || !commands.isEmpty());
+                again = current(operation) && (paired || !commands.isEmpty() || !vacationCommands.isEmpty());
                 if (operation.equals(active)) {
                     active = null;
                 }
@@ -318,14 +384,20 @@ public class ControllerHandler extends BaseBridgeHandler {
                 return;
             }
             world = snapshot;
+            vacation.report(snapshot.vacation());
+            publishVacation();
             Map<String, String> properties = new HashMap<>(getThing().getProperties());
             String serial = snapshot.serialNumber();
             String firmware = snapshot.firmware();
+            String systemTime = snapshot.systemTime();
             if (serial != null) {
                 properties.put(Thing.PROPERTY_SERIAL_NUMBER, serial);
             }
             if (firmware != null) {
                 properties.put(Thing.PROPERTY_FIRMWARE_VERSION, firmware);
+            }
+            if (systemTime != null) {
+                properties.put(PROPERTY_SYSTEM_TIME, systemTime);
             }
             updateProperties(properties);
             updateStatus(ThingStatus.ONLINE);
