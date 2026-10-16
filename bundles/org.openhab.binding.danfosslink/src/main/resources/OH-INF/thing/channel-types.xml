@@ -74,20 +74,17 @@
 	<channel-type id="manual">
 		<item-type>Switch</item-type>
 		<label>Manual Mode</label>
-		<description>Enable manual temperature or resume the schedule. For Living-zone rooms, this changes the entire Living
-			zone.</description>
-	</channel-type>
-
-	<channel-type id="zone-manual">
-		<item-type>Switch</item-type>
-		<label>Manual Mode</label>
-		<description>Enable manual operation for the Living zone (ON), or resume its schedule (OFF)</description>
+		<tags>
+			<tag>Control</tag>
+			<tag>Mode</tag>
+		</tags>
 	</channel-type>
 
 	<channel-type id="vacation">
 		<item-type>Switch</item-type>
 		<label>Vacation</label>
 		<description>Enable a planned or immediate vacation, or cancel vacation and clear staged dates</description>
+		<category>Switch</category>
 		<command>
 			<options>
 				<option value="ON">Enable Vacation</option>
@@ -101,6 +98,7 @@
 		<item-type>String</item-type>
 		<label>Vacation State</label>
 		<description>Vacation state reported by the controller</description>
+		<category>Vacation</category>
 		<state readOnly="true">
 			<options>
 				<option value="Inactive">Inactive</option>
