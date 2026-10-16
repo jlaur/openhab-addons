@@ -82,7 +82,7 @@ class RoomHandlerTest {
                 verify(callback).stateUpdated(new ChannelUID(thing.getUID(), channel), UnDefType.UNDEF);
             }
             clearInvocations(callback);
-            handler.publish(new WorldState(Map.of(), SIUnits.CELSIUS, null, null));
+            handler.publish(new WorldState(Map.of(), SIUnits.CELSIUS, null, null, null, null));
             for (String channel : new String[] { CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT, CHANNEL_MANUAL_SETPOINT,
                     CHANNEL_MANUAL }) {
                 verify(callback).stateUpdated(new ChannelUID(thing.getUID(), channel), UnDefType.UNDEF);

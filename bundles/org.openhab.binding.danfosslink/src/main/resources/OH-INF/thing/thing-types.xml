@@ -8,6 +8,13 @@
 		<label>Danfoss Link Controller</label>
 		<description>Danfoss Link CC connected through the cloud relay</description>
 
+		<channels>
+			<channel id="vacation" typeId="vacation"/>
+			<channel id="vacation-state" typeId="vacation-state"/>
+			<channel id="vacation-start" typeId="vacation-start"/>
+			<channel id="vacation-end" typeId="vacation-end"/>
+		</channels>
+
 		<config-description>
 			<parameter name="refreshInterval" type="integer" unit="s" min="10">
 				<label>Refresh Interval</label>

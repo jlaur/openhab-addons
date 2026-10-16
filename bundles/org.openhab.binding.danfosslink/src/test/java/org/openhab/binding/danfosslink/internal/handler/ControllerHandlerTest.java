@@ -59,7 +59,7 @@ class ControllerHandlerTest {
         var release = new CountDownLatch(1);
         var closed = new CountDownLatch(1);
         var online = new CountDownLatch(1);
-        var state = new WorldState(Map.of(), null, "serial", "firmware");
+        var state = new WorldState(Map.of(), null, "serial", "firmware", "2026-10-16T14:30:00+02:00", null);
         when(session.world()).thenAnswer(call -> {
             entered.countDown();
             assertTrue(release.await(10, TimeUnit.SECONDS));
@@ -93,8 +93,10 @@ class ControllerHandlerTest {
             assertTrue(closed.await(10, TimeUnit.SECONDS));
             verify(callback, never()).statusUpdated(any(), any());
             verify(callback, never()).thingUpdated(any());
+            verify(callback, never()).stateUpdated(any(), any());
             handler.initialize();
             assertTrue(online.await(10, TimeUnit.SECONDS));
+            assertEquals("2026-10-16T14:30:00+02:00", bridge.getProperties().get("systemTime"));
         } finally {
             release.countDown();
             handler.dispose();
@@ -213,6 +215,127 @@ class ControllerHandlerTest {
             handler.initialize();
             assertTrue(recovered.await(10, TimeUnit.SECONDS));
             verify(session, times(1)).apply(any());
+        } finally {
+            handler.dispose();
+        }
+    }
+
+    @Test
+    void vacationActivationReadsBackAcceptedOrRejectedState() throws Exception {
+        for (boolean reject : new boolean[] { false, true }) {
+            var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "vacation-test").build();
+            var identity = Identity.generate();
+            var store = mock(PairingStore.class);
+            when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+            var client = mock(CloudClient.class);
+            var session = mock(CloudClient.Session.class);
+            when(client.open(any())).thenReturn(session);
+            var inactive = new WorldState(Map.of(), null, null, null, null,
+                    new WorldState.Vacation("Inactive", null, null, null));
+            var snapshot = new AtomicReference<>(inactive);
+            when(session.world()).thenAnswer(call -> snapshot.get());
+            doAnswer(call -> {
+                if (reject) {
+                    throw new CloudClient.ControllerResponseException(400);
+                }
+                snapshot.set(new WorldState(Map.of(), null, null, null, null,
+                        new WorldState.Vacation("Active", null, null, null)));
+                return null;
+            }).when(session).vacation(any());
+            var handler = new ControllerHandler(bridge, store) {
+                @Override
+                CloudClient connect(Identity credentials, Operation operation) {
+                    return client;
+                }
+            };
+            var callback = mock(ThingHandlerCallback.class);
+            var queued = new AtomicBoolean();
+            var finished = new CountDownLatch(1);
+            doAnswer(call -> {
+                org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                if (status.getStatus() == ThingStatus.ONLINE) {
+                    if (queued.compareAndSet(false, true)) {
+                        handler.handleCommand(new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION),
+                                OnOffType.ON);
+                    } else {
+                        finished.countDown();
+                    }
+                }
+                return null;
+            }).when(callback).statusUpdated(eq(bridge), any());
+            handler.setCallback(callback);
+            try {
+                handler.initialize();
+                assertTrue(finished.await(10, TimeUnit.SECONDS));
+                var body = ArgumentCaptor.forClass(com.google.gson.JsonObject.class);
+                verify(session, times(1)).vacation(body.capture());
+                assertEquals(JsonParser.parseString("{\"type\":\"Vacation\",\"state\":\"Active\"}"), body.getValue());
+                verify(session, times(3)).world();
+                verify(callback, atLeastOnce()).stateUpdated(
+                        new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION),
+                        reject ? OnOffType.OFF : OnOffType.ON);
+            } finally {
+                handler.dispose();
+            }
+        }
+    }
+
+    @Test
+    void queuedVacationDateEditsUseReadbackFromPreviousEdit() throws Exception {
+        var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "vacation-edit-test").build();
+        var identity = Identity.generate();
+        var store = mock(PairingStore.class);
+        when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+        var client = mock(CloudClient.class);
+        var session = mock(CloudClient.Session.class);
+        when(client.open(any())).thenReturn(session);
+        var start = java.time.Instant.now().plusSeconds(86400).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        var end = start.plusSeconds(86400);
+        var laterEnd = end.plusSeconds(86400);
+        var snapshot = new AtomicReference<>(
+                new WorldState(Map.of(), null, null, null, null, new WorldState.Vacation("Planned", start, end, null)));
+        when(session.world()).thenAnswer(call -> snapshot.get());
+        doAnswer(call -> {
+            com.google.gson.JsonObject body = call.getArgument(0);
+            snapshot.set(new WorldState(Map.of(), null, null, null, null,
+                    new WorldState.Vacation("Planned", java.time.Instant.parse(body.get("startTime").getAsString()),
+                            java.time.Instant.parse(body.get("endTime").getAsString()), null)));
+            return null;
+        }).when(session).vacation(any());
+        var handler = new ControllerHandler(bridge, store) {
+            @Override
+            CloudClient connect(Identity credentials, Operation operation) {
+                return client;
+            }
+        };
+        var callback = mock(ThingHandlerCallback.class);
+        var queued = new AtomicBoolean();
+        var finished = new CountDownLatch(1);
+        doAnswer(call -> {
+            org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+            if (status.getStatus() == ThingStatus.ONLINE) {
+                if (queued.compareAndSet(false, true)) {
+                    handler.handleCommand(new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION_END),
+                            new org.openhab.core.library.types.DateTimeType(laterEnd));
+                    handler.handleCommand(
+                            new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION_START),
+                            new org.openhab.core.library.types.DateTimeType(end));
+                } else {
+                    finished.countDown();
+                }
+            }
+            return null;
+        }).when(callback).statusUpdated(eq(bridge), any());
+        handler.setCallback(callback);
+        try {
+            handler.initialize();
+            assertTrue(finished.await(10, TimeUnit.SECONDS));
+            var bodies = ArgumentCaptor.forClass(com.google.gson.JsonObject.class);
+            verify(session, times(2)).vacation(bodies.capture());
+            assertEquals(start.toString(), bodies.getAllValues().get(0).get("startTime").getAsString());
+            assertEquals(end.toString(), bodies.getAllValues().get(1).get("startTime").getAsString());
+            assertEquals(laterEnd.toString(), bodies.getAllValues().get(1).get("endTime").getAsString());
+            verify(session, times(4)).world();
         } finally {
             handler.dispose();
         }

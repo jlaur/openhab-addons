@@ -28,6 +28,11 @@ public final class DanfossLinkBindingConstants {
     public static final ThingTypeUID THING_TYPE_LIVING_ZONE = new ThingTypeUID(BINDING_ID, "living-zone");
     public static final ThingTypeUID THING_TYPE_ROOM = new ThingTypeUID(BINDING_ID, "room");
 
+    public static final String CHANNEL_VACATION = "vacation";
+    public static final String CHANNEL_VACATION_STATE = "vacation-state";
+    public static final String CHANNEL_VACATION_START = "vacation-start";
+    public static final String CHANNEL_VACATION_END = "vacation-end";
+
     public static final String CHANNEL_TEMPERATURE = "temperature";
     public static final String CHANNEL_SETPOINT = "setpoint";
     public static final String CHANNEL_HOME_SETPOINT = "home-setpoint";
@@ -37,6 +42,8 @@ public final class DanfossLinkBindingConstants {
     public static final String CHANNEL_REGULATION_STATE = "regulation-state";
 
     public static final String PARAMETER_ROOM_ID = "roomId";
+
+    public static final String PROPERTY_SYSTEM_TIME = "systemTime";
 
     /** App name shown on the Link CC Controller after pairing */
     public static final String APP_NAME = "openHAB";
