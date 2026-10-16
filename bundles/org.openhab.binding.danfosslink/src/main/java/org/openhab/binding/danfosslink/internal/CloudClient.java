@@ -24,6 +24,7 @@ import org.openhab.core.common.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -35,7 +36,7 @@ import com.google.gson.JsonParser;
  */
 @NonNullByDefault
 public final class CloudClient implements AutoCloseable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(CloudClient.class);
+    private final Logger logger = LoggerFactory.getLogger(CloudClient.class);
     private static final ExecutorService CONTROL = ThreadPoolManager.getPool("binding-danfosslink-control");
     private final Operation operation;
     private final Grid grid;
@@ -107,12 +108,11 @@ public final class CloudClient implements AutoCloseable {
             JsonObject envelope = new JsonObject();
             envelope.addProperty("id", id);
             envelope.add("data", data);
-            LOGGER.trace("Controller request {}: {} {}", id, method, uri);
+            logger.trace("Controller request {}: {} {}", id, method, uri);
             if ("PATCH".equals(method)) {
-                LOGGER.trace("Controller request {} patch: {}", id, content);
+                logger.trace("Controller request {} patch: {}", id, content);
             }
             peer.send(envelope.toString().getBytes(StandardCharsets.UTF_8));
-            LOGGER.trace("Controller request {} sent; waiting for response", id);
             return response(peer.receive(), id);
         }
 
@@ -138,8 +138,44 @@ public final class CloudClient implements AutoCloseable {
         }
     }
 
+    static String errorDetails(JsonObject response) {
+        JsonObject details = new JsonObject();
+        JsonElement description = response.get("statusDescription");
+        if (description != null && description.isJsonPrimitive()) {
+            details.add("statusDescription", description);
+        }
+        JsonElement content = response.get("content");
+        if (content != null && content.isJsonObject()) {
+            JsonObject object = content.getAsJsonObject();
+            for (String name : new String[] { "error", "errorCode", "message", "detail", "title" }) {
+                JsonElement value = object.get(name);
+                if (value != null && value.isJsonPrimitive()) {
+                    details.add(name, value);
+                }
+            }
+            JsonElement messages = object.get("errorMessages");
+            if (messages != null && messages.isJsonArray()) {
+                JsonArray errors = new JsonArray();
+                for (JsonElement message : messages.getAsJsonArray()) {
+                    if (errors.size() == 8) {
+                        break;
+                    }
+                    if (message.isJsonPrimitive() && message.getAsJsonPrimitive().isString()) {
+                        errors.add(message);
+                    }
+                }
+                details.add("errorMessages", errors);
+            }
+        } else if (content != null && content.isJsonPrimitive()) {
+            details.add("content", content);
+        }
+        // JSON encoding escapes line breaks; limit text-only error pages without logging whole world objects.
+        String text = details.toString();
+        return text.length() > 2048 ? text.substring(0, 2048) + " [truncated]" : text;
+    }
+
     static JsonElement response(byte[] bytes, int id) throws IOException {
-        LOGGER.trace("Controller response for request {}: {} bytes", id, bytes.length);
+        Logger logger = LoggerFactory.getLogger(CloudClient.class);
         try {
             String json = new String(bytes, StandardCharsets.UTF_8);
             // The controller's cc_json encoder emits an omitted value on empty write responses.
@@ -147,24 +183,27 @@ public final class CloudClient implements AutoCloseable {
             json = json.replace("\"content\":}}", "\"content\":null}}");
             JsonObject envelope = JsonParser.parseString(json).getAsJsonObject();
             if (envelope.get("id").getAsInt() != id) {
-                LOGGER.debug("Controller response ID {} does not match request {}", envelope.get("id").getAsInt(), id);
+                logger.debug("Controller response ID {} does not match request {}", envelope.get("id").getAsInt(), id);
                 throw new IOException("Mismatched controller response ID");
             }
             JsonObject data = envelope.getAsJsonObject("data");
             if (!"JsonWebResponse".equals(data.get("type").getAsString())) {
-                LOGGER.debug("Controller request {} received an unexpected response type", id);
+                logger.debug("Controller request {} received an unexpected response type", id);
                 throw new IOException("Unexpected controller response type");
             }
             JsonObject response = data.getAsJsonObject("data");
             int status = response.get("status").getAsInt();
-            LOGGER.trace("Controller response {}: HTTP {}", id, status);
+            logger.trace("Controller response {}: HTTP {}", id, status);
             if (status < 200 || status >= 300) {
-                LOGGER.debug("Controller rejected request {} with HTTP {}", id, status);
+                logger.debug("Controller rejected request {} with HTTP {}", id, status);
+                if (logger.isTraceEnabled()) {
+                    logger.trace("Controller rejection {} details: {}", id, errorDetails(response));
+                }
                 throw new ControllerResponseException(status);
             }
             return Objects.requireNonNull(response.get("content"));
         } catch (RuntimeException e) {
-            LOGGER.debug("Cannot parse controller response for request {} ({}; {} bytes)", id,
+            logger.debug("Cannot parse controller response for request {} ({}; {} bytes)", id,
                     e.getClass().getSimpleName(), bytes.length);
             throw new IOException("Malformed controller response", e);
         }

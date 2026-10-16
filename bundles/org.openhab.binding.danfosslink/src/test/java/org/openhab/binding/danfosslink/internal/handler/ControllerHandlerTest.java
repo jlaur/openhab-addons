@@ -111,7 +111,7 @@ class ControllerHandlerTest {
     }
 
     @Test
-    void queuedManualCommandUsesMembershipConfirmedAfterZoneChange() throws Exception {
+    void queuedManualCommandUsesFreshMembership() throws Exception {
         for (var membership : OnOffType.values()) {
             var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "test").build();
             var identity = Identity.generate();
@@ -126,14 +126,6 @@ class ControllerHandlerTest {
                     .getAsJsonObject();
             var snapshot = new AtomicReference<>(WorldState.parse(json));
             when(session.world()).thenAnswer(call -> snapshot.get());
-            doAnswer(call -> {
-                WorldState.Patch patch = call.getArgument(0);
-                if (patch.body().has("zone")) {
-                    json.getAsJsonArray("allRooms").get(0).getAsJsonObject().addProperty("zone", targetZone);
-                    snapshot.set(WorldState.parse(json));
-                }
-                return null;
-            }).when(session).apply(any());
             var handler = new ControllerHandler(bridge, store) {
                 @Override
                 CloudClient connect(Identity credentials, Operation operation) {
@@ -148,7 +140,8 @@ class ControllerHandlerTest {
                 if (status.getStatus() == ThingStatus.ONLINE) {
                     if (queued.compareAndSet(false, true)) {
                         // Queue room and zone commands while the initial operation is still active.
-                        handler.roomCommand(0, CHANNEL_LIVING_ZONE, membership);
+                        json.getAsJsonArray("allRooms").get(0).getAsJsonObject().addProperty("zone", targetZone);
+                        snapshot.set(WorldState.parse(json));
                         handler.roomCommand(0, CHANNEL_MANUAL, OnOffType.ON);
                         handler.livingZoneCommand(CHANNEL_MANUAL, OnOffType.OFF);
                     } else {
@@ -162,12 +155,11 @@ class ControllerHandlerTest {
                 handler.initialize();
                 assertTrue(finished.await(10, TimeUnit.SECONDS));
                 var patches = ArgumentCaptor.forClass(WorldState.Patch.class);
-                verify(session, times(3)).apply(patches.capture());
+                verify(session, times(2)).apply(patches.capture());
                 var sent = patches.getAllValues();
-                assertEquals(targetZone, sent.get(0).body().get("zone").getAsString());
-                assertEquals("/api/zones/living", sent.get(2).uri());
-                assertEquals("Schedule", sent.get(2).body().get("regulationType").getAsString());
-                assertEquals(membership == OnOffType.ON ? "/api/zones/living" : "/api/rooms/0", sent.get(1).uri());
+                assertEquals("/api/zones/living", sent.get(1).uri());
+                assertEquals("Schedule", sent.get(1).body().get("regulationType").getAsString());
+                assertEquals(membership == OnOffType.ON ? "/api/zones/living" : "/api/rooms/0", sent.get(0).uri());
             } finally {
                 handler.dispose();
             }
@@ -175,7 +167,7 @@ class ControllerHandlerTest {
     }
 
     @Test
-    void rejectedMembershipReportsStatusAndFailedWriteIsNotReplayed() throws Exception {
+    void rejectedCommandReportsStatusAndFailedWriteIsNotReplayed() throws Exception {
         var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "test").build();
         var identity = Identity.generate();
         var store = mock(PairingStore.class);
@@ -202,7 +194,7 @@ class ControllerHandlerTest {
             org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
             if (status.getStatus() == ThingStatus.ONLINE) {
                 if (queued.compareAndSet(false, true)) {
-                    handler.roomCommand(0, CHANNEL_LIVING_ZONE, OnOffType.ON);
+                    handler.roomCommand(0, CHANNEL_MANUAL, OnOffType.ON);
                 } else {
                     recovered.countDown();
                 }

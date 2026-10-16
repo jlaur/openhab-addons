@@ -157,4 +157,29 @@ class ProtocolTest {
             return replies.remove();
         }
     }
+
+    @Test
+    void rejectionDiagnosticsIncludeErrorsButExcludeUnrelatedResponseData() {
+        var response = com.google.gson.JsonParser.parseString("""
+                {"statusDescription":"Bad Request","headers":["Authorization: secret"],
+                "content":{"message":"Invalid room zone","privateKey":"secret", "allRooms":[{"name":"Private"}]}}
+                """).getAsJsonObject();
+        String details = CloudClient.errorDetails(response);
+        var parsed = com.google.gson.JsonParser.parseString(details).getAsJsonObject();
+        assertEquals("Invalid room zone", parsed.get("message").getAsString());
+        assertFalse(details.contains("secret"));
+        assertFalse(details.contains("Private"));
+        response.add("content", com.google.gson.JsonParser.parseString("""
+                {"errorMessages":["Invalid room zone", {"privateKey":"secret"}, null, 42], "allRooms":[]}
+                """));
+        details = CloudClient.errorDetails(response);
+        assertTrue(details.contains("\"errorMessages\":[\"Invalid room zone\"]"));
+        assertFalse(details.contains("secret"));
+        assertFalse(details.contains("allRooms"));
+        response.addProperty("content", "Bad request\nDetails");
+        assertTrue(CloudClient.errorDetails(response).contains("Bad request\\nDetails"));
+        assertFalse(CloudClient.errorDetails(response).contains("\n"));
+        response.addProperty("content", "x".repeat(20000));
+        assertEquals(2048 + " [truncated]".length(), CloudClient.errorDetails(response).length());
+    }
 }

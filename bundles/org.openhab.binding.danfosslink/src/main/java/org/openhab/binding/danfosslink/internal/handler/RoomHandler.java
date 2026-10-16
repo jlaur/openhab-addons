@@ -15,6 +15,7 @@ package org.openhab.binding.danfosslink.internal.handler;
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
 import java.math.BigDecimal;
+import java.util.Objects;
 
 import javax.measure.Unit;
 import javax.measure.quantity.Temperature;
@@ -48,6 +49,8 @@ import org.slf4j.LoggerFactory;
  */
 @NonNullByDefault
 public class RoomHandler extends BaseThingHandler {
+    private static final String PROPERTY_LIVING_ZONE = "livingZone";
+
     private final Logger logger = LoggerFactory.getLogger(RoomHandler.class);
     private final Object lifecycle = new Object();
     private final DanfossLinkStateDescriptionProvider stateDescriptionProvider;
@@ -104,7 +107,6 @@ public class RoomHandler extends BaseThingHandler {
 
     @Override
     public void handleCommand(ChannelUID channel, Command command) {
-        logger.trace("Room channel {} received command type {}", channel, command.getClass().getSimpleName());
         ControllerHandler controller = controller();
         if (controller == null) {
             logger.debug("Ignoring command for {}: controller handler unavailable", channel);
@@ -123,7 +125,7 @@ public class RoomHandler extends BaseThingHandler {
         } else {
             switch (channel.getId()) {
                 case CHANNEL_SETPOINT, CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT, CHANNEL_MANUAL_SETPOINT,
-                        CHANNEL_MANUAL, CHANNEL_LIVING_ZONE ->
+                        CHANNEL_MANUAL ->
                     controller.roomCommand(id, channel.getId(), command);
                 default -> {
                 }
@@ -146,7 +148,6 @@ public class RoomHandler extends BaseThingHandler {
                 updateState(CHANNEL_AWAY_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
-                updateState(CHANNEL_LIVING_ZONE, UnDefType.UNDEF);
             } else if (getThing().getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.UNKNOWN);
             }
@@ -169,8 +170,12 @@ public class RoomHandler extends BaseThingHandler {
                 updateState(CHANNEL_AWAY_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
-                updateState(CHANNEL_LIVING_ZONE, UnDefType.UNDEF);
                 return;
+            }
+            String zone = room.zone();
+            String livingZone = "Living".equals(zone) ? "true" : "None".equals(zone) ? "false" : null;
+            if (!Objects.equals(getThing().getProperties().get(PROPERTY_LIVING_ZONE), livingZone)) {
+                updateProperty(PROPERTY_LIVING_ZONE, livingZone);
             }
             stateDescriptionProvider.update(getThing().getUID(), room.minimum(), room.maximum(), snapshot.unit());
             updateState(CHANNEL_TEMPERATURE, temperature(room.temperature(), snapshot.unit()));
@@ -178,9 +183,6 @@ public class RoomHandler extends BaseThingHandler {
             updateState(CHANNEL_HOME_SETPOINT, temperature(room.homeSetpoint(), snapshot.unit()));
             updateState(CHANNEL_AWAY_SETPOINT, temperature(room.awaySetpoint(), snapshot.unit()));
             updateState(CHANNEL_MANUAL_SETPOINT, temperature(room.manualSetpoint(), snapshot.unit()));
-            String zone = room.zone();
-            updateState(CHANNEL_LIVING_ZONE,
-                    "Living".equals(zone) ? OnOffType.ON : "None".equals(zone) ? OnOffType.OFF : UnDefType.UNDEF);
             String type = room.regulationType();
             updateState(CHANNEL_MANUAL,
                     "Manual".equals(type) ? OnOffType.ON : "Schedule".equals(type) ? OnOffType.OFF : UnDefType.UNDEF);

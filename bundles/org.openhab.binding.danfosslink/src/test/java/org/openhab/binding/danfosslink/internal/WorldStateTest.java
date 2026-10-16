@@ -186,22 +186,10 @@ class WorldStateTest {
     }
 
     @Test
-    void livingZoneMembershipUsesRoomPatchWithoutTemperatureRequirements() throws Exception {
-        var json = world();
-        json.remove("temperatureSettings");
-        var room = json.getAsJsonArray("allRooms").get(0).getAsJsonObject();
-        room.remove("minSetpoint");
-        room.remove("maxSetpoint");
-        for (var mode : org.openhab.core.library.types.OnOffType.values()) {
-            String zone = mode == org.openhab.core.library.types.OnOffType.ON ? "Living" : "None";
-            var patch = WorldState.parse(json).patch(0, "living-zone", mode);
-            assertEquals("/api/rooms/0", patch.uri());
-            assertEquals(JsonParser.parseString("{\"id\":0,\"zone\":\"" + zone + "\"}"), patch.body());
-        }
+    void roomMembershipCommandsAreNotSupported() throws Exception {
+        var state = WorldState.parse(world());
         assertThrows(IllegalArgumentException.class,
-                () -> WorldState.parse(json).patch(0, "living-zone", new DecimalType(1)));
-        assertThrows(IllegalArgumentException.class,
-                () -> WorldState.parse(json).patch(1, "living-zone", org.openhab.core.library.types.OnOffType.ON));
+                () -> state.patch(0, "living-zone", org.openhab.core.library.types.OnOffType.ON));
     }
 
     @Test

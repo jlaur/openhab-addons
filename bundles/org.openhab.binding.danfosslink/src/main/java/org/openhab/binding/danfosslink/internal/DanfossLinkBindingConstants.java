@@ -34,7 +34,6 @@ public final class DanfossLinkBindingConstants {
     public static final String CHANNEL_AWAY_SETPOINT = "away-setpoint";
     public static final String CHANNEL_MANUAL_SETPOINT = "manual-setpoint";
     public static final String CHANNEL_MANUAL = "manual";
-    public static final String CHANNEL_LIVING_ZONE = "living-zone";
     public static final String CHANNEL_REGULATION_STATE = "regulation-state";
 
     public static final String PARAMETER_ROOM_ID = "roomId";

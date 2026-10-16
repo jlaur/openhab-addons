@@ -58,7 +58,6 @@ The Bridge exposes the controller's serial number and firmware version as Thing 
 | room | away-setpoint | Number:Temperature | Read/Write | Persistent temperature for Away/Sleeping periods |
 | room | manual-setpoint | Number:Temperature | Read/Write | Persistent temperature for manual operation |
 | room | manual | Switch | Read/Write | ON selects manual operation; OFF resumes the schedule |
-| room | living-zone | Switch | Read/Write | ON includes the room in the Living zone; OFF makes it independent |
 | room | regulation-state | String | Read | Controller's regulation state |
 | living-zone | manual | Switch | Read/Write | ON selects manual operation for the Living zone; OFF resumes its schedule |
 
@@ -85,19 +84,17 @@ The binding refreshes all rooms afterwards.
 An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
 Manual commands are rejected when zone membership is unknown.
 
-The `living-zone` switch changes membership of the controller's shared Living zone.
-Rooms in that zone share its schedule and manual/scheduled mode.
-Missing or unrecognized membership is reported as `UNDEF`.
-After a membership change, the binding reads the controller again before sending subsequent commands, including manual-mode changes.
-The switch does not create an openHAB Thing or change the room Thing's parent Bridge.
-
 ### Living Zone
 
 The `living-zone` Thing controls the shared Living zone without selecting a representative room.
 Its `manual` switch uses the same zone command as the manual switch of a member room.
 ON selects manual operation; OFF selects automatic operation following the zone's schedule.
 Each room keeps its own temperature setpoints.
-Room membership is managed through the `living-zone` switch on each room Thing.
+Configure room membership on the Danfoss Link CC controller.
+Each room Thing exposes a `livingZone` property: `true` for a member of the Living zone, or `false` for an independent room.
+The property is updated from controller responses and removed when the room's membership is missing or unrecognized.
+During communication outages, it retains the last reported value.
+The binding reads membership to determine which rooms share the Living zone's schedule and manual/scheduled mode; it does not change membership.
 
 The controller's world response reports regulation on the member rooms rather than a separate zone object.
 The zone's manual state is therefore derived from its members: all must report Manual for ON or Schedule for OFF.
@@ -164,7 +161,7 @@ log:set TRACE org.openhab.binding.danfosslink
 ```
 
 Send the command once and inspect `openhab.log`.
-The log records receipt at the room handler, queuing, the PATCH URI and body, response HTTP status, and the membership reported after a zone change.
+The log records commands being applied, request URIs, PATCH bodies, response HTTP status, and bounded controller error details.
 A failed operation identifies its stage; HTTP rejections also appear in the controller Bridge status.
 A rejection or communication failure makes the Bridge offline and room channel states undefined until communication recovers.
 Failed writes are not automatically replayed.

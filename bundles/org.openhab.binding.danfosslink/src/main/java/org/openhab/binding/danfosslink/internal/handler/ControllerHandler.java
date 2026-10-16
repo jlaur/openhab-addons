@@ -24,7 +24,6 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.CloudClient;
-import org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants;
 import org.openhab.binding.danfosslink.internal.Identity;
 import org.openhab.binding.danfosslink.internal.Operation;
 import org.openhab.binding.danfosslink.internal.PairingStore;
@@ -216,8 +215,6 @@ public class ControllerHandler extends BaseBridgeHandler {
             var key = target;
             commands.remove(key);
             commands.put(key, command);
-            logger.trace("Controller {} queued {} for {}; operation active={}", getThing().getUID(), command, target,
-                    active != null);
         }
         refresh();
     }
@@ -243,8 +240,6 @@ public class ControllerHandler extends BaseBridgeHandler {
                 return;
             }
             stage = "connecting to cloud";
-            logger.trace("Controller {} starting operation with {} pending commands", getThing().getUID(),
-                    pending.size());
             try (var client = connect(credentials.identity, operation)) {
                 if (pin != null) {
                     stage = "pairing";
@@ -273,18 +268,6 @@ public class ControllerHandler extends BaseBridgeHandler {
                                         key);
                                 session.apply(patch);
                                 refreshRequired = true;
-                                if (DanfossLinkBindingConstants.CHANNEL_LIVING_ZONE.equals(key.channel())) {
-                                    // Later manual commands must use the confirmed membership for their scope.
-                                    stage = "reading back zone membership";
-                                    snapshot = session.world();
-                                    Integer roomId = key.roomId();
-                                    var room = roomId == null ? null : snapshot.rooms().get(roomId);
-                                    String actual = room == null ? null : room.zone();
-                                    String expected = patch.body().get("zone").getAsString();
-                                    logger.debug("Controller {} room {} membership readback: requested={}, reported={}",
-                                            getThing().getUID(), roomId, expected, actual);
-                                    refreshRequired = false;
-                                }
                             } catch (IllegalArgumentException e) {
                                 logger.debug("Ignoring command after updated room configuration: {}", e.getMessage());
                             }

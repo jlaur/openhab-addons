@@ -78,12 +78,6 @@
 			zone.</description>
 	</channel-type>
 
-	<channel-type id="living-zone">
-		<item-type>Switch</item-type>
-		<label>Living Zone</label>
-		<description>Include the room in the shared Living zone (ON), or make it independent (OFF)</description>
-	</channel-type>
-
 	<channel-type id="zone-manual">
 		<item-type>Switch</item-type>
 		<label>Manual Mode</label>

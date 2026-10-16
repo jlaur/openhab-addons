@@ -49,32 +49,33 @@ import org.osgi.service.component.annotations.Reference;
 @NonNullByDefault
 @Component(service = { DynamicStateDescriptionProvider.class, DanfossLinkStateDescriptionProvider.class })
 public class DanfossLinkStateDescriptionProvider extends BaseDynamicStateDescriptionProvider {
-    private final Map<ChannelUID, StateDescriptionFragment> descriptions = new ConcurrentHashMap<>();
-    private final ItemChannelLinkRegistry links;
+    private final Map<ChannelUID, StateDescriptionFragment> descriptionFragments = new ConcurrentHashMap<>();
+    private final ItemChannelLinkRegistry itemChannelLinkRegistry;
 
     @Activate
     public DanfossLinkStateDescriptionProvider(@Reference EventPublisher eventPublisher,
-            @Reference ItemChannelLinkRegistry links) {
+            @Reference ItemChannelLinkRegistry itemChannelLinkRegistry) {
         this.eventPublisher = eventPublisher;
-        this.links = links;
+        this.itemChannelLinkRegistry = itemChannelLinkRegistry;
     }
 
     public void update(ThingUID thing, @Nullable BigDecimal minimum, @Nullable BigDecimal maximum,
             @Nullable Unit<Temperature> unit) {
-        StateDescriptionFragment description = null;
+        StateDescriptionFragment stateDescription = null;
         if (minimum != null && maximum != null && unit != null && minimum.compareTo(maximum) <= 0) {
             // State-description bounds have no unit of their own; keep the display pattern in the same scale.
-            description = StateDescriptionFragmentBuilder.create().withMinimum(minimum.stripTrailingZeros())
-                    .withMaximum(maximum.stripTrailingZeros()).withPattern("%.1f " + unit)
-                    .withStep(BigDecimal.valueOf(0.5)).build();
+            stateDescription = StateDescriptionFragmentBuilder.create().withMinimum(minimum.stripTrailingZeros())
+                    .withMaximum(maximum.stripTrailingZeros()).withPattern("%.1f " + unit).build();
         }
-        for (String channel : new String[] { CHANNEL_SETPOINT, CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT,
+        for (String channelId : new String[] { CHANNEL_SETPOINT, CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT,
                 CHANNEL_MANUAL_SETPOINT }) {
-            var uid = new ChannelUID(thing, channel);
-            var previous = description == null ? descriptions.remove(uid) : descriptions.put(uid, description);
-            if (!Objects.equals(previous, description)) {
-                postEvent(ThingEventFactory.createChannelDescriptionChangedEvent(uid, links.getLinkedItemNames(uid),
-                        description == null ? StateDescriptionFragmentBuilder.create().build() : description,
+            var channelUid = new ChannelUID(thing, channelId);
+            var previous = stateDescription == null ? descriptionFragments.remove(channelUid)
+                    : descriptionFragments.put(channelUid, stateDescription);
+            if (!Objects.equals(previous, stateDescription)) {
+                postEvent(ThingEventFactory.createChannelDescriptionChangedEvent(channelUid,
+                        itemChannelLinkRegistry.getLinkedItemNames(channelUid),
+                        stateDescription == null ? StateDescriptionFragmentBuilder.create().build() : stateDescription,
                         previous));
             }
         }
@@ -85,23 +86,24 @@ public class DanfossLinkStateDescriptionProvider extends BaseDynamicStateDescrip
     }
 
     @Override
-    public @Nullable StateDescription getStateDescription(Channel channel, @Nullable StateDescription original,
-            @Nullable Locale locale) {
-        var description = descriptions.get(channel.getUID());
-        if (description == null) {
+    public @Nullable StateDescription getStateDescription(Channel channel,
+            @Nullable StateDescription originalStateDescription, @Nullable Locale locale) {
+        StateDescriptionFragment stateDescription = descriptionFragments.get(channel.getUID());
+        if (stateDescription == null) {
             return null;
         }
-        var builder = original == null ? StateDescriptionFragmentBuilder.create()
-                : StateDescriptionFragmentBuilder.create(original);
-        return builder.withMinimum(Objects.requireNonNull(description.getMinimum()))
-                .withMaximum(Objects.requireNonNull(description.getMaximum()))
-                .withPattern(Objects.requireNonNull(description.getPattern())).build().toStateDescription();
+        StateDescriptionFragmentBuilder builder = originalStateDescription == null
+                ? StateDescriptionFragmentBuilder.create()
+                : StateDescriptionFragmentBuilder.create(originalStateDescription);
+        return builder.withMinimum(Objects.requireNonNull(stateDescription.getMinimum()))
+                .withMaximum(Objects.requireNonNull(stateDescription.getMaximum()))
+                .withPattern(Objects.requireNonNull(stateDescription.getPattern())).build().toStateDescription();
     }
 
     @Override
     @Deactivate
     public void deactivate() {
-        descriptions.clear();
+        descriptionFragments.clear();
         super.deactivate();
     }
 }

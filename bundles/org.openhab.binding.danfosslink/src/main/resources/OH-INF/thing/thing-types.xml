@@ -45,7 +45,6 @@
 			<channel id="away-setpoint" typeId="away-setpoint"/>
 			<channel id="manual-setpoint" typeId="manual-setpoint"/>
 			<channel id="manual" typeId="manual"/>
-			<channel id="living-zone" typeId="living-zone"/>
 			<channel id="regulation-state" typeId="regulation-state"/>
 		</channels>
 
