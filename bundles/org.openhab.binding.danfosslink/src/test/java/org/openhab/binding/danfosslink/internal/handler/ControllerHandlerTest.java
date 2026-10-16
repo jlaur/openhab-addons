@@ -59,7 +59,8 @@ class ControllerHandlerTest {
         var release = new CountDownLatch(1);
         var closed = new CountDownLatch(1);
         var online = new CountDownLatch(1);
-        var state = new WorldState(Map.of(), null, "serial", "firmware", "2026-10-16T14:30:00+02:00", null);
+        var state = new WorldState(Map.of(), null, "serial", "firmware", "Danfoss",
+                java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), null);
         when(session.world()).thenAnswer(call -> {
             entered.countDown();
             assertTrue(release.await(10, TimeUnit.SECONDS));
@@ -230,7 +231,7 @@ class ControllerHandlerTest {
             var client = mock(CloudClient.class);
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
-            var inactive = new WorldState(Map.of(), null, null, null, null,
+            var inactive = new WorldState(Map.of(), null, null, null, null, null,
                     new WorldState.Vacation("Inactive", null, null, null));
             var snapshot = new AtomicReference<>(inactive);
             when(session.world()).thenAnswer(call -> snapshot.get());
@@ -238,7 +239,7 @@ class ControllerHandlerTest {
                 if (reject) {
                     throw new CloudClient.ControllerResponseException(400);
                 }
-                snapshot.set(new WorldState(Map.of(), null, null, null, null,
+                snapshot.set(new WorldState(Map.of(), null, null, null, null, null,
                         new WorldState.Vacation("Active", null, null, null)));
                 return null;
             }).when(session).vacation(any());
@@ -292,12 +293,12 @@ class ControllerHandlerTest {
         var start = java.time.Instant.now().plusSeconds(86400).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
         var end = start.plusSeconds(86400);
         var laterEnd = end.plusSeconds(86400);
-        var snapshot = new AtomicReference<>(
-                new WorldState(Map.of(), null, null, null, null, new WorldState.Vacation("Planned", start, end, null)));
+        var snapshot = new AtomicReference<>(new WorldState(Map.of(), null, null, null, null, null,
+                new WorldState.Vacation("Planned", start, end, null)));
         when(session.world()).thenAnswer(call -> snapshot.get());
         doAnswer(call -> {
             com.google.gson.JsonObject body = call.getArgument(0);
-            snapshot.set(new WorldState(Map.of(), null, null, null, null,
+            snapshot.set(new WorldState(Map.of(), null, null, null, null, null,
                     new WorldState.Vacation("Planned", java.time.Instant.parse(body.get("startTime").getAsString()),
                             java.time.Instant.parse(body.get("endTime").getAsString()), null)));
             return null;
@@ -338,6 +339,60 @@ class ControllerHandlerTest {
             verify(session, times(4)).world();
         } finally {
             handler.dispose();
+        }
+    }
+
+    @Test
+    void clockWarningUsesInstantThresholdAndResetsOnInitialize() throws Exception {
+        var now = java.time.Instant.parse("2026-10-16T12:00:00Z");
+        for (long seconds : new long[] { -301, -300, 0, 300, 301 }) {
+            var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "clock").build();
+            var identity = Identity.generate();
+            var store = mock(PairingStore.class);
+            when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+            var client = mock(CloudClient.class);
+            var session = mock(CloudClient.Session.class);
+            when(client.open(any())).thenReturn(session);
+            var time = now.plusSeconds(seconds).atZone(java.time.ZoneOffset.ofHours(2));
+            when(session.world()).thenReturn(new WorldState(Map.of(), null, null, null, null, time, null));
+            var logger = mock(org.slf4j.Logger.class);
+            try (var factory = mockStatic(org.slf4j.LoggerFactory.class, CALLS_REAL_METHODS)) {
+                factory.when(() -> org.slf4j.LoggerFactory.getLogger(ControllerHandler.class)).thenReturn(logger);
+                var handler = new ControllerHandler(bridge, store,
+                        java.time.Clock.fixed(now, java.time.ZoneOffset.UTC)) {
+                    @Override
+                    CloudClient connect(Identity credentials, Operation operation) {
+                        return client;
+                    }
+                };
+                var callback = mock(ThingHandlerCallback.class);
+                handler.setCallback(callback);
+                try {
+                    for (int lifecycle = 1; lifecycle <= 2; lifecycle++) {
+                        var finished = new CountDownLatch(1);
+                        var reports = new java.util.concurrent.atomic.AtomicInteger();
+                        doAnswer(call -> {
+                            org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                            if (status.getStatus() == ThingStatus.ONLINE) {
+                                if (reports.incrementAndGet() == 1) {
+                                    // Queue another snapshot in the same lifecycle to verify warning suppression.
+                                    handler.livingZoneCommand(CHANNEL_MANUAL, OnOffType.ON);
+                                } else {
+                                    finished.countDown();
+                                }
+                            }
+                            return null;
+                        }).when(callback).statusUpdated(eq(bridge), any());
+                        handler.initialize();
+                        assertTrue(finished.await(10, TimeUnit.SECONDS));
+                        handler.dispose();
+                        verify(logger, times(Math.abs(seconds) > 300 ? lifecycle : 0)).warn(anyString(),
+                                eq(bridge.getUID()), eq(time));
+                    }
+                } finally {
+                    handler.dispose();
+                }
+            }
         }
     }
 }

@@ -295,10 +295,42 @@ class WorldStateTest {
         var json = world();
         assertNull(WorldState.parse(json).systemTime());
         json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-16T14:30:00+02:00");
-        assertEquals("2026-10-16T14:30:00+02:00", WorldState.parse(json).systemTime());
+        assertEquals(java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), WorldState.parse(json).systemTime());
         json.getAsJsonObject("systemInfo").add("systemTime", com.google.gson.JsonNull.INSTANCE);
         assertNull(WorldState.parse(json).systemTime());
         json.remove("systemInfo");
         assertNull(WorldState.parse(json).systemTime());
+    }
+
+    @Test
+    void malformedClockDoesNotPreventRoomPolling() throws Exception {
+        for (String value : new String[] { "\"invalid\"", "{}", "42", "null" }) {
+            var json = world();
+            json.getAsJsonObject("systemInfo").add("systemTime", JsonParser.parseString(value));
+            var state = WorldState.parse(json);
+            assertNull(state.systemTime());
+            assertEquals(1, state.rooms().size());
+        }
+    }
+
+    @Test
+    void roomIdentifiersMustBePresentNonnegativeIntegersInRange() {
+        for (String room : new String[] { "{}", "{\"id\":null}", "{\"id\":1.5}", "{\"id\":-1}", "{\"id\":2147483648}",
+                "null" }) {
+            var json = JsonParser.parseString("{\"allRooms\":[" + room + "]}").getAsJsonObject();
+            assertThrows(IOException.class, () -> WorldState.parse(json));
+        }
+    }
+
+    @Test
+    void systemInfoTimestampRoundTripsThroughGson() {
+        var gson = new com.google.gson.Gson();
+        var json = JsonParser.parseString("""
+                {"systemTime":"2026-10-16T14:30:00+02:00","serialNo":"0000521691"}
+                """);
+        var info = java.util.Objects.requireNonNull(
+                gson.fromJson(json, org.openhab.binding.danfosslink.internal.protocol.dto.SystemInfoDTO.class));
+        assertEquals(java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), info.systemTime);
+        assertEquals(json, gson.toJsonTree(info));
     }
 }

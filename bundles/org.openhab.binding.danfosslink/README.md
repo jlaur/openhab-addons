@@ -49,6 +49,7 @@ Removing a Thing does not revoke its app registration on the physical controller
 The Bridge exposes the controller's serial number and firmware version as Thing properties.
 The `systemTime` property contains the last controller-reported timestamp, including its UTC offset (for example, `2026-10-16T14:30:00+02:00`).
 It updates when controller data is refreshed; it is not a continuously advancing clock and retains its last value during communication outages.
+If the reported time differs from openHAB by more than five minutes, the binding logs a warning once per controller handler lifecycle.
 The binding does not set or correct the controller's clock.
 
 ## Channels

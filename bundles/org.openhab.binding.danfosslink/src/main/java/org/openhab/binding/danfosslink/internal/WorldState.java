@@ -16,19 +16,23 @@ import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstan
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 
 import javax.measure.Unit;
 import javax.measure.quantity.Temperature;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.protocol.dto.WorldDTO;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.QuantityType;
@@ -38,6 +42,7 @@ import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -47,8 +52,12 @@ import com.google.gson.JsonObject;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String serialNumber,
-        @Nullable String firmware, @Nullable String systemTime, @Nullable Vacation vacation) {
+public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String brandingType,
+        @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
+        @Nullable Vacation vacation) {
+
+    private static final Gson GSON = new Gson();
+
     public record Vacation(String state, @Nullable Instant start, @Nullable Instant end,
             @Nullable ZoneOffset localOffset) {
     }
@@ -61,44 +70,46 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
 
     public static WorldState parse(JsonObject world) throws IOException {
         try {
+            WorldDTO response = Objects.requireNonNull(GSON.fromJson(world, WorldDTO.class));
             Unit<Temperature> unit = null;
-            JsonObject settings = world.getAsJsonObject("temperatureSettings");
-            String scale = settings == null ? null : text(settings, "temperatureScale");
+            var settings = response.temperatureSettings;
+            String scale = settings == null ? null : settings.temperatureScale;
             if ("Celcius".equals(scale)) {
                 unit = SIUnits.CELSIUS;
             } else if ("Fahrenheit".equals(scale)) {
                 unit = ImperialUnits.FAHRENHEIT;
             }
             Map<Integer, Room> rooms = new LinkedHashMap<>();
-            var allRooms = world.getAsJsonArray("allRooms");
+            var allRooms = response.allRooms;
             if (allRooms == null) {
                 throw new IOException("Missing room list");
             }
-            for (JsonElement element : allRooms) {
-                JsonObject room = element.getAsJsonObject();
-                int id = room.get("id").getAsBigDecimal().intValueExact();
+            for (var room : allRooms) {
+                var identifier = room.id;
+                if (identifier == null) {
+                    throw new IOException("Missing room ID");
+                }
+                int id = identifier.intValueExact();
                 if (id < 0 || rooms.containsKey(id)) {
                     throw new IOException("Invalid or duplicate room ID");
                 }
-                String name = text(room, "name");
-                JsonObject setpoint = room.getAsJsonObject("setpoint");
-                JsonObject regulation = room.getAsJsonObject("regulation");
-                BigDecimal temperature = decimal(room, "ambientTemperature");
-                if (room.has("hasTemperatureSensor") && !room.get("hasTemperatureSensor").getAsBoolean()) {
-                    temperature = null;
-                }
-                rooms.put(id, new Room(id, name == null ? "Room " + id : name, temperature,
-                        setpoint == null ? null : decimal(setpoint, "temperature"), decimal(room, "minSetpoint"),
-                        decimal(room, "maxSetpoint"), text(room, "regulationState"),
-                        regulation == null ? null : decimal(regulation, "atHomeSetpoint"),
-                        regulation == null ? null : decimal(regulation, "awaySetpoint"),
-                        regulation == null ? null : decimal(regulation, "manualSetpoint"),
-                        regulation == null ? null : text(regulation, "type"), text(room, "zone")));
+                String name = room.name;
+                var setpoint = room.setpoint;
+                var regulation = room.regulation;
+                BigDecimal temperature = Boolean.FALSE.equals(room.hasTemperatureSensor) ? null
+                        : room.ambientTemperature;
+                rooms.put(id,
+                        new Room(id, name == null ? "Room " + id : name, temperature,
+                                setpoint == null ? null : setpoint.temperature, room.minSetpoint, room.maxSetpoint,
+                                room.regulationState, regulation == null ? null : regulation.atHomeSetpoint,
+                                regulation == null ? null : regulation.awaySetpoint,
+                                regulation == null ? null : regulation.manualSetpoint,
+                                regulation == null ? null : regulation.type, room.zone));
             }
-            JsonObject info = world.getAsJsonObject("systemInfo");
-            return new WorldState(Map.copyOf(rooms), unit, info == null ? null : text(info, "serialNo"),
-                    info == null ? null : text(info, "version"), info == null ? null : text(info, "systemTime"),
-                    vacation(world));
+            var info = response.systemInfo;
+            return new WorldState(Map.copyOf(rooms), unit, info == null ? null : info.brandingType,
+                    info == null ? null : info.serialNo, info == null ? null : info.version,
+                    info == null ? null : info.systemTime, vacation(world));
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
@@ -128,7 +139,7 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
                     String start = text(mode,
                             localOffset == null && mode.has("startTimeUtc") ? "startTimeUtc" : "startTime");
                     String end = text(mode, localOffset == null && mode.has("endTimeUtc") ? "endTimeUtc" : "endTime");
-                    vacation = new Vacation(java.util.Objects.requireNonNull(state), vacationTime(start, localOffset),
+                    vacation = new Vacation(Objects.requireNonNull(state), vacationTime(start, localOffset),
                             vacationTime(end, localOffset), localOffset);
                 }
             }
@@ -221,8 +232,8 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
         if (scale == null || room == null || room.minimum == null || room.maximum == null) {
             throw new IllegalArgumentException("Temperature scale or room limits unavailable");
         }
-        BigDecimal minimum = java.util.Objects.requireNonNull(room.minimum);
-        BigDecimal maximum = java.util.Objects.requireNonNull(room.maximum);
+        BigDecimal minimum = Objects.requireNonNull(room.minimum);
+        BigDecimal maximum = Objects.requireNonNull(room.maximum);
         BigDecimal value;
         if (command instanceof QuantityType<?> quantity) {
             var converted = quantity.toUnit(scale);
@@ -230,7 +241,7 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
                 throw new IllegalArgumentException("Not a temperature quantity");
             }
             // Remove unit-conversion rounding noise before comparing controller limits.
-            value = converted.toBigDecimal().setScale(6, java.math.RoundingMode.HALF_UP).stripTrailingZeros();
+            value = converted.toBigDecimal().setScale(6, RoundingMode.HALF_UP).stripTrailingZeros();
         } else if (command instanceof DecimalType decimal) {
             value = decimal.toBigDecimal();
         } else {
@@ -245,10 +256,5 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
     private static @Nullable String text(JsonObject object, String key) {
         JsonElement value = object.get(key);
         return value == null || value.isJsonNull() ? null : value.getAsString();
-    }
-
-    private static @Nullable BigDecimal decimal(JsonObject object, String key) {
-        JsonElement value = object.get(key);
-        return value == null || value.isJsonNull() ? null : value.getAsBigDecimal();
     }
 }

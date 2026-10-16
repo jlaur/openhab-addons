@@ -33,7 +33,9 @@
 		<description>Shared regulation for rooms in the controller's Living zone</description>
 
 		<channels>
-			<channel id="manual" typeId="zone-manual"/>
+			<channel id="manual" typeId="manual">
+				<description>Enable manual operation for the Living zone (ON), or resume its schedule (OFF)</description>
+			</channel>
 		</channels>
 	</thing-type>
 
@@ -51,7 +53,10 @@
 			<channel id="home-setpoint" typeId="home-setpoint"/>
 			<channel id="away-setpoint" typeId="away-setpoint"/>
 			<channel id="manual-setpoint" typeId="manual-setpoint"/>
-			<channel id="manual" typeId="manual"/>
+			<channel id="manual" typeId="manual">
+				<description>Enable manual temperature or resume the schedule. For Living-zone rooms, this changes the entire Living
+					zone.</description>
+			</channel>
 			<channel id="regulation-state" typeId="regulation-state"/>
 		</channels>
 
