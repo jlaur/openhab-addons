@@ -14,7 +14,11 @@ package org.openhab.binding.danfosslink.internal.handler;
 
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -63,6 +67,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     private final Logger logger = LoggerFactory.getLogger(ControllerHandler.class);
     private final ExecutorService worker = ThreadPoolManager.getPool("binding-danfosslink");
     private final PairingStore store;
+    private final Clock clock;
     private final Object lifecycle = new Object();
 
     private record CommandTarget(@Nullable Integer roomId, String channel) {
@@ -78,14 +83,20 @@ public class ControllerHandler extends BaseBridgeHandler {
     private VacationState vacation = new VacationState();
 
     private boolean running;
+    private boolean clockWarningLogged;
     private @Nullable Operation active;
     private @Nullable ScheduledFuture<?> polling;
     private @Nullable WorldState world;
     private @Nullable RoomDiscoveryService discovery;
 
     public ControllerHandler(Bridge bridge, PairingStore store) {
+        this(bridge, store, Clock.systemUTC());
+    }
+
+    ControllerHandler(Bridge bridge, PairingStore store, Clock clock) {
         super(bridge);
         this.store = store;
+        this.clock = clock;
     }
 
     @Override
@@ -98,6 +109,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             return;
         }
         synchronized (lifecycle) {
+            clockWarningLogged = false;
             running = true;
             updateStatus(ThingStatus.UNKNOWN);
             polling = scheduler.scheduleWithFixedDelay(this::refresh, interval, interval, TimeUnit.SECONDS);
@@ -387,9 +399,13 @@ public class ControllerHandler extends BaseBridgeHandler {
             vacation.report(snapshot.vacation());
             publishVacation();
             Map<String, String> properties = new HashMap<>(getThing().getProperties());
+            String vendor = snapshot.brandingType();
             String serial = snapshot.serialNumber();
             String firmware = snapshot.firmware();
-            String systemTime = snapshot.systemTime();
+            ZonedDateTime systemTime = snapshot.systemTime();
+            if (vendor != null) {
+                properties.put(Thing.PROPERTY_VENDOR, vendor);
+            }
             if (serial != null) {
                 properties.put(Thing.PROPERTY_SERIAL_NUMBER, serial);
             }
@@ -397,7 +413,14 @@ public class ControllerHandler extends BaseBridgeHandler {
                 properties.put(Thing.PROPERTY_FIRMWARE_VERSION, firmware);
             }
             if (systemTime != null) {
-                properties.put(PROPERTY_SYSTEM_TIME, systemTime);
+                properties.put(PROPERTY_SYSTEM_TIME, DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(systemTime));
+                if (!clockWarningLogged && Duration.between(systemTime.toInstant(), clock.instant()).abs()
+                        .compareTo(Duration.ofMinutes(5)) > 0) {
+                    clockWarningLogged = true;
+                    logger.warn(
+                            "Controller {} reports time {}, which differs from openHAB by more than five minutes; check the controller clock",
+                            getThing().getUID(), systemTime);
+                }
             }
             updateProperties(properties);
             updateStatus(ThingStatus.ONLINE);
