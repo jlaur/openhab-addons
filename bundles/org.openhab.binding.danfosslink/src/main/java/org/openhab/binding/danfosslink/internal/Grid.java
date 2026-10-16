@@ -20,6 +20,8 @@ import java.util.Map;
 
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Outbound MDG control and relay connections. Each instance performs one
@@ -30,6 +32,7 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 @NonNullByDefault
 final class Grid implements Closeable {
     private static final List<String> HOSTS = List.of("5.179.92.180", "5.179.92.182", "77.66.11.90", "77.66.11.92");
+    private final Logger logger = LoggerFactory.getLogger(Grid.class);
     private final Transport control;
     private final Identity identity;
     private final Operation operation;
@@ -141,16 +144,20 @@ final class Grid implements Closeable {
         if (host.isBlank() || port < 1 || port > 65535) {
             throw new IOException("Invalid relay endpoint");
         }
+        logger.trace("MDG connecting to relay {}:{}", host, port);
         Transport peer = Transport.connect(host, (int) port, operation);
+        String stage = "relay introduction";
         try {
             peer.send(Wire.message(0).fixed32(1, 0xf09d8c95).number(2, 1).number(3, 0).bytes(4, routing.bytes(5))
                     .text(5, "tlsv1_2").build());
+            stage = "waiting for relay to connect controller";
             for (int count = 0; count < 10; count++) {
                 var message = Wire.decode(peer.receive());
                 if (message.type() == 1) {
                     continue;
                 }
                 if (message.type() == 3) {
+                    logger.debug("MDG relay reported error {}", message.fields().number(1));
                     throw new IOException("MDG relay error " + message.fields().number(1));
                 }
                 if (message.type() != 2) {
@@ -159,11 +166,14 @@ final class Grid implements Closeable {
                 if (message.fields().values().containsKey(1) && !"tlsv1_2".equals(message.fields().text(1))) {
                     throw new IOException("Unexpected relay protocol");
                 }
+                stage = "controller TLS handshake";
                 peer.startTls(identity, true, verifier);
+                logger.trace("Controller TLS handshake completed");
                 return peer;
             }
             throw new IOException("Relay did not connect the controller");
         } catch (IOException | RuntimeException e) {
+            logger.debug("Controller session failed during {} ({})", stage, e.getClass().getSimpleName());
             peer.close();
             throw e;
         }
@@ -183,8 +193,14 @@ final class Grid implements Closeable {
         for (int count = 0; count < 100; count++) {
             var message = Wire.decode(control.receive());
             switch (message.type()) {
-                case 2 -> throw new IOException("MDG ended the session, reason " + message.fields().number(1));
-                case 3 -> throw new IOException("MDG requested reconnection; retry this operation");
+                case 2 -> {
+                    logger.debug("MDG ended the control session, reason {}", message.fields().number(1));
+                    throw new IOException("MDG ended the session, reason " + message.fields().number(1));
+                }
+                case 3 -> {
+                    logger.debug("MDG requested reconnection");
+                    throw new IOException("MDG requested reconnection; retry this operation");
+                }
                 case 4 -> control.send(Wire.message(5).number(1, message.fields().number(1)).build());
                 case 12 -> control.send(Wire.message(13).number(1, message.fields().number(1)).number(2, 0).build());
                 default -> {
