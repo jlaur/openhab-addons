@@ -9,6 +9,7 @@
 		<description>Danfoss Link CC connected through the cloud relay</description>
 
 		<channels>
+			<channel id="current-state" typeId="current-state"/>
 			<channel id="home" typeId="home"/>
 			<channel id="pause" typeId="pause"/>
 			<channel id="pause-until" typeId="pause-until"/>

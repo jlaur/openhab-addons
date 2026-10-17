@@ -56,6 +56,7 @@ The binding does not set or correct the controller's clock.
 
 | Thing | Channel | Item Type | Access | Description |
 | --- | --- | --- | --- | --- |
+| controller | current-state | String | Read | Controller-reported overall state, such as AtHome, Away or Asleep |
 | controller | home | Switch | Read/Write | ON applies the staged selection; OFF cancels Home |
 | room, living-zone | home-selected | Switch | Read/Write | Stage inclusion in the next Home activation |
 | controller | pause | Switch | Read/Write | ON starts or restarts a one-hour pause; OFF cancels Pause |
@@ -95,6 +96,20 @@ The manual switch follows the app's behaviour: for an independent room it change
 The binding refreshes all rooms afterwards.
 An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
 Manual commands are rejected when zone membership is unknown.
+
+### Current State
+
+The controller channel `current-state` reports `systemStatus.currentState` from the controller, without evaluating schedules locally.
+Values recognized by the app include `AtHome`, `Away`, `Asleep`, `Vacation`, `Pause`, `Manual`, `Boost`, `Normal`, `Off`, `On` and `Invalid`.
+If the controller reports a comma-separated composite state, the binding uses its first component, matching the app.
+Unknown state names are preserved; missing or empty values and communication failures produce `UNDEF`.
+The channel supports REFRESH and does not accept state-changing commands.
+
+`current-state` and `home` report different information: the overall controller state and the explicit Home override respectively.
+Scheduled Home can report `AtHome` while `home` is OFF; cancelling the override does not necessarily change `current-state` to `Away`.
+Both channels are updated from controller readback, without deriving one from the other.
+For automation, `Away` or `Asleep` together with `home` OFF can be used as a condition for activating Home.
+This overall state does not establish the current schedule period of each independently scheduled room.
 
 ### Home Override
 

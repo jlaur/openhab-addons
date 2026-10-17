@@ -52,6 +52,30 @@ class WorldStateTest {
     }
 
     @Test
+    void currentStateIsIndependentOfHomeOverrideAndAcceptsFutureValues() throws Exception {
+        var json = world();
+        assertNull(WorldState.parse(json).currentState());
+        json.add("modes", JsonParser.parseString("""
+                [{"type":"AtHome","state":"Inactive"}]
+                """));
+        var status = new JsonObject();
+        json.add("systemStatus", status);
+        assertNull(WorldState.parse(json).currentState());
+        for (String value : new String[] { "AtHome", "Away", "Asleep", "Vacation", "Pause", "Manual", "FutureState" }) {
+            status.addProperty("currentState", value);
+            var snapshot = WorldState.parse(json);
+            assertEquals(value, snapshot.currentState());
+            assertEquals("Inactive", java.util.Objects.requireNonNull(snapshot.home()).state());
+        }
+        status.addProperty("currentState", "AtHome, Away");
+        assertEquals("AtHome", WorldState.parse(json).currentState());
+        status.addProperty("currentState", " ");
+        assertNull(WorldState.parse(json).currentState());
+        status.add("currentState", com.google.gson.JsonNull.INSTANCE);
+        assertNull(WorldState.parse(json).currentState());
+    }
+
+    @Test
     void temperaturesAndCommandsRespectScaleAndLimits() throws Exception {
         var state = WorldState.parse(world());
         assertEquals(SIUnits.CELSIUS, state.unit());
