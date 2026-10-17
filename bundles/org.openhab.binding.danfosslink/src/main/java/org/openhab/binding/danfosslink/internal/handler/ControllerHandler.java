@@ -41,6 +41,7 @@ import org.openhab.binding.danfosslink.internal.discovery.RoomDiscoveryService;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.library.types.OnOffType;
+import org.openhab.core.library.types.StringType;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
@@ -493,6 +494,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                     }
                     publishPause(null);
                     updateState(CHANNEL_HOME, UnDefType.UNDEF);
+                    updateState(CHANNEL_CURRENT_STATE, UnDefType.UNDEF);
                     logger.debug("Controller {} operation failed during {} ({})", getThing().getUID(), stage,
                             e.getClass().getSimpleName());
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
@@ -527,7 +529,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
         var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
                 raw.systemTime(), time.toOpenHab(raw.vacation()), time.toOpenHab(raw.pause()),
-                time.toOpenHab(raw.home()));
+                time.toOpenHab(raw.home()), raw.currentState());
         return new Snapshot(state, time);
     }
 
@@ -542,6 +544,8 @@ public class ControllerHandler extends BaseBridgeHandler {
                 return;
             }
             world = snapshot;
+            String currentState = snapshot.currentState();
+            updateState(CHANNEL_CURRENT_STATE, currentState == null ? UnDefType.UNDEF : new StringType(currentState));
             updateState(CHANNEL_HOME, HomeSelection.reported(snapshot.home()));
             publishPause(snapshot.pause());
             vacation.report(snapshot.vacation());
