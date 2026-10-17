@@ -65,6 +65,8 @@
 			<channel id="regulation-state" typeId="regulation-state"/>
 		</channels>
 
+		<representation-property>roomId</representation-property>
+
 		<config-description>
 			<parameter name="roomId" type="integer" min="0" required="true">
 				<label>Room ID</label>

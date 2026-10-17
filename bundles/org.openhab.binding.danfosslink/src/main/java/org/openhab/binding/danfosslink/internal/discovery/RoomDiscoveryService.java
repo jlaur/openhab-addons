@@ -24,13 +24,15 @@ import org.openhab.core.config.discovery.DiscoveryResultBuilder;
 import org.openhab.core.thing.ThingUID;
 import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerService;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.ServiceScope;
 
 /**
  * Discovers rooms and the built-in Living zone under their paired controller Bridge.
  *
  * @author Jacob Laursen - Initial contribution
  */
-@org.osgi.service.component.annotations.Component(scope = org.osgi.service.component.annotations.ServiceScope.PROTOTYPE, service = RoomDiscoveryService.class)
+@Component(scope = ServiceScope.PROTOTYPE, service = RoomDiscoveryService.class)
 @NonNullByDefault
 public class RoomDiscoveryService extends AbstractDiscoveryService implements ThingHandlerService {
     private volatile @Nullable ControllerHandler handler;
