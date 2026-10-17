@@ -56,6 +56,8 @@ The binding does not set or correct the controller's clock.
 
 | Thing | Channel | Item Type | Access | Description |
 | --- | --- | --- | --- | --- |
+| controller | pause | Switch | Read/Write | ON starts or restarts a one-hour pause; OFF cancels Pause |
+| controller | pause-until | DateTime | Read/Write | Start or adjust Pause until a future deadline |
 | controller | vacation | Switch | Read/Write | ON enables vacation; OFF cancels vacation and clears staged dates |
 | controller | vacation-state | String | Read | Inactive, Planned, or Active |
 | controller | vacation-start | DateTime | Read/Write | Staged or controller-reported vacation start |
@@ -91,6 +93,40 @@ The manual switch follows the app's behaviour: for an independent room it change
 The binding refreshes all rooms afterwards.
 An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
 Manual commands are rejected when zone membership is unknown.
+
+### Controller Clock Conversion
+
+Pause and Vacation DateTime channels use openHAB time.
+For each world response, the binding estimates clock skew by comparing the controller's `systemTime` with openHAB time when the response is received.
+Outgoing deadlines are shifted into controller time; incoming mode dates are shifted back into openHAB time before validation or publication.
+This also applies to vacations configured outside openHAB and to edits of planned vacation dates.
+Staged vacation dates stay in openHAB time until sent using a fresh controller response.
+
+The estimate is refreshed for every response and is not retained across connections.
+Network latency and the controller's timestamp precision can cause small differences in readback.
+If a response has no usable `systemTime`, dates remain unadjusted for that response.
+The `systemTime` property and clock-skew warning remain uncorrected; the binding does not change the controller clock.
+
+### Pause
+
+Send ON to `pause` to start a one-hour pause, or restart that hour if already active.
+Send OFF to cancel Pause without cancelling other overrides.
+A future DateTime command to `pause-until` starts Pause immediately or changes its deadline.
+Dates are truncated to whole seconds; expired dates and dates beyond 2099 are rejected.
+The binding always supplies an end time when activating Pause and cannot request indefinite Pause.
+
+The channels publish controller readback rather than assuming commands succeeded.
+`pause` is ON while the controller reports Active and OFF for Inactive.
+`pause-until` reports the controller's end timestamp, or `UNDEF` when inactive or no end is reported.
+Missing or unrecognized Pause data produces `UNDEF` for both channels.
+Commands rejected by the controller are logged at DEBUG and followed by a refresh; failed writes are not retried automatically.
+The controller manages expiration, so openHAB does not schedule a separate cancellation.
+
+Arbitrary durations still need verification on a real controller.
+To test, send a deadline five minutes in the future, check the returned `pause-until`, and confirm that `pause` returns to OFF after expiration (allowing for the polling interval).
+A successful request alone does not prove that the controller honors the requested duration.
+Timestamps use the controller's reported UTC offset and the clock-skew conversion described above.
+TRACE logging includes the outgoing Pause request for comparison with readback.
 
 ### Vacation
 

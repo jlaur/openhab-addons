@@ -333,4 +333,37 @@ class WorldStateTest {
         assertEquals(java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), info.systemTime);
         assertEquals(json, gson.toJsonTree(info));
     }
+
+    @Test
+    void pauseParsingIsOptionalAndIndependentOfVacation() throws Exception {
+        var json = world();
+        assertNull(WorldState.parse(json).pause());
+        json.add("systemInfo", JsonParser.parseString("{\"systemTime\":\"2026-10-17T14:00:00+02:00\"}"));
+        json.add("modes", JsonParser.parseString("""
+                [{"type":"Vacation","state":"Inactive"},
+                {"type":"Pause","state":"Active","endTime":"2026-10-17T14:05:00"}]
+                """));
+        var state = WorldState.parse(json);
+        assertEquals(java.time.Instant.parse("2026-10-17T12:05:00Z"),
+                java.util.Objects.requireNonNull(state.pause()).end());
+        var mode = json.getAsJsonArray("modes").get(1).getAsJsonObject();
+        for (String bad : new String[] { "Unknown", "Planned" }) {
+            mode.addProperty("state", bad);
+            assertNull(WorldState.parse(json).pause());
+            assertNotNull(WorldState.parse(json).vacation());
+        }
+        mode.addProperty("state", "Active");
+        mode.addProperty("endTime", "bad-date");
+        assertNull(WorldState.parse(json).pause());
+        assertNotNull(WorldState.parse(json).vacation());
+        json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-17T12:00:00Z");
+        mode.addProperty("endTimeUtc", "2026-10-17T12:05:00Z");
+        assertEquals(java.time.Instant.parse("2026-10-17T12:05:00Z"),
+                java.util.Objects.requireNonNull(WorldState.parse(json).pause()).end());
+        mode.addProperty("endTimeUtc", "9999-12-31T23:59:59Z");
+        assertNull(java.util.Objects.requireNonNull(WorldState.parse(json).pause()).end());
+        json.getAsJsonArray("modes").add(mode.deepCopy());
+        assertNull(WorldState.parse(json).pause());
+        assertFalse(WorldState.parse(json).rooms().isEmpty());
+    }
 }

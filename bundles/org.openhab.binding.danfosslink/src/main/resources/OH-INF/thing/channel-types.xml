@@ -80,6 +80,28 @@
 		</tags>
 	</channel-type>
 
+	<channel-type id="pause">
+		<item-type>Switch</item-type>
+		<label>Pause</label>
+		<description>ON starts or restarts a one-hour pause; OFF cancels Pause</description>
+		<category>Switch</category>
+		<command>
+			<options>
+				<option value="ON">Pause for One Hour</option>
+				<option value="OFF">Cancel Pause</option>
+			</options>
+		</command>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
+	<channel-type id="pause-until">
+		<item-type>DateTime</item-type>
+		<label>Pause Until</label>
+		<description>Start or adjust Pause until a future date and time; reports the controller-confirmed deadline</description>
+		<category>Time</category>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
 	<channel-type id="vacation">
 		<item-type>Switch</item-type>
 		<label>Vacation</label>
@@ -99,13 +121,7 @@
 		<label>Vacation State</label>
 		<description>Vacation state reported by the controller</description>
 		<category>Vacation</category>
-		<state readOnly="true">
-			<options>
-				<option value="Inactive">Inactive</option>
-				<option value="Planned">Planned</option>
-				<option value="Active">Active</option>
-			</options>
-		</state>
+		<state readOnly="true"/>
 	</channel-type>
 
 	<channel-type id="vacation-start">

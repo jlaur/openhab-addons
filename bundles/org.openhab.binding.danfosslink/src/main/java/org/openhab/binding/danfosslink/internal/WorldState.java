@@ -54,12 +54,11 @@ import com.google.gson.JsonObject;
 @NonNullByDefault
 public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String brandingType,
         @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
-        @Nullable Vacation vacation) {
+        @Nullable Mode vacation, @Nullable Mode pause) {
 
     private static final Gson GSON = new Gson();
 
-    public record Vacation(String state, @Nullable Instant start, @Nullable Instant end,
-            @Nullable ZoneOffset localOffset) {
+    public record Mode(String state, @Nullable Instant start, @Nullable Instant end, @Nullable ZoneOffset localOffset) {
     }
 
     public record Room(int id, String name, @Nullable BigDecimal temperature, @Nullable BigDecimal setpoint,
@@ -109,13 +108,18 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             var info = response.systemInfo;
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : info.brandingType,
                     info == null ? null : info.serialNo, info == null ? null : info.version,
-                    info == null ? null : info.systemTime, vacation(world));
+                    info == null ? null : info.systemTime, mode(world, "Vacation"), pause(world));
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
     }
 
-    private static @Nullable Vacation vacation(JsonObject world) {
+    private static @Nullable Mode pause(JsonObject world) {
+        Mode mode = mode(world, "Pause");
+        return mode == null || "Planned".equals(mode.state()) ? null : mode;
+    }
+
+    private static @Nullable Mode mode(JsonObject world, String type) {
         // Optional mode data must not prevent room polling on older or unexpected controller responses.
         try {
             var modes = world.getAsJsonArray("modes");
@@ -127,29 +131,29 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             // The app uses offset-free local requests when the controller reports a numeric time offset.
             ZoneOffset localOffset = systemTime == null || systemTime.endsWith("Z") ? null
                     : OffsetDateTime.parse(systemTime).getOffset();
-            Vacation vacation = null;
+            Mode result = null;
             for (JsonElement element : modes) {
                 JsonObject mode = element.getAsJsonObject();
-                if ("Vacation".equals(text(mode, "type"))) {
+                if (type.equals(text(mode, "type"))) {
                     String state = text(mode, "state");
-                    if (vacation != null
+                    if (result != null
                             || !("Inactive".equals(state) || "Planned".equals(state) || "Active".equals(state))) {
                         return null;
                     }
                     String start = text(mode,
                             localOffset == null && mode.has("startTimeUtc") ? "startTimeUtc" : "startTime");
                     String end = text(mode, localOffset == null && mode.has("endTimeUtc") ? "endTimeUtc" : "endTime");
-                    vacation = new Vacation(Objects.requireNonNull(state), vacationTime(start, localOffset),
-                            vacationTime(end, localOffset), localOffset);
+                    result = new Mode(Objects.requireNonNull(state), modeTime(start, localOffset),
+                            modeTime(end, localOffset), localOffset);
                 }
             }
-            return vacation;
+            return result;
         } catch (RuntimeException e) {
             return null;
         }
     }
 
-    private static @Nullable Instant vacationTime(@Nullable String value, @Nullable ZoneOffset localOffset) {
+    private static @Nullable Instant modeTime(@Nullable String value, @Nullable ZoneOffset localOffset) {
         if (value == null) {
             return null;
         }

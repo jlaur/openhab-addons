@@ -9,6 +9,8 @@
 		<description>Danfoss Link CC connected through the cloud relay</description>
 
 		<channels>
+			<channel id="pause" typeId="pause"/>
+			<channel id="pause-until" typeId="pause-until"/>
 			<channel id="vacation" typeId="vacation"/>
 			<channel id="vacation-state" typeId="vacation-state"/>
 			<channel id="vacation-start" typeId="vacation-start"/>
