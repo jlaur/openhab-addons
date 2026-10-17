@@ -61,6 +61,13 @@ class LivingZoneHandlerTest {
             handler.initialize();
             verify(controller).childHandlerInitialized(handler, thing);
             clearInvocations(controller);
+            var selected = new ChannelUID(thing.getUID(), CHANNEL_HOME_SELECTED);
+            handler.handleCommand(selected, OnOffType.ON);
+            verify(controller).selectHome(null, OnOffType.ON);
+            var selection = new HomeSelection();
+            selection.select(null, OnOffType.ON, state);
+            handler.publishHomeSelection(selection, state);
+            verify(callback).stateUpdated(selected, OnOffType.ON);
             handler.handleCommand(channel, OnOffType.OFF);
             verify(controller).livingZoneCommand(CHANNEL_MANUAL, OnOffType.OFF);
             handler.handleCommand(channel, RefreshType.REFRESH);
@@ -73,11 +80,13 @@ class LivingZoneHandlerTest {
             handler.publish(state);
             verify(callback).stateUpdated(channel, OnOffType.ON);
             clearInvocations(callback);
-            handler.publish(new WorldState(Map.of(), null, null, null, null, null, null, null));
+            handler.publish(new WorldState(Map.of(), null, null, null, null, null, null, null, null));
             verify(callback).stateUpdated(channel, UnDefType.UNDEF);
             handler.dispose();
             clearInvocations(callback, controller);
             handler.publish(state);
+            handler.publishHomeSelection(selection, state);
+            handler.handleCommand(selected, OnOffType.ON);
             handler.handleCommand(channel, OnOffType.ON);
             handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.NONE, null));
             verifyNoInteractions(callback, controller);

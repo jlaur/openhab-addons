@@ -56,6 +56,8 @@ The binding does not set or correct the controller's clock.
 
 | Thing | Channel | Item Type | Access | Description |
 | --- | --- | --- | --- | --- |
+| controller | home | Switch | Read/Write | ON applies the staged selection; OFF cancels Home |
+| room, living-zone | home-selected | Switch | Read/Write | Stage inclusion in the next Home activation |
 | controller | pause | Switch | Read/Write | ON starts or restarts a one-hour pause; OFF cancels Pause |
 | controller | pause-until | DateTime | Read/Write | Start or adjust Pause until a future deadline |
 | controller | vacation | Switch | Read/Write | ON enables vacation; OFF cancels vacation and clears staged dates |
@@ -93,6 +95,30 @@ The manual switch follows the app's behaviour: for an independent room it change
 The binding refreshes all rooms afterwards.
 An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
 Manual commands are rejected when zone membership is unknown.
+
+### Home Override
+
+Select rooms with their `home-selected` channels, then send ON to the controller's `home` channel.
+Room identifiers are resolved by the binding; users do not supply them.
+Selection changes only stage intent, even while Home is active, and do not send controller requests.
+Sending ON captures the current selection; subsequent selection edits do not change that queued request.
+Send ON again to explicitly apply a revised selection while Home is active.
+This repeated-activation behavior still needs verification on the controller.
+Send OFF to cancel Home through its own mode endpoint, retaining the staged selection.
+
+The Living zone and its member rooms share a single selection.
+Changing any member's `home-selected` channel selects or deselects the whole zone and updates the other member channels.
+Activation includes all current Living-zone rooms, including rooms without an openHAB Thing.
+Standalone rooms are selected individually.
+The binding rejects empty selections, missing selected rooms, changed standalone-room membership, and selected rooms whose regulation is not `Schedule`.
+Resolve the selection or regulation setting and send ON again; the binding does not silently skip rooms or change manual mode.
+
+The `home` switch reflects the controller-reported override: ON for Active, OFF for Inactive, or `UNDEF` when unavailable.
+The `home-selected` channels represent staged intent, not the actual override membership.
+Changes made in the app or on the controller update `home` without overwriting staged selections.
+Selections start OFF, survive ordinary polls, reconnects and cancellation, and reset when the controller handler is reinitialized (including a binding restart).
+Failed writes are not replayed automatically; controller rejections are logged at DEBUG and followed by readback.
+TRACE logging includes the Home request for troubleshooting.
 
 ### Controller Clock Conversion
 
