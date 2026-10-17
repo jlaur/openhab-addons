@@ -21,6 +21,8 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.WorldState.Mode;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
+import org.openhab.binding.danfosslink.internal.protocol.serialization.ModeRequestSerializer;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.types.Command;
@@ -41,16 +43,14 @@ final class PauseState {
             if (current == null) {
                 throw new IllegalArgumentException("Pause state is unavailable");
             }
-            JsonObject body = new JsonObject();
-            body.addProperty("type", "Pause");
-            body.addProperty("state", cancel ? "Inactive" : "Active");
+            var body = new ModeRequestDTO("Pause", cancel ? "Inactive" : "Active");
             if (!cancel) {
                 Instant requested = until;
                 Instant end = (requested == null ? now.plusSeconds(3600) : requested).truncatedTo(ChronoUnit.SECONDS);
                 validate(end, now);
-                body.addProperty("endTime", time.timestamp(end, current.localOffset()));
+                body.endTime = time.toController(end);
             }
-            return body;
+            return ModeRequestSerializer.serialize(body, current.localOffset());
         }
     }
 

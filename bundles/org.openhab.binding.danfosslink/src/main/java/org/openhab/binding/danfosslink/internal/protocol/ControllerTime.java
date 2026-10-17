@@ -14,10 +14,7 @@ package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -25,7 +22,6 @@ import org.openhab.binding.danfosslink.internal.WorldState.Mode;
 
 /**
  * Converts deadlines using the controller clock observed in one world response.
- * UTC offset describes timestamp formatting; clock skew describes the difference between clock readings.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -54,16 +50,5 @@ public record ControllerTime(Duration skew) {
         Instant end = mode.end();
         return new Mode(mode.state(), start == null ? null : toOpenHab(start), end == null ? null : toOpenHab(end),
                 mode.localOffset());
-    }
-
-    public String timestamp(Instant value, @Nullable ZoneOffset localOffset) {
-        var timestamp = toController(value).truncatedTo(ChronoUnit.SECONDS)
-                .atOffset(localOffset == null ? ZoneOffset.UTC : localOffset);
-        // Out-of-range protocol dates represent unspecified boundaries, not finite deadlines.
-        if (timestamp.getYear() < 1970 || timestamp.getYear() > 2099) {
-            throw new IllegalArgumentException("Converted controller deadline must be between 1970 and 2099");
-        }
-        return localOffset == null ? timestamp.toInstant().toString()
-                : DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(timestamp);
     }
 }

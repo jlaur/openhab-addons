@@ -27,6 +27,8 @@ import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.types.UnDefType;
 
+import com.google.gson.JsonParser;
+
 /**
  * Timed Pause requests, validation and controller readback.
  *
@@ -48,8 +50,9 @@ class PauseStateTest {
         assertEquals(body, on.body(new Mode("Active", null, NOW.plusSeconds(60), null), NOW.plusSeconds(10),
                 ControllerTime.UNADJUSTED));
         var off = PauseState.command(CHANNEL_PAUSE, OnOffType.OFF, NOW).body(INACTIVE, NOW, ControllerTime.UNADJUSTED);
-        assertEquals("Inactive", off.get("state").getAsString());
-        assertFalse(off.has("endTime"));
+        assertEquals(JsonParser.parseString("""
+                {"type":"Pause","state":"Inactive"}
+                """), off);
     }
 
     @Test

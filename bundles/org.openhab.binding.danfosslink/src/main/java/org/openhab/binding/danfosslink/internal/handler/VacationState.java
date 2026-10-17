@@ -21,6 +21,8 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.WorldState.Mode;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
+import org.openhab.binding.danfosslink.internal.protocol.serialization.ModeRequestSerializer;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
@@ -62,14 +64,12 @@ final class VacationState {
                 }
                 validate(desiredStart, desiredEnd, now, true);
             }
-            JsonObject body = new JsonObject();
-            body.addProperty("type", "Vacation");
-            body.addProperty("state", command == OnOffType.OFF ? "Inactive" : "Active");
+            var body = new ModeRequestDTO("Vacation", command == OnOffType.OFF ? "Inactive" : "Active");
             if (command != OnOffType.OFF && desiredStart != null && desiredEnd != null) {
-                body.addProperty("startTime", time.timestamp(desiredStart, current.localOffset()));
-                body.addProperty("endTime", time.timestamp(desiredEnd, current.localOffset()));
+                body.startTime = time.toController(desiredStart);
+                body.endTime = time.toController(desiredEnd);
             }
-            return body;
+            return ModeRequestSerializer.serialize(body, current.localOffset());
         }
     }
 

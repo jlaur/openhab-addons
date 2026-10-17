@@ -13,17 +13,19 @@
 package org.openhab.binding.danfosslink.internal.handler;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.WorldState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
+import org.openhab.binding.danfosslink.internal.protocol.serialization.ModeRequestSerializer;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 /**
@@ -45,9 +47,7 @@ final class HomeSelection {
             if (snapshot.home() == null) {
                 throw new IllegalArgumentException("Home state is unavailable");
             }
-            JsonObject body = new JsonObject();
-            body.addProperty("type", "AtHome");
-            body.addProperty("state", active ? "Active" : "Inactive");
+            var body = new ModeRequestDTO("AtHome", active ? "Active" : "Inactive");
             if (active) {
                 Set<Integer> selected = new TreeSet<>();
                 for (int id : rooms) {
@@ -72,17 +72,15 @@ final class HomeSelection {
                     throw new IllegalArgumentException(
                             "Select at least one room or the Living zone before enabling Home");
                 }
-                JsonArray ids = new JsonArray();
                 for (int id : selected) {
                     var room = snapshot.rooms().get(id);
                     if (room == null || !"Schedule".equals(room.regulationType())) {
                         throw new IllegalArgumentException("Every selected room must use scheduled regulation");
                     }
-                    ids.add(id);
                 }
-                body.add("rooms", ids);
+                body.rooms = List.copyOf(selected);
             }
-            return body;
+            return ModeRequestSerializer.serialize(body, null);
         }
     }
 
