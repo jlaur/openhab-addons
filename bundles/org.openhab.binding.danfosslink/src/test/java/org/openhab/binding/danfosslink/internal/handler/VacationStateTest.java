@@ -27,6 +27,8 @@ import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.types.UnDefType;
 
+import com.google.gson.JsonParser;
+
 /**
  * Vacation staging, interval validation and reconciliation with controller state.
  *
@@ -47,7 +49,9 @@ class VacationStateTest {
         state.report(INACTIVE);
         var immediate = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW)).body(INACTIVE, NOW,
                 ControllerTime.UNADJUSTED);
-        assertEquals("Active", immediate.get("state").getAsString());
+        assertEquals(JsonParser.parseString("""
+                {"type":"Vacation","state":"Active"}
+                """), immediate);
         assertFalse(immediate.has("startTime"));
         assertFalse(immediate.has("endTime"));
         assertNull(state.command(CHANNEL_VACATION_START, new DateTimeType(START), NOW));
@@ -67,7 +71,9 @@ class VacationStateTest {
                 () -> request.body(new Mode("Active", null, null, null), NOW, ControllerTime.UNADJUSTED));
         var cancel = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.OFF, NOW)).body(INACTIVE, NOW,
                 ControllerTime.UNADJUSTED);
-        assertEquals("Inactive", cancel.get("state").getAsString());
+        assertEquals(JsonParser.parseString("""
+                {"type":"Vacation","state":"Inactive"}
+                """), cancel);
         assertEquals(UnDefType.UNDEF, state.state(CHANNEL_VACATION_START));
         assertEquals(UnDefType.UNDEF, state.state(CHANNEL_VACATION_END));
         state.command(CHANNEL_VACATION_END, new DateTimeType(END), NOW);
@@ -128,8 +134,9 @@ class VacationStateTest {
         state.command(CHANNEL_VACATION_END, new DateTimeType(END.plusMillis(456)), NOW);
         var body = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW)).body(inactive, NOW,
                 ControllerTime.UNADJUSTED);
-        assertEquals("2026-10-16T15:00:00", body.get("startTime").getAsString());
-        assertEquals("2026-10-16T16:00:00", body.get("endTime").getAsString());
+        assertEquals(JsonParser.parseString("""
+                {"type":"Vacation","state":"Active","startTime":"2026-10-16T15:00:00","endTime":"2026-10-16T16:00:00"}
+                """), body);
         state.command(CHANNEL_VACATION_END, new DateTimeType(START.plusMillis(999)), NOW);
         assertThrows(IllegalArgumentException.class, () -> state.command(CHANNEL_VACATION, OnOffType.ON, NOW));
     }
