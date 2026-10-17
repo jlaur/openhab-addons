@@ -82,7 +82,7 @@ class RoomHandlerTest {
                 verify(callback).stateUpdated(new ChannelUID(thing.getUID(), channel), UnDefType.UNDEF);
             }
             clearInvocations(callback);
-            handler.publish(new WorldState(Map.of(), SIUnits.CELSIUS, null, null, null, null, null, null));
+            handler.publish(new WorldState(Map.of(), SIUnits.CELSIUS, null, null, null, null, null, null, null));
             for (String channel : new String[] { CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT, CHANNEL_MANUAL_SETPOINT,
                     CHANNEL_MANUAL }) {
                 verify(callback).stateUpdated(new ChannelUID(thing.getUID(), channel), UnDefType.UNDEF);
@@ -136,6 +136,41 @@ class RoomHandlerTest {
             handler.publish(WorldState.parse(json));
             assertNull(thing.getProperties().get("livingZone"));
             verifyNoInteractions(callback);
+        } finally {
+            handler.dispose();
+        }
+    }
+
+    @Test
+    void homeSelectionUsesConfiguredRoomAndPublishesSharedZoneState() throws Exception {
+        var bridgeUID = new org.openhab.core.thing.ThingUID(THING_TYPE_CONTROLLER, "home-test");
+        var thing = ThingBuilder.create(THING_TYPE_ROOM, "home-test").withBridge(bridgeUID)
+                .withConfiguration(new Configuration(Map.of(PARAMETER_ROOM_ID, BigDecimal.valueOf(7)))).build();
+        var bridge = mock(org.openhab.core.thing.Bridge.class);
+        var controller = mock(ControllerHandler.class);
+        when(bridge.getHandler()).thenReturn(controller);
+        when(bridge.getStatusInfo()).thenReturn(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        var callback = mock(ThingHandlerCallback.class);
+        when(callback.getBridge(bridgeUID)).thenReturn(bridge);
+        var handler = new RoomHandler(thing, mock(DanfossLinkStateDescriptionProvider.class));
+        handler.setCallback(callback);
+        var snapshot = WorldState
+                .parse(JsonParser.parseString("{\"allRooms\":[{\"id\":7,\"zone\":\"Living\"}]}").getAsJsonObject());
+        var selected = new ChannelUID(thing.getUID(), CHANNEL_HOME_SELECTED);
+        var selection = new HomeSelection();
+        try {
+            handler.initialize();
+            handler.handleCommand(selected, OnOffType.ON);
+            verify(controller).selectHome(7, OnOffType.ON);
+            selection.select(null, OnOffType.ON, snapshot);
+            handler.publishHomeSelection(selection, snapshot);
+            verify(callback).stateUpdated(selected, OnOffType.ON);
+            handler.dispose();
+            clearInvocations(callback, controller);
+            handler.publishHomeSelection(selection, snapshot);
+            handler.handleCommand(selected, OnOffType.OFF);
+            verify(controller, never()).selectHome(any(), any());
+            verify(callback, never()).stateUpdated(any(), any());
         } finally {
             handler.dispose();
         }

@@ -9,6 +9,7 @@
 		<description>Danfoss Link CC connected through the cloud relay</description>
 
 		<channels>
+			<channel id="home" typeId="home"/>
 			<channel id="pause" typeId="pause"/>
 			<channel id="pause-until" typeId="pause-until"/>
 			<channel id="vacation" typeId="vacation"/>
@@ -35,6 +36,7 @@
 		<description>Shared regulation for rooms in the controller's Living zone</description>
 
 		<channels>
+			<channel id="home-selected" typeId="home-selected"/>
 			<channel id="manual" typeId="manual">
 				<description>Enable manual operation for the Living zone (ON), or resume its schedule (OFF)</description>
 			</channel>
@@ -55,6 +57,7 @@
 			<channel id="home-setpoint" typeId="home-setpoint"/>
 			<channel id="away-setpoint" typeId="away-setpoint"/>
 			<channel id="manual-setpoint" typeId="manual-setpoint"/>
+			<channel id="home-selected" typeId="home-selected"/>
 			<channel id="manual" typeId="manual">
 				<description>Enable manual temperature or resume the schedule. For Living-zone rooms, this changes the entire Living
 					zone.</description>

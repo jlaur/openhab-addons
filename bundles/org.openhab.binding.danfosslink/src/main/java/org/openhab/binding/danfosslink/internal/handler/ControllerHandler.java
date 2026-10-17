@@ -40,6 +40,7 @@ import org.openhab.binding.danfosslink.internal.config.ControllerConfiguration;
 import org.openhab.binding.danfosslink.internal.discovery.RoomDiscoveryService;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.core.common.ThreadPoolManager;
+import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
@@ -84,6 +85,8 @@ public class ControllerHandler extends BaseBridgeHandler {
 
     private final Map<String, VacationState.Request> vacationCommands = new LinkedHashMap<>();
     private PauseState.@Nullable Request pauseCommand;
+    private HomeSelection homeSelection = new HomeSelection();
+    private HomeSelection.@Nullable Request homeCommand;
     private VacationState vacation = new VacationState();
 
     private boolean running;
@@ -137,6 +140,8 @@ public class ControllerHandler extends BaseBridgeHandler {
             vacationCommands.clear();
             vacation = new VacationState();
             pauseCommand = null;
+            homeCommand = null;
+            homeSelection = new HomeSelection();
             world = null;
         }
         if (closing != null) {
@@ -147,6 +152,30 @@ public class ControllerHandler extends BaseBridgeHandler {
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
         if (command == RefreshType.REFRESH) {
+            refresh();
+        } else if (CHANNEL_HOME.equals(channelUID.getId())) {
+            synchronized (lifecycle) {
+                WorldState snapshot = world;
+                if (!running || snapshot == null) {
+                    return;
+                }
+                if (command instanceof OnOffType onOff) {
+                    try {
+                        var request = homeSelection.request(onOff);
+                        request.body(snapshot);
+                        homeCommand = request;
+                    } catch (IllegalArgumentException e) {
+                        logger.debug("Controller {} rejected Home command: {}", getThing().getUID(), e.getMessage());
+                    }
+                } else {
+                    logger.debug("Controller {} rejected Home command type {}", getThing().getUID(),
+                            command.getClass().getSimpleName());
+                }
+                updateState(CHANNEL_HOME, HomeSelection.reported(snapshot.home()));
+                if (homeCommand == null) {
+                    return;
+                }
+            }
             refresh();
         } else if (PAUSE_CHANNELS.contains(channelUID.getId())) {
             synchronized (lifecycle) {
@@ -222,8 +251,36 @@ public class ControllerHandler extends BaseBridgeHandler {
     private void publishChild(@Nullable ThingHandler child, WorldState snapshot) {
         if (child instanceof RoomHandler room) {
             room.publish(snapshot);
+            room.publishHomeSelection(homeSelection, snapshot);
         } else if (child instanceof LivingZoneHandler zone) {
             zone.publish(snapshot);
+            zone.publishHomeSelection(homeSelection, snapshot);
+        }
+    }
+
+    void selectHome(@Nullable Integer roomId, Command command) {
+        synchronized (lifecycle) {
+            WorldState snapshot = world;
+            if (!running || snapshot == null) {
+                return;
+            }
+            if (command instanceof OnOffType onOff) {
+                try {
+                    homeSelection.select(roomId, onOff, snapshot);
+                } catch (IllegalArgumentException e) {
+                    logger.debug("Controller {} rejected Home selection: {}", getThing().getUID(), e.getMessage());
+                }
+            } else {
+                logger.debug("Controller {} rejected Home selection command type {}", getThing().getUID(),
+                        command.getClass().getSimpleName());
+            }
+            for (Thing child : getThing().getThings()) {
+                if (child.getHandler() instanceof RoomHandler room) {
+                    room.publishHomeSelection(homeSelection, snapshot);
+                } else if (child.getHandler() instanceof LivingZoneHandler zone) {
+                    zone.publishHomeSelection(homeSelection, snapshot);
+                }
+            }
         }
     }
 
@@ -254,7 +311,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             Operation operation = new Operation();
             active = operation;
             updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Pairing in progress");
-            worker.execute(() -> run(operation, pin, Map.of(), Map.of(), null));
+            worker.execute(() -> run(operation, pin, Map.of(), Map.of(), null, null));
         }
         return "Pairing started. Check the controller Thing status for the result.";
     }
@@ -272,7 +329,9 @@ public class ControllerHandler extends BaseBridgeHandler {
             vacationCommands.clear();
             PauseState.Request pendingPause = pauseCommand;
             pauseCommand = null;
-            worker.execute(() -> run(operation, null, pending, pendingVacation, pendingPause));
+            HomeSelection.Request pendingHome = homeCommand;
+            homeCommand = null;
+            worker.execute(() -> run(operation, null, pending, pendingVacation, pendingPause, pendingHome));
         }
     }
 
@@ -311,7 +370,8 @@ public class ControllerHandler extends BaseBridgeHandler {
     }
 
     private void run(Operation operation, @Nullable String pin, Map<CommandTarget, Command> pending,
-            Map<String, VacationState.Request> pendingVacation, PauseState.@Nullable Request pendingPause) {
+            Map<String, VacationState.Request> pendingVacation, PauseState.@Nullable Request pendingPause,
+            HomeSelection.@Nullable Request pendingHome) {
         boolean paired = false;
         String stage = "loading pairing";
         try (operation) {
@@ -383,6 +443,25 @@ public class ControllerHandler extends BaseBridgeHandler {
                                 snapshot = readWorld(session);
                             }
                         }
+                        if (pendingHome != null) {
+                            operation.check();
+                            try {
+                                var body = pendingHome.body(snapshot.state());
+                                stage = "writing /api/modes/athome";
+                                logger.trace("Controller {} applying Home request: {}", getThing().getUID(), body);
+                                session.home(body);
+                                stage = "reading back Home";
+                                snapshot = readWorld(session);
+                            } catch (IllegalArgumentException e) {
+                                logger.debug("Controller {} rejected Home command after refresh: {}",
+                                        getThing().getUID(), e.getMessage());
+                            } catch (CloudClient.ControllerResponseException e) {
+                                logger.debug("Controller {} rejected Home request with HTTP {}", getThing().getUID(),
+                                        e.status());
+                                stage = "reading state after rejected Home request";
+                                snapshot = readWorld(session);
+                            }
+                        }
                         boolean refreshRequired = false;
                         for (var entry : pending.entrySet()) {
                             operation.check();
@@ -413,6 +492,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                         updateState(channel, UnDefType.UNDEF);
                     }
                     publishPause(null);
+                    updateState(CHANNEL_HOME, UnDefType.UNDEF);
                     logger.debug("Controller {} operation failed during {} ({})", getThing().getUID(), stage,
                             e.getClass().getSimpleName());
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
@@ -426,8 +506,8 @@ public class ControllerHandler extends BaseBridgeHandler {
         } finally {
             boolean again;
             synchronized (lifecycle) {
-                again = current(operation)
-                        && (paired || !commands.isEmpty() || !vacationCommands.isEmpty() || pauseCommand != null);
+                again = current(operation) && (paired || !commands.isEmpty() || !vacationCommands.isEmpty()
+                        || pauseCommand != null || homeCommand != null);
                 if (operation.equals(active)) {
                     active = null;
                 }
@@ -446,7 +526,8 @@ public class ControllerHandler extends BaseBridgeHandler {
         // Keep each conversion with its own response; never reuse a skew after reconnect or clock correction.
         ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
         var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
-                raw.systemTime(), time.toOpenHab(raw.vacation()), time.toOpenHab(raw.pause()));
+                raw.systemTime(), time.toOpenHab(raw.vacation()), time.toOpenHab(raw.pause()),
+                time.toOpenHab(raw.home()));
         return new Snapshot(state, time);
     }
 
@@ -461,6 +542,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                 return;
             }
             world = snapshot;
+            updateState(CHANNEL_HOME, HomeSelection.reported(snapshot.home()));
             publishPause(snapshot.pause());
             vacation.report(snapshot.vacation());
             publishVacation();

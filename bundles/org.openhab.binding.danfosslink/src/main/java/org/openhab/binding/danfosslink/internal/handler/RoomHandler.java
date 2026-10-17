@@ -124,6 +124,7 @@ public class RoomHandler extends BaseThingHandler {
             controller.refresh();
         } else {
             switch (channel.getId()) {
+                case CHANNEL_HOME_SELECTED -> controller.selectHome(id, command);
                 case CHANNEL_SETPOINT, CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT, CHANNEL_MANUAL_SETPOINT,
                         CHANNEL_MANUAL ->
                     controller.roomCommand(id, channel.getId(), command);
@@ -150,6 +151,14 @@ public class RoomHandler extends BaseThingHandler {
                 updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
             } else if (getThing().getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.UNKNOWN);
+            }
+        }
+    }
+
+    void publishHomeSelection(HomeSelection selection, WorldState snapshot) {
+        synchronized (lifecycle) {
+            if (running) {
+                updateState(CHANNEL_HOME_SELECTED, selection.state(roomId, snapshot));
             }
         }
     }

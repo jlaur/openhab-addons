@@ -28,6 +28,9 @@ public final class DanfossLinkBindingConstants {
     public static final ThingTypeUID THING_TYPE_LIVING_ZONE = new ThingTypeUID(BINDING_ID, "living-zone");
     public static final ThingTypeUID THING_TYPE_ROOM = new ThingTypeUID(BINDING_ID, "room");
 
+    public static final String CHANNEL_HOME = "home";
+    public static final String CHANNEL_HOME_SELECTED = "home-selected";
+
     public static final String CHANNEL_PAUSE = "pause";
     public static final String CHANNEL_PAUSE_UNTIL = "pause-until";
 
