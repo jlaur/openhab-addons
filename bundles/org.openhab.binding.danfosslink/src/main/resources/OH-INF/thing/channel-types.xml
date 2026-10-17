@@ -80,6 +80,17 @@
 		</tags>
 	</channel-type>
 
+	<channel-type id="current-state">
+		<item-type>String</item-type>
+		<label>Current State</label>
+		<description>Controller-reported overall state, independent of the Home override switch</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Mode</tag>
+		</tags>
+		<state readOnly="true"/>
+	</channel-type>
+
 	<channel-type id="home">
 		<item-type>Switch</item-type>
 		<label>Home Override</label>
@@ -152,7 +163,6 @@
 		<label>Vacation Start</label>
 		<description>Stage the start while inactive, or update the start of a planned vacation</description>
 		<category>Time</category>
-		<state pattern="%1$tF %1$tR"/>
 		<autoUpdatePolicy>veto</autoUpdatePolicy>
 	</channel-type>
 
@@ -161,7 +171,6 @@
 		<label>Vacation End</label>
 		<description>Stage the end while inactive, or update the end of a planned vacation</description>
 		<category>Time</category>
-		<state pattern="%1$tF %1$tR"/>
 		<autoUpdatePolicy>veto</autoUpdatePolicy>
 	</channel-type>
 

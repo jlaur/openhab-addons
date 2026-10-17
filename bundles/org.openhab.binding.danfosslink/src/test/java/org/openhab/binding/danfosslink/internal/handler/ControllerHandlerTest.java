@@ -60,7 +60,7 @@ class ControllerHandlerTest {
         var closed = new CountDownLatch(1);
         var online = new CountDownLatch(1);
         var state = new WorldState(Map.of(), null, "serial", "firmware", "Danfoss",
-                java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), null, null, null);
+                java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), null, null, null, null);
         when(session.world()).thenAnswer(call -> {
             entered.countDown();
             assertTrue(release.await(10, TimeUnit.SECONDS));
@@ -232,7 +232,7 @@ class ControllerHandlerTest {
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
             var inactive = new WorldState(Map.of(), null, null, null, null, null,
-                    new WorldState.Mode("Inactive", null, null, null), null, null);
+                    new WorldState.Mode("Inactive", null, null, null), null, null, null);
             var snapshot = new AtomicReference<>(inactive);
             when(session.world()).thenAnswer(call -> snapshot.get());
             doAnswer(call -> {
@@ -240,7 +240,7 @@ class ControllerHandlerTest {
                     throw new CloudClient.ControllerResponseException(400);
                 }
                 snapshot.set(new WorldState(Map.of(), null, null, null, null, null,
-                        new WorldState.Mode("Active", null, null, null), null, null));
+                        new WorldState.Mode("Active", null, null, null), null, null, null));
                 return null;
             }).when(session).vacation(any());
             var handler = new ControllerHandler(bridge, store) {
@@ -296,14 +296,16 @@ class ControllerHandlerTest {
         var end = start.plusSeconds(86400);
         var laterEnd = end.plusSeconds(86400);
         var snapshot = new AtomicReference<>(new WorldState(Map.of(), null, null, null, null, controllerNow,
-                new WorldState.Mode("Planned", start.minusSeconds(1500), end.minusSeconds(1500), null), null, null));
+                new WorldState.Mode("Planned", start.minusSeconds(1500), end.minusSeconds(1500), null), null, null,
+                null));
         when(session.world()).thenAnswer(call -> snapshot.get());
         doAnswer(call -> {
             com.google.gson.JsonObject body = call.getArgument(0);
-            snapshot.set(new WorldState(Map.of(), null, null, null, null, controllerNow,
-                    new WorldState.Mode("Planned", java.time.Instant.parse(body.get("startTime").getAsString()),
-                            java.time.Instant.parse(body.get("endTime").getAsString()), null),
-                    null, null));
+            snapshot.set(
+                    new WorldState(Map.of(), null, null, null, null, controllerNow,
+                            new WorldState.Mode("Planned", java.time.Instant.parse(body.get("startTime").getAsString()),
+                                    java.time.Instant.parse(body.get("endTime").getAsString()), null),
+                            null, null, null));
             return null;
         }).when(session).vacation(any());
         var handler = new ControllerHandler(bridge, store, java.time.Clock.fixed(now, java.time.ZoneOffset.UTC)) {
@@ -363,7 +365,8 @@ class ControllerHandlerTest {
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
             var time = now.plusSeconds(seconds).atZone(java.time.ZoneOffset.ofHours(2));
-            when(session.world()).thenReturn(new WorldState(Map.of(), null, null, null, null, time, null, null, null));
+            when(session.world())
+                    .thenReturn(new WorldState(Map.of(), null, null, null, null, time, null, null, null, null));
             var logger = mock(org.slf4j.Logger.class);
             try (var factory = mockStatic(org.slf4j.LoggerFactory.class, CALLS_REAL_METHODS)) {
                 factory.when(() -> org.slf4j.LoggerFactory.getLogger(ControllerHandler.class)).thenReturn(logger);
@@ -419,9 +422,9 @@ class ControllerHandlerTest {
             var initialClock = now.plusSeconds(1500).atZone(java.time.ZoneOffset.UTC);
             var correctedClock = now.minusSeconds(600).atZone(java.time.ZoneOffset.UTC);
             var inactive = new WorldState(Map.of(), null, null, null, null, correctedClock, null,
-                    new WorldState.Mode("Inactive", null, null, null), null);
+                    new WorldState.Mode("Inactive", null, null, null), null, null);
             var snapshot = new AtomicReference<>(
-                    new WorldState(Map.of(), null, null, null, null, initialClock, null, inactive.pause(), null));
+                    new WorldState(Map.of(), null, null, null, null, initialClock, null, inactive.pause(), null, null));
             when(session.world()).thenAnswer(call -> snapshot.get());
             doAnswer(call -> {
                 com.google.gson.JsonObject body = call.getArgument(0);
@@ -434,7 +437,7 @@ class ControllerHandlerTest {
                 } else {
                     // Simulate a controller adjusting the requested five minutes to one hour.
                     snapshot.set(new WorldState(Map.of(), null, null, null, null, correctedClock, null,
-                            new WorldState.Mode("Active", null, now.plusSeconds(3000), null), null));
+                            new WorldState.Mode("Active", null, now.plusSeconds(3000), null), null, null));
                 }
                 return null;
             }).when(session).pause(any());
@@ -512,6 +515,7 @@ class ControllerHandlerTest {
                     {"id":0,"zone":"None","regulation":{"type":"Schedule"}},
                     {"id":1,"zone":"Living","regulation":{"type":"Schedule"}},
                     {"id":2,"zone":"Living","regulation":{"type":"Schedule"}}],
+                    "systemStatus":{"currentState":"AtHome"},
                     "modes":[{"type":"AtHome","state":"Inactive"}]}
                     """).getAsJsonObject();
             when(session.world()).thenAnswer(call -> WorldState.parse(json));
@@ -538,6 +542,7 @@ class ControllerHandlerTest {
             var reports = new java.util.concurrent.atomic.AtomicInteger();
             var finished = new CountDownLatch(1);
             var channel = new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_HOME);
+            var currentStateChannel = new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_CURRENT_STATE);
             doAnswer(call -> {
                 org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
                 if (status.getStatus() == ThingStatus.OFFLINE && failure == -1) {
@@ -546,6 +551,9 @@ class ControllerHandlerTest {
                 if (status.getStatus() == ThingStatus.ONLINE) {
                     switch (reports.incrementAndGet()) {
                         case 1 -> {
+                            verify(callback).stateUpdated(currentStateChannel,
+                                    new org.openhab.core.library.types.StringType("AtHome"));
+                            verify(callback).stateUpdated(channel, OnOffType.OFF);
                             handler.selectHome(0, OnOffType.ON);
                             verify(session, never()).home(any());
                             handler.handleCommand(channel, OnOffType.ON);
@@ -571,10 +579,13 @@ class ControllerHandlerTest {
                 assertEquals(JsonParser.parseString("{\"type\":\"AtHome\",\"state\":\"Inactive\"}"),
                         bodies.getAllValues().get(2));
                 assertEquals(JsonParser.parseString("[1,2]"), bodies.getAllValues().get(3).get("rooms"));
+                verify(callback, times(5)).stateUpdated(currentStateChannel,
+                        new org.openhab.core.library.types.StringType("AtHome"));
                 verify(callback, atLeastOnce()).stateUpdated(channel, OnOffType.ON);
                 verify(callback, atLeastOnce()).stateUpdated(channel, OnOffType.OFF);
                 if (failure == -1) {
                     verify(callback, atLeastOnce()).stateUpdated(channel, org.openhab.core.types.UnDefType.UNDEF);
+                    verify(callback).stateUpdated(currentStateChannel, org.openhab.core.types.UnDefType.UNDEF);
                 }
                 verify(session, never()).pause(any());
                 verify(session, never()).vacation(any());

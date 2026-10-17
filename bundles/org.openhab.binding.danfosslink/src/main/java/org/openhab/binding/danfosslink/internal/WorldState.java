@@ -54,7 +54,7 @@ import com.google.gson.JsonObject;
 @NonNullByDefault
 public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String brandingType,
         @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
-        @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home) {
+        @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home, @Nullable String currentState) {
 
     private static final Gson GSON = new Gson();
 
@@ -106,10 +106,19 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
                                 regulation == null ? null : regulation.type, room.zone));
             }
             var info = response.systemInfo;
+            var status = response.systemStatus;
+            String currentState = status == null ? null : status.currentState;
+            if (currentState != null) {
+                // The app uses the first component when the controller reports a composite state.
+                currentState = currentState.split(",", 2)[0].trim();
+                if (currentState.isEmpty()) {
+                    currentState = null;
+                }
+            }
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : info.brandingType,
                     info == null ? null : info.serialNo, info == null ? null : info.version,
                     info == null ? null : info.systemTime, mode(world, "Vacation"), activeMode(world, "Pause"),
-                    activeMode(world, "AtHome"));
+                    activeMode(world, "AtHome"), currentState);
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }

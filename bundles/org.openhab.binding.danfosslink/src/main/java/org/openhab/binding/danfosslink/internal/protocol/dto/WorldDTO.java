@@ -24,7 +24,12 @@ import org.eclipse.jdt.annotation.Nullable;
 public class WorldDTO {
     public @Nullable List<RoomDTO> allRooms;
     public @Nullable SystemInfoDTO systemInfo;
+    public @Nullable SystemStatusDTO systemStatus;
     public @Nullable TemperatureSettingsDTO temperatureSettings;
+
+    public static class SystemStatusDTO {
+        public @Nullable String currentState;
+    }
 
     public static class TemperatureSettingsDTO {
         public @Nullable String temperatureScale;
