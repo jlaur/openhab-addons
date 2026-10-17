@@ -76,6 +76,8 @@ public class LivingZoneHandler extends BaseThingHandler {
         if (bridge != null && bridge.getHandler() instanceof ControllerHandler controller) {
             if (command == RefreshType.REFRESH) {
                 controller.refresh();
+            } else if (CHANNEL_HOME_SELECTED.equals(channel.getId())) {
+                controller.selectHome(null, command);
             } else if (CHANNEL_MANUAL.equals(channel.getId())) {
                 controller.livingZoneCommand(channel.getId(), command);
             }
@@ -93,6 +95,14 @@ public class LivingZoneHandler extends BaseThingHandler {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
             } else if (getThing().getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.UNKNOWN);
+            }
+        }
+    }
+
+    void publishHomeSelection(HomeSelection selection, WorldState snapshot) {
+        synchronized (lifecycle) {
+            if (running) {
+                updateState(CHANNEL_HOME_SELECTED, selection.state(null, snapshot));
             }
         }
     }

@@ -366,4 +366,22 @@ class WorldStateTest {
         assertNull(WorldState.parse(json).pause());
         assertFalse(WorldState.parse(json).rooms().isEmpty());
     }
+
+    @Test
+    void homeOverrideParsingIsOptionalAndRejectsUnknownOrDuplicateModes() throws Exception {
+        var json = world();
+        assertNull(WorldState.parse(json).home());
+        json.add("modes", JsonParser.parseString("[{\"type\":\"AtHome\",\"state\":\"Active\",\"rooms\":[0]}]"));
+        assertEquals("Active", java.util.Objects.requireNonNull(WorldState.parse(json).home()).state());
+        var mode = json.getAsJsonArray("modes").get(0).getAsJsonObject();
+        for (String invalid : new String[] { "Planned", "Unknown" }) {
+            mode.addProperty("state", invalid);
+            assertNull(WorldState.parse(json).home());
+        }
+        mode.addProperty("state", "Inactive");
+        assertEquals("Inactive", java.util.Objects.requireNonNull(WorldState.parse(json).home()).state());
+        json.getAsJsonArray("modes").add(mode.deepCopy());
+        assertNull(WorldState.parse(json).home());
+        assertFalse(WorldState.parse(json).rooms().isEmpty());
+    }
 }

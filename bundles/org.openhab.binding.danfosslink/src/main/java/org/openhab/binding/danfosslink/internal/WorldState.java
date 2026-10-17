@@ -54,7 +54,7 @@ import com.google.gson.JsonObject;
 @NonNullByDefault
 public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String brandingType,
         @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
-        @Nullable Mode vacation, @Nullable Mode pause) {
+        @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home) {
 
     private static final Gson GSON = new Gson();
 
@@ -108,14 +108,15 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             var info = response.systemInfo;
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : info.brandingType,
                     info == null ? null : info.serialNo, info == null ? null : info.version,
-                    info == null ? null : info.systemTime, mode(world, "Vacation"), pause(world));
+                    info == null ? null : info.systemTime, mode(world, "Vacation"), activeMode(world, "Pause"),
+                    activeMode(world, "AtHome"));
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
     }
 
-    private static @Nullable Mode pause(JsonObject world) {
-        Mode mode = mode(world, "Pause");
+    private static @Nullable Mode activeMode(JsonObject world, String type) {
+        Mode mode = mode(world, type);
         return mode == null || "Planned".equals(mode.state()) ? null : mode;
     }
 

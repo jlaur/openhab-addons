@@ -80,6 +80,29 @@
 		</tags>
 	</channel-type>
 
+	<channel-type id="home">
+		<item-type>Switch</item-type>
+		<label>Home Override</label>
+		<description>ON applies the staged room selection; OFF cancels Home</description>
+		<category>Switch</category>
+		<command>
+			<options>
+				<option value="ON">Apply Home Selection</option>
+				<option value="OFF">Cancel Home</option>
+			</options>
+		</command>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
+	<channel-type id="home-selected">
+		<item-type>Switch</item-type>
+		<label>Selected for Home</label>
+		<description>Stage selection for the next Home activation. Living-zone rooms share the zone's selection. This does not
+			change heating immediately.</description>
+		<category>Switch</category>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
 	<channel-type id="pause">
 		<item-type>Switch</item-type>
 		<label>Pause</label>
