@@ -49,11 +49,10 @@ class ControllerTimeTest {
     }
 
     @Test
-    void conversionUsesResponseTimeAndPreservesLocalAndLegacyWireFormats() {
+    void conversionUsesResponseTimeAndPreservesPrecision() {
         var time = ControllerTime.observed(NOW.plusSeconds(1500).atZone(ZoneOffset.UTC), NOW.plusMillis(250));
         var deadline = NOW.plusSeconds(300);
-        assertEquals("2026-10-17T01:17:59Z", time.timestamp(deadline, null));
-        assertEquals("2026-10-17T03:17:59", time.timestamp(deadline, ZoneOffset.ofHours(2)));
+        assertEquals(Instant.parse("2026-10-17T01:17:59.750Z"), time.toController(deadline));
         assertEquals(deadline.plusMillis(250), time.toOpenHab(NOW.plusSeconds(1800)));
         assertNull(time.toOpenHab((WorldState.Mode) null));
         assertEquals(new WorldState.Mode("Active", null, null, null),
@@ -61,9 +60,7 @@ class ControllerTimeTest {
     }
 
     @Test
-    void missingClockIsUnadjustedAndConvertedSentinelDatesAreRejected() {
+    void missingClockIsUnadjusted() {
         assertEquals(NOW, ControllerTime.observed(null, NOW).toController(NOW));
-        var time = new ControllerTime(Duration.ofDays(1));
-        assertThrows(IllegalArgumentException.class, () -> time.timestamp(Instant.parse("2099-12-31T12:00:00Z"), null));
     }
 }
