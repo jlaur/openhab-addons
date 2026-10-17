@@ -14,9 +14,9 @@ package org.openhab.binding.danfosslink.internal.handler;
 
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
@@ -38,6 +38,7 @@ import org.openhab.binding.danfosslink.internal.WorldState;
 import org.openhab.binding.danfosslink.internal.action.PairingActions;
 import org.openhab.binding.danfosslink.internal.config.ControllerConfiguration;
 import org.openhab.binding.danfosslink.internal.discovery.RoomDiscoveryService;
+import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
@@ -64,6 +65,8 @@ public class ControllerHandler extends BaseBridgeHandler {
     private static final Set<String> VACATION_CHANNELS = Set.of(CHANNEL_VACATION, CHANNEL_VACATION_STATE,
             CHANNEL_VACATION_START, CHANNEL_VACATION_END);
 
+    private static final Set<String> PAUSE_CHANNELS = Set.of(CHANNEL_PAUSE, CHANNEL_PAUSE_UNTIL);
+
     private final Logger logger = LoggerFactory.getLogger(ControllerHandler.class);
     private final ExecutorService worker = ThreadPoolManager.getPool("binding-danfosslink");
     private final PairingStore store;
@@ -80,6 +83,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     private final Map<CommandTarget, Command> commands = new LinkedHashMap<>();
 
     private final Map<String, VacationState.Request> vacationCommands = new LinkedHashMap<>();
+    private PauseState.@Nullable Request pauseCommand;
     private VacationState vacation = new VacationState();
 
     private boolean running;
@@ -132,6 +136,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             commands.clear();
             vacationCommands.clear();
             vacation = new VacationState();
+            pauseCommand = null;
             world = null;
         }
         if (closing != null) {
@@ -143,13 +148,31 @@ public class ControllerHandler extends BaseBridgeHandler {
     public void handleCommand(ChannelUID channelUID, Command command) {
         if (command == RefreshType.REFRESH) {
             refresh();
+        } else if (PAUSE_CHANNELS.contains(channelUID.getId())) {
+            synchronized (lifecycle) {
+                WorldState snapshot = world;
+                if (!running || snapshot == null || snapshot.pause() == null) {
+                    return;
+                }
+                try {
+                    // Both channels address the same override; the latest pending command replaces earlier intent.
+                    pauseCommand = PauseState.command(channelUID.getId(), command, clock.instant());
+                } catch (IllegalArgumentException e) {
+                    logger.debug("Controller {} rejected pause command: {}", getThing().getUID(), e.getMessage());
+                }
+                publishPause(snapshot.pause());
+                if (pauseCommand == null) {
+                    return;
+                }
+            }
+            refresh();
         } else if (VACATION_CHANNELS.contains(channelUID.getId())) {
             synchronized (lifecycle) {
                 if (!running) {
                     return;
                 }
                 try {
-                    var request = vacation.command(channelUID.getId(), command, Instant.now());
+                    var request = vacation.command(channelUID.getId(), command, clock.instant());
                     if (request != null) {
                         if (command == org.openhab.core.library.types.OnOffType.OFF) {
                             vacationCommands.clear();
@@ -166,6 +189,12 @@ public class ControllerHandler extends BaseBridgeHandler {
                 }
             }
             refresh();
+        }
+    }
+
+    private void publishPause(WorldState.@Nullable Mode pause) {
+        for (String channel : PAUSE_CHANNELS) {
+            updateState(channel, PauseState.state(pause, channel));
         }
     }
 
@@ -225,7 +254,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             Operation operation = new Operation();
             active = operation;
             updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Pairing in progress");
-            worker.execute(() -> run(operation, pin, Map.of(), Map.of()));
+            worker.execute(() -> run(operation, pin, Map.of(), Map.of(), null));
         }
         return "Pairing started. Check the controller Thing status for the result.";
     }
@@ -241,7 +270,9 @@ public class ControllerHandler extends BaseBridgeHandler {
             commands.clear();
             Map<String, VacationState.Request> pendingVacation = new LinkedHashMap<>(vacationCommands);
             vacationCommands.clear();
-            worker.execute(() -> run(operation, null, pending, pendingVacation));
+            PauseState.Request pendingPause = pauseCommand;
+            pauseCommand = null;
+            worker.execute(() -> run(operation, null, pending, pendingVacation, pendingPause));
         }
     }
 
@@ -280,7 +311,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     }
 
     private void run(Operation operation, @Nullable String pin, Map<CommandTarget, Command> pending,
-            Map<String, VacationState.Request> pendingVacation) {
+            Map<String, VacationState.Request> pendingVacation, PauseState.@Nullable Request pendingPause) {
         boolean paired = false;
         String stage = "loading pairing";
         try (operation) {
@@ -313,15 +344,15 @@ public class ControllerHandler extends BaseBridgeHandler {
                     stage = "opening controller session";
                     try (var session = client.open(controller)) {
                         stage = "reading controller state";
-                        WorldState snapshot = session.world();
+                        Snapshot snapshot = readWorld(session);
                         for (var request : pendingVacation.values()) {
                             operation.check();
                             try {
-                                var body = request.body(snapshot.vacation(), Instant.now());
+                                var body = request.body(snapshot.state().vacation(), clock.instant(), snapshot.time());
                                 stage = "writing /api/modes/vacation";
                                 session.vacation(body);
                                 stage = "reading back vacation";
-                                snapshot = session.world();
+                                snapshot = readWorld(session);
                             } catch (IllegalArgumentException e) {
                                 logger.debug("Controller {} rejected vacation command: {}", getThing().getUID(),
                                         e.getMessage());
@@ -329,7 +360,27 @@ public class ControllerHandler extends BaseBridgeHandler {
                                 logger.debug("Controller {} rejected vacation request with HTTP {}",
                                         getThing().getUID(), e.status());
                                 stage = "reading state after rejected vacation request";
-                                snapshot = session.world();
+                                snapshot = readWorld(session);
+                            }
+                        }
+                        if (pendingPause != null) {
+                            operation.check();
+                            try {
+                                var body = pendingPause.body(snapshot.state().pause(), clock.instant(),
+                                        snapshot.time());
+                                stage = "writing /api/modes/pause";
+                                logger.trace("Controller {} applying pause request: {}", getThing().getUID(), body);
+                                session.pause(body);
+                                stage = "reading back pause";
+                                snapshot = readWorld(session);
+                            } catch (IllegalArgumentException e) {
+                                logger.debug("Controller {} rejected pause command: {}", getThing().getUID(),
+                                        e.getMessage());
+                            } catch (CloudClient.ControllerResponseException e) {
+                                logger.debug("Controller {} rejected pause request with HTTP {}", getThing().getUID(),
+                                        e.status());
+                                stage = "reading state after rejected pause request";
+                                snapshot = readWorld(session);
                             }
                         }
                         boolean refreshRequired = false;
@@ -337,7 +388,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                             operation.check();
                             try {
                                 var key = entry.getKey();
-                                var patch = key.patch(snapshot, entry.getValue());
+                                var patch = key.patch(snapshot.state(), entry.getValue());
                                 stage = "writing " + patch.uri();
                                 logger.trace("Controller {} applying {} for {}", getThing().getUID(), entry.getValue(),
                                         key);
@@ -349,9 +400,9 @@ public class ControllerHandler extends BaseBridgeHandler {
                         }
                         if (refreshRequired) {
                             stage = "reading back controller state";
-                            snapshot = session.world();
+                            snapshot = readWorld(session);
                         }
-                        publish(operation, snapshot);
+                        publish(operation, snapshot.state());
                     }
                 }
             }
@@ -361,6 +412,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                     for (String channel : VACATION_CHANNELS) {
                         updateState(channel, UnDefType.UNDEF);
                     }
+                    publishPause(null);
                     logger.debug("Controller {} operation failed during {} ({})", getThing().getUID(), stage,
                             e.getClass().getSimpleName());
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
@@ -374,7 +426,8 @@ public class ControllerHandler extends BaseBridgeHandler {
         } finally {
             boolean again;
             synchronized (lifecycle) {
-                again = current(operation) && (paired || !commands.isEmpty() || !vacationCommands.isEmpty());
+                again = current(operation)
+                        && (paired || !commands.isEmpty() || !vacationCommands.isEmpty() || pauseCommand != null);
                 if (operation.equals(active)) {
                     active = null;
                 }
@@ -383,6 +436,18 @@ public class ControllerHandler extends BaseBridgeHandler {
                 refresh();
             }
         }
+    }
+
+    private record Snapshot(WorldState state, ControllerTime time) {
+    }
+
+    private Snapshot readWorld(CloudClient.Session session) throws IOException {
+        WorldState raw = session.world();
+        // Keep each conversion with its own response; never reuse a skew after reconnect or clock correction.
+        ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
+        var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
+                raw.systemTime(), time.toOpenHab(raw.vacation()), time.toOpenHab(raw.pause()));
+        return new Snapshot(state, time);
     }
 
     private boolean current(Operation operation) {
@@ -396,6 +461,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                 return;
             }
             world = snapshot;
+            publishPause(snapshot.pause());
             vacation.report(snapshot.vacation());
             publishVacation();
             Map<String, String> properties = new HashMap<>(getThing().getProperties());

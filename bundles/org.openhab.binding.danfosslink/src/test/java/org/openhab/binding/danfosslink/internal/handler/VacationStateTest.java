@@ -20,7 +20,8 @@ import java.util.Objects;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
-import org.openhab.binding.danfosslink.internal.WorldState.Vacation;
+import org.openhab.binding.danfosslink.internal.WorldState.Mode;
+import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
@@ -36,7 +37,7 @@ class VacationStateTest {
     private static final Instant NOW = Instant.parse("2026-10-16T12:00:00Z");
     private static final Instant START = NOW.plusSeconds(3600);
     private static final Instant END = NOW.plusSeconds(7200);
-    private static final Vacation INACTIVE = new Vacation("Inactive", null, null, null);
+    private static final Mode INACTIVE = new Mode("Inactive", null, null, null);
 
     @Test
     void inactiveStagingSurvivesPollingAndOnRequiresCompleteValidDates() {
@@ -44,7 +45,8 @@ class VacationStateTest {
         assertEquals(UnDefType.UNDEF, state.state(CHANNEL_VACATION));
         assertThrows(IllegalArgumentException.class, () -> state.command(CHANNEL_VACATION, OnOffType.ON, NOW));
         state.report(INACTIVE);
-        var immediate = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW)).body(INACTIVE, NOW);
+        var immediate = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW)).body(INACTIVE, NOW,
+                ControllerTime.UNADJUSTED);
         assertEquals("Active", immediate.get("state").getAsString());
         assertFalse(immediate.has("startTime"));
         assertFalse(immediate.has("endTime"));
@@ -56,11 +58,15 @@ class VacationStateTest {
         assertThrows(IllegalArgumentException.class, () -> state.command(CHANNEL_VACATION, OnOffType.ON, NOW));
         state.command(CHANNEL_VACATION_END, new DateTimeType(END), NOW);
         var request = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW));
-        assertEquals(START.toString(), request.body(INACTIVE, NOW).get("startTime").getAsString());
-        assertEquals(END.toString(), request.body(INACTIVE, NOW).get("endTime").getAsString());
-        assertThrows(IllegalArgumentException.class, () -> request.body(INACTIVE, START));
-        assertThrows(IllegalArgumentException.class, () -> request.body(new Vacation("Active", null, null, null), NOW));
-        var cancel = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.OFF, NOW)).body(INACTIVE, NOW);
+        assertEquals(START.toString(),
+                request.body(INACTIVE, NOW, ControllerTime.UNADJUSTED).get("startTime").getAsString());
+        assertEquals(END.toString(),
+                request.body(INACTIVE, NOW, ControllerTime.UNADJUSTED).get("endTime").getAsString());
+        assertThrows(IllegalArgumentException.class, () -> request.body(INACTIVE, START, ControllerTime.UNADJUSTED));
+        assertThrows(IllegalArgumentException.class,
+                () -> request.body(new Mode("Active", null, null, null), NOW, ControllerTime.UNADJUSTED));
+        var cancel = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.OFF, NOW)).body(INACTIVE, NOW,
+                ControllerTime.UNADJUSTED);
         assertEquals("Inactive", cancel.get("state").getAsString());
         assertEquals(UnDefType.UNDEF, state.state(CHANNEL_VACATION_START));
         assertEquals(UnDefType.UNDEF, state.state(CHANNEL_VACATION_END));
@@ -73,12 +79,12 @@ class VacationStateTest {
         var state = new VacationState();
         state.report(INACTIVE);
         state.command(CHANNEL_VACATION_START, new DateTimeType(START.plusSeconds(20)), NOW);
-        state.report(new Vacation("Planned", START, END, null));
+        state.report(new Mode("Planned", START, END, null));
         assertEquals(OnOffType.ON, state.state(CHANNEL_VACATION));
         assertEquals(new StringType("Planned"), state.state(CHANNEL_VACATION_STATE));
         assertEquals(new DateTimeType(START), state.state(CHANNEL_VACATION_START));
         assertEquals(new DateTimeType(END), state.state(CHANNEL_VACATION_END));
-        state.report(new Vacation("Active", START, END, null));
+        state.report(new Mode("Active", START, END, null));
         assertEquals(new StringType("Active"), state.state(CHANNEL_VACATION_STATE));
         assertThrows(IllegalArgumentException.class,
                 () -> state.command(CHANNEL_VACATION_END, new DateTimeType(END.plusSeconds(60)), NOW));
@@ -94,35 +100,63 @@ class VacationStateTest {
     @Test
     void plannedEditsUseLatestCounterpartAndRejectInvalidOrChangedMode() {
         var state = new VacationState();
-        var planned = new Vacation("Planned", START, END, null);
+        var planned = new Mode("Planned", START, END, null);
         state.report(planned);
         Instant laterEnd = END.plusSeconds(7200);
         var endEdit = Objects.requireNonNull(state.command(CHANNEL_VACATION_END, new DateTimeType(laterEnd), NOW));
         var startEdit = Objects.requireNonNull(state.command(CHANNEL_VACATION_START, new DateTimeType(END), NOW));
-        assertEquals(laterEnd.toString(), endEdit.body(planned, NOW).get("endTime").getAsString());
-        assertThrows(IllegalArgumentException.class, () -> startEdit.body(planned, NOW));
-        var confirmed = new Vacation("Planned", START, laterEnd, null);
-        var body = startEdit.body(confirmed, NOW);
+        assertEquals(laterEnd.toString(),
+                endEdit.body(planned, NOW, ControllerTime.UNADJUSTED).get("endTime").getAsString());
+        assertThrows(IllegalArgumentException.class, () -> startEdit.body(planned, NOW, ControllerTime.UNADJUSTED));
+        var confirmed = new Mode("Planned", START, laterEnd, null);
+        var body = startEdit.body(confirmed, NOW, ControllerTime.UNADJUSTED);
         assertEquals(END.toString(), body.get("startTime").getAsString());
         assertEquals(laterEnd.toString(), body.get("endTime").getAsString());
-        assertThrows(IllegalArgumentException.class, () -> startEdit.body(INACTIVE, NOW));
+        assertThrows(IllegalArgumentException.class, () -> startEdit.body(INACTIVE, NOW, ControllerTime.UNADJUSTED));
         assertThrows(IllegalArgumentException.class,
-                () -> startEdit.body(new Vacation("Active", START, END, null), NOW));
-        assertThrows(IllegalArgumentException.class, () -> endEdit.body(planned, START));
-        assertThrows(IllegalArgumentException.class, () -> endEdit.body(null, NOW));
+                () -> startEdit.body(new Mode("Active", START, END, null), NOW, ControllerTime.UNADJUSTED));
+        assertThrows(IllegalArgumentException.class, () -> endEdit.body(planned, START, ControllerTime.UNADJUSTED));
+        assertThrows(IllegalArgumentException.class, () -> endEdit.body(null, NOW, ControllerTime.UNADJUSTED));
     }
 
     @Test
     void requestsUseControllerLocalTimeWithWholeSecondPrecision() {
         var state = new VacationState();
-        var inactive = new Vacation("Inactive", null, null, java.time.ZoneOffset.ofHours(2));
+        var inactive = new Mode("Inactive", null, null, java.time.ZoneOffset.ofHours(2));
         state.report(inactive);
         state.command(CHANNEL_VACATION_START, new DateTimeType(START.plusMillis(123)), NOW);
         state.command(CHANNEL_VACATION_END, new DateTimeType(END.plusMillis(456)), NOW);
-        var body = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW)).body(inactive, NOW);
+        var body = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW)).body(inactive, NOW,
+                ControllerTime.UNADJUSTED);
         assertEquals("2026-10-16T15:00:00", body.get("startTime").getAsString());
         assertEquals("2026-10-16T16:00:00", body.get("endTime").getAsString());
         state.command(CHANNEL_VACATION_END, new DateTimeType(START.plusMillis(999)), NOW);
         assertThrows(IllegalArgumentException.class, () -> state.command(CHANNEL_VACATION, OnOffType.ON, NOW));
+    }
+
+    @Test
+    void stagedDatesAndPlannedEditsUseOpenHabTimeWithConversionOnlyWhenWritten() {
+        for (long skew : new long[] { -1500, 1500 }) {
+            var time = new ControllerTime(java.time.Duration.ofSeconds(skew));
+            var state = new VacationState();
+            state.report(INACTIVE);
+            state.command(CHANNEL_VACATION_START, new DateTimeType(START), NOW);
+            state.command(CHANNEL_VACATION_END, new DateTimeType(END), NOW);
+            var body = Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.ON, NOW)).body(INACTIVE, NOW,
+                    time);
+            assertEquals(START.plusSeconds(skew).toString(), body.get("startTime").getAsString());
+            assertEquals(END.plusSeconds(skew).toString(), body.get("endTime").getAsString());
+            var reported = time.toOpenHab(new Mode("Planned", START.plusSeconds(skew), END.plusSeconds(skew), null));
+            state.report(reported);
+            assertEquals(new DateTimeType(START), state.state(CHANNEL_VACATION_START));
+            assertEquals(new DateTimeType(END), state.state(CHANNEL_VACATION_END));
+            var edit = Objects
+                    .requireNonNull(state.command(CHANNEL_VACATION_END, new DateTimeType(END.plusSeconds(600)), NOW));
+            body = edit.body(reported, NOW, time);
+            assertEquals(START.plusSeconds(skew).toString(), body.get("startTime").getAsString());
+            assertEquals(END.plusSeconds(600 + skew).toString(), body.get("endTime").getAsString());
+            assertFalse(Objects.requireNonNull(state.command(CHANNEL_VACATION, OnOffType.OFF, NOW))
+                    .body(reported, NOW, time).has("endTime"));
+        }
     }
 }
