@@ -15,13 +15,12 @@ package org.openhab.binding.danfosslink.internal.handler;
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.danfosslink.internal.WorldState.Vacation;
+import org.openhab.binding.danfosslink.internal.WorldState.Mode;
+import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
@@ -38,12 +37,12 @@ import com.google.gson.JsonObject;
  */
 @NonNullByDefault
 final class VacationState {
-    private @Nullable Vacation reported;
+    private @Nullable Mode reported;
     private @Nullable Instant stagedStart;
     private @Nullable Instant stagedEnd;
 
     record Request(String channel, Command command, @Nullable Instant start, @Nullable Instant end) {
-        JsonObject body(@Nullable Vacation current, Instant now) {
+        JsonObject body(@Nullable Mode current, Instant now, ControllerTime time) {
             if (current == null) {
                 throw new IllegalArgumentException("Vacation state is unavailable");
             }
@@ -67,15 +66,15 @@ final class VacationState {
             body.addProperty("type", "Vacation");
             body.addProperty("state", command == OnOffType.OFF ? "Inactive" : "Active");
             if (command != OnOffType.OFF && desiredStart != null && desiredEnd != null) {
-                body.addProperty("startTime", timestamp(desiredStart, current.localOffset()));
-                body.addProperty("endTime", timestamp(desiredEnd, current.localOffset()));
+                body.addProperty("startTime", time.timestamp(desiredStart, current.localOffset()));
+                body.addProperty("endTime", time.timestamp(desiredEnd, current.localOffset()));
             }
             return body;
         }
     }
 
-    void report(@Nullable Vacation vacation) {
-        Vacation previous = reported;
+    void report(@Nullable Mode vacation) {
+        Mode previous = reported;
         if (vacation != null && (!"Inactive".equals(vacation.state())
                 || (previous != null && !"Inactive".equals(previous.state())))) {
             stagedStart = null;
@@ -86,7 +85,7 @@ final class VacationState {
 
     @Nullable
     Request command(String channel, Command command, Instant now) {
-        Vacation current = reported;
+        Mode current = reported;
         if (current == null) {
             throw new IllegalArgumentException("Vacation state is unavailable");
         }
@@ -122,7 +121,7 @@ final class VacationState {
     }
 
     State state(String channel) {
-        Vacation current = reported;
+        Mode current = reported;
         if (current == null) {
             return UnDefType.UNDEF;
         }
@@ -138,12 +137,6 @@ final class VacationState {
 
     private static State date(@Nullable Instant value) {
         return value == null ? UnDefType.UNDEF : new DateTimeType(value);
-    }
-
-    private static String timestamp(Instant value, @Nullable ZoneOffset localOffset) {
-        Instant seconds = value.truncatedTo(ChronoUnit.SECONDS);
-        return localOffset == null ? seconds.toString()
-                : DateTimeFormatter.ISO_LOCAL_DATE_TIME.format(seconds.atOffset(localOffset));
     }
 
     private static void validate(@Nullable Instant start, @Nullable Instant end, Instant now, boolean indefinite) {

@@ -90,6 +90,10 @@ public final class CloudClient implements AutoCloseable {
             request("PATCH", patch.uri(), patch.body());
         }
 
+        public void pause(JsonObject body) throws IOException {
+            request("PUT", "/api/modes/pause", body);
+        }
+
         public void vacation(JsonObject body) throws IOException {
             request("PUT", "/api/modes/vacation", body);
         }
