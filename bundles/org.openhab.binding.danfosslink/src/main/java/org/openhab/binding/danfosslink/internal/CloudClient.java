@@ -12,7 +12,7 @@
  */
 package org.openhab.binding.danfosslink.internal;
 
-import static org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON;
+import static org.openhab.binding.danfosslink.internal.ProtocolJson.GSON;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +23,10 @@ import java.util.concurrent.Future;
 
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.openhab.binding.danfosslink.internal.protocol.Grid;
+import org.openhab.binding.danfosslink.internal.protocol.Identity;
+import org.openhab.binding.danfosslink.internal.protocol.Operation;
+import org.openhab.binding.danfosslink.internal.protocol.Transport;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
 import org.openhab.core.common.ThreadPoolManager;
 import org.slf4j.Logger;

@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -52,9 +52,9 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 public final class Identity {
     static final BouncyCastleProvider PROVIDER = new BouncyCastleProvider();
     public final X509CertificateHolder certificate;
-    final AsymmetricKeyParameter privateKey;
+    public final AsymmetricKeyParameter privateKey;
 
-    Identity(X509CertificateHolder certificate, AsymmetricKeyParameter privateKey) {
+    public Identity(X509CertificateHolder certificate, AsymmetricKeyParameter privateKey) {
         this.certificate = certificate;
         this.privateKey = privateKey;
     }
@@ -79,12 +79,12 @@ public final class Identity {
         return new Identity(certificate, PrivateKeyFactory.createKey(pair.getPrivate().getEncoded()));
     }
 
-    String encode() throws IOException {
+    public String encode() throws IOException {
         return pem("PRIVATE KEY", PrivateKeyInfoFactory.createPrivateKeyInfo(privateKey).getEncoded())
                 + pem("CERTIFICATE", certificate.getEncoded());
     }
 
-    static Identity decode(String encoded) throws IOException {
+    public static Identity decode(String encoded) throws IOException {
         try (var reader = new PEMParser(new StringReader(encoded))) {
             if (!(reader.readObject() instanceof PrivateKeyInfo key)
                     || !(reader.readObject() instanceof X509CertificateHolder cert)) {
@@ -94,18 +94,18 @@ public final class Identity {
         }
     }
 
-    static String peerId(X509CertificateHolder certificate) throws Exception {
+    public static String peerId(X509CertificateHolder certificate) throws Exception {
         // MDG hashes the subjectPublicKey BIT STRING, not the certificate or complete SPKI.
         return HexFormat.ofDelimiter(":").formatHex(MessageDigest.getInstance("SHA-1")
                 .digest(certificate.getSubjectPublicKeyInfo().getPublicKeyData().getBytes()));
     }
 
-    static byte[] publicKeyPem(X509CertificateHolder certificate) throws IOException {
+    public static byte[] publicKeyPem(X509CertificateHolder certificate) throws IOException {
         return pem("PUBLIC KEY", certificate.getSubjectPublicKeyInfo().getEncoded())
                 .getBytes(StandardCharsets.US_ASCII);
     }
 
-    static String pem(String type, byte[] data) throws IOException {
+    public static String pem(String type, byte[] data) throws IOException {
         var output = new StringWriter();
         try (var writer = new PemWriter(output)) {
             writer.writeObject(new PemObject(type, data));

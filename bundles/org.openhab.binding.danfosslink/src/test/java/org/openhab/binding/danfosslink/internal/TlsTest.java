@@ -52,6 +52,10 @@ import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.openhab.binding.danfosslink.internal.protocol.Identity;
+import org.openhab.binding.danfosslink.internal.protocol.Operation;
+import org.openhab.binding.danfosslink.internal.protocol.Transport;
+import org.openhab.binding.danfosslink.internal.protocol.Wire;
 
 /**
  * Real TLS records against a local mutual-TLS server with explicit Brainpool

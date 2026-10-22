@@ -43,8 +43,7 @@ class CloudClientModeTest {
                 {"type":"Vacation","state":"Active","startTime":"2026-12-24T08:24:53","endTime":"2026-12-24T16:24:53"}
                 """);
         assertEquals(json, CloudClient.modeContent(request));
-        var readback = org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON.fromJson(json,
-                ModeRequestDTO.class);
+        var readback = org.openhab.binding.danfosslink.internal.ProtocolJson.GSON.fromJson(json, ModeRequestDTO.class);
         assertEquals(start, readback.startTime);
         assertEquals(end, readback.endTime);
         assertEquals(start, request.startTime);
@@ -65,7 +64,7 @@ class CloudClientModeTest {
 
     @Test
     void modeEnumsPreserveWireValuesInBothDirections() {
-        var gson = org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON;
+        var gson = org.openhab.binding.danfosslink.internal.ProtocolJson.GSON;
         var types = java.util.Map.of(ModeType.AT_HOME, "AtHome", ModeType.PAUSE, "Pause", ModeType.VACATION,
                 "Vacation");
         var states = java.util.Map.of(ModeState.INACTIVE, "Inactive", ModeState.PLANNED, "Planned", ModeState.ACTIVE,

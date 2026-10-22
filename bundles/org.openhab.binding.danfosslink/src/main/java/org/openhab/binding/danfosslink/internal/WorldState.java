@@ -13,7 +13,7 @@
 package org.openhab.binding.danfosslink.internal;
 
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
-import static org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON;
+import static org.openhab.binding.danfosslink.internal.ProtocolJson.GSON;
 
 import java.io.IOException;
 import java.math.BigDecimal;

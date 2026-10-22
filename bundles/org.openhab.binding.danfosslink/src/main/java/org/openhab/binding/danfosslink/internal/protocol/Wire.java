@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -35,11 +35,11 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class Wire {
+public final class Wire {
     private Wire() {
     }
 
-    static byte[] read(InputStream input) throws IOException {
+    public static byte[] read(InputStream input) throws IOException {
         int length = new DataInputStream(input).readUnsignedShort();
         if (length == 0) {
             throw new IOException("Empty MDG frame");
@@ -51,7 +51,7 @@ final class Wire {
         return result;
     }
 
-    static void write(OutputStream output, byte[] packet) throws IOException {
+    public static void write(OutputStream output, byte[] packet) throws IOException {
         if (packet.length == 0 || packet.length > 65535) {
             throw new IOException("Invalid MDG frame length");
         }
@@ -60,7 +60,7 @@ final class Wire {
         output.flush();
     }
 
-    static Builder message(int type) {
+    public static Builder message(int type) {
         return new Builder().raw(new byte[] { (byte) type });
     }
 
@@ -68,14 +68,14 @@ final class Wire {
         return new Builder();
     }
 
-    static Message decode(byte[] packet) throws IOException {
+    public static Message decode(byte[] packet) throws IOException {
         if (packet.length == 0) {
             throw new IOException("Missing message type");
         }
         return new Message(packet[0] & 255, decodeFields(java.util.Arrays.copyOfRange(packet, 1, packet.length)));
     }
 
-    static Fields decodeFields(byte[] bytes) throws IOException {
+    public static Fields decodeFields(byte[] bytes) throws IOException {
         var input = new ByteArrayInputStream(bytes);
         Map<Integer, List<Object>> fields = new LinkedHashMap<>();
         while (input.available() > 0) {
@@ -123,11 +123,11 @@ final class Wire {
         throw new IOException("Overlong protobuf varint");
     }
 
-    record Message(int type, Fields fields) {
+    public record Message(int type, Fields fields) {
     }
 
-    record Fields(Map<Integer, List<Object>> values) {
-        long number(int field) throws IOException {
+    public record Fields(Map<Integer, List<Object>> values) {
+        public long number(int field) throws IOException {
             var list = values.get(field);
             if (list == null || !(list.getLast() instanceof Long value)) {
                 throw new IOException("Missing numeric field " + field);
@@ -135,7 +135,7 @@ final class Wire {
             return value;
         }
 
-        byte[] bytes(int field) throws IOException {
+        public byte[] bytes(int field) throws IOException {
             var list = values.get(field);
             if (list == null || !(list.getLast() instanceof byte[] value)) {
                 throw new IOException("Missing byte field " + field);
@@ -143,7 +143,7 @@ final class Wire {
             return value;
         }
 
-        List<byte[]> repeatedBytes(int field) throws IOException {
+        public List<byte[]> repeatedBytes(int field) throws IOException {
             List<byte[]> result = new ArrayList<>();
             for (Object value : values.getOrDefault(field, List.of())) {
                 if (!(value instanceof byte[] bytes)) {
@@ -154,12 +154,12 @@ final class Wire {
             return result;
         }
 
-        String text(int field) throws IOException {
+        public String text(int field) throws IOException {
             return new String(bytes(field), StandardCharsets.UTF_8);
         }
     }
 
-    static final class Builder {
+    public static final class Builder {
         private final ByteArrayOutputStream output = new ByteArrayOutputStream();
 
         Builder raw(byte[] bytes) {
@@ -176,11 +176,11 @@ final class Wire {
             return this;
         }
 
-        Builder number(int field, long number) {
+        public Builder number(int field, long number) {
             return varint((long) field << 3).varint(number);
         }
 
-        Builder fixed32(int field, int number) {
+        public Builder fixed32(int field, int number) {
             varint(((long) field << 3) | 5);
             for (int shift = 0; shift < 32; shift += 8) {
                 output.write(number >>> shift);
@@ -188,15 +188,15 @@ final class Wire {
             return this;
         }
 
-        Builder bytes(int field, byte[] bytes) {
+        public Builder bytes(int field, byte[] bytes) {
             return varint(((long) field << 3) | 2).varint(bytes.length).raw(bytes);
         }
 
-        Builder text(int field, String text) {
+        public Builder text(int field, String text) {
             return bytes(field, text.getBytes(StandardCharsets.UTF_8));
         }
 
-        byte[] build() {
+        public byte[] build() {
             return output.toByteArray();
         }
     }

@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal.protocol;
+package org.openhab.binding.danfosslink.internal;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
