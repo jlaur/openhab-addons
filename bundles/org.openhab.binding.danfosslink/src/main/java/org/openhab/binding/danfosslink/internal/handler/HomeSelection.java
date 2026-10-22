@@ -21,12 +21,11 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.WorldState;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
-import org.openhab.binding.danfosslink.internal.protocol.serialization.ModeRequestSerializer;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
-
-import com.google.gson.JsonObject;
 
 /**
  * Local Home selection, guarded by the controller lifecycle lock and independent of reported override state.
@@ -43,11 +42,11 @@ final class HomeSelection {
             rooms = Set.copyOf(rooms);
         }
 
-        JsonObject body(WorldState snapshot) {
+        ModeRequestDTO body(WorldState snapshot) {
             if (snapshot.home() == null) {
                 throw new IllegalArgumentException("Home state is unavailable");
             }
-            var body = new ModeRequestDTO("AtHome", active ? "Active" : "Inactive");
+            var body = new ModeRequestDTO(ModeType.AT_HOME, ModeState.fromBoolean(active));
             if (active) {
                 Set<Integer> selected = new TreeSet<>();
                 for (int id : rooms) {
@@ -80,7 +79,7 @@ final class HomeSelection {
                 }
                 body.rooms = List.copyOf(selected);
             }
-            return ModeRequestSerializer.serialize(body, null);
+            return body;
         }
     }
 
@@ -138,6 +137,6 @@ final class HomeSelection {
     }
 
     static State reported(WorldState.@Nullable Mode home) {
-        return home == null ? UnDefType.UNDEF : "Active".equals(home.state()) ? OnOffType.ON : OnOffType.OFF;
+        return home == null ? UnDefType.UNDEF : home.state() == ModeState.ACTIVE ? OnOffType.ON : OnOffType.OFF;
     }
 }

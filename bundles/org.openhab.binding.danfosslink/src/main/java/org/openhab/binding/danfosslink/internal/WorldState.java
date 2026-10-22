@@ -13,6 +13,7 @@
 package org.openhab.binding.danfosslink.internal;
 
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
+import static org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON;
 
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -20,9 +21,9 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -32,6 +33,9 @@ import javax.measure.quantity.Temperature;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
 import org.openhab.binding.danfosslink.internal.protocol.dto.WorldDTO;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
@@ -42,7 +46,6 @@ import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -56,9 +59,7 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
         @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
         @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home, @Nullable String currentState) {
 
-    private static final Gson GSON = new Gson();
-
-    public record Mode(String state, @Nullable Instant start, @Nullable Instant end, @Nullable ZoneOffset localOffset) {
+    public record Mode(ModeState state, @Nullable Instant start, @Nullable Instant end, @Nullable ZoneId localZone) {
     }
 
     public record Room(int id, String name, @Nullable BigDecimal temperature, @Nullable BigDecimal setpoint,
@@ -68,6 +69,10 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
     }
 
     public static WorldState parse(JsonObject world) throws IOException {
+        return parse(world, null);
+    }
+
+    public static WorldState parse(JsonObject world, @Nullable ZoneId zone) throws IOException {
         try {
             WorldDTO response = Objects.requireNonNull(GSON.fromJson(world, WorldDTO.class));
             Unit<Temperature> unit = null;
@@ -117,19 +122,19 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             }
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : info.brandingType,
                     info == null ? null : info.serialNo, info == null ? null : info.version,
-                    info == null ? null : info.systemTime, mode(world, "Vacation"), activeMode(world, "Pause"),
-                    activeMode(world, "AtHome"), currentState);
+                    info == null ? null : info.systemTime, mode(world, ModeType.VACATION, zone),
+                    activeMode(world, ModeType.PAUSE, zone), activeMode(world, ModeType.AT_HOME, zone), currentState);
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
     }
 
-    private static @Nullable Mode activeMode(JsonObject world, String type) {
-        Mode mode = mode(world, type);
-        return mode == null || "Planned".equals(mode.state()) ? null : mode;
+    private static @Nullable Mode activeMode(JsonObject world, ModeType type, @Nullable ZoneId zone) {
+        Mode mode = mode(world, type, zone);
+        return mode == null || mode.state() == ModeState.PLANNED ? null : mode;
     }
 
-    private static @Nullable Mode mode(JsonObject world, String type) {
+    private static @Nullable Mode mode(JsonObject world, ModeType type, @Nullable ZoneId zone) {
         // Optional mode data must not prevent room polling on older or unexpected controller responses.
         try {
             var modes = world.getAsJsonArray("modes");
@@ -141,20 +146,22 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             // The app uses offset-free local requests when the controller reports a numeric time offset.
             ZoneOffset localOffset = systemTime == null || systemTime.endsWith("Z") ? null
                     : OffsetDateTime.parse(systemTime).getOffset();
+            ZoneId localZone = localOffset == null ? null : zone == null ? localOffset : zone;
             Mode result = null;
             for (JsonElement element : modes) {
                 JsonObject mode = element.getAsJsonObject();
-                if (type.equals(text(mode, "type"))) {
-                    String state = text(mode, "state");
-                    if (result != null
-                            || !("Inactive".equals(state) || "Planned".equals(state) || "Active".equals(state))) {
+                if (type == GSON.fromJson(mode.get("type"), ModeType.class)) {
+                    ModeDTO response = Objects.requireNonNull(GSON.fromJson(mode, ModeDTO.class));
+                    ModeState state = response.state;
+                    if (result != null || state == null) {
                         return null;
                     }
-                    String start = text(mode,
-                            localOffset == null && mode.has("startTimeUtc") ? "startTimeUtc" : "startTime");
-                    String end = text(mode, localOffset == null && mode.has("endTimeUtc") ? "endTimeUtc" : "endTime");
-                    result = new Mode(Objects.requireNonNull(state), modeTime(start, localOffset),
-                            modeTime(end, localOffset), localOffset);
+                    // A present UTC field takes precedence even when explicitly null.
+                    Instant start = localZone == null && mode.has("startTimeUtc") ? modeTime(response.startTimeUtc)
+                            : modeTime(response.startTime, localZone);
+                    Instant end = localZone == null && mode.has("endTimeUtc") ? modeTime(response.endTimeUtc)
+                            : modeTime(response.endTime, localZone);
+                    result = new Mode(state, start, end, localZone);
                 }
             }
             return result;
@@ -163,18 +170,14 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
         }
     }
 
-    private static @Nullable Instant modeTime(@Nullable String value, @Nullable ZoneOffset localOffset) {
-        if (value == null) {
-            return null;
-        }
-        OffsetDateTime timestamp;
-        try {
-            timestamp = OffsetDateTime.parse(value);
-        } catch (DateTimeParseException e) {
-            timestamp = LocalDateTime.parse(value).atOffset(localOffset == null ? ZoneOffset.UTC : localOffset);
-        }
-        // Like the app, treat out-of-range sentinel dates as an unspecified interval boundary.
-        return timestamp.getYear() < 1970 || timestamp.getYear() > 2099 ? null : timestamp.toInstant();
+    private static @Nullable Instant modeTime(@Nullable LocalDateTime value, @Nullable ZoneId zone) {
+        // Out-of-range protocol dates represent unspecified interval boundaries.
+        return value == null || value.getYear() < 1970 || value.getYear() > 2099 ? null
+                : value.atZone(zone == null ? ZoneOffset.UTC : zone).toInstant();
+    }
+
+    private static @Nullable Instant modeTime(@Nullable Instant value) {
+        return modeTime(value == null ? null : LocalDateTime.ofInstant(value, ZoneOffset.UTC), ZoneOffset.UTC);
     }
 
     public record Patch(String uri, JsonObject body) {

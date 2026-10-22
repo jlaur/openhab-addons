@@ -21,6 +21,7 @@ import java.time.ZoneOffset;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
 
 /**
  * Bidirectional deadline conversion independent of timestamp timezone and transport delay.
@@ -42,9 +43,10 @@ class ControllerTimeTest {
             assertEquals(start.plusSeconds(seconds), time.toController(start));
             assertEquals(start, time.toOpenHab(time.toController(start)));
             assertEquals(Duration.ofHours(1), Duration.between(time.toController(start), time.toController(end)));
-            var mode = new WorldState.Mode("Planned", time.toController(start), time.toController(end),
+            var mode = new WorldState.Mode(ModeState.PLANNED, time.toController(start), time.toController(end),
                     ZoneOffset.ofHours(2));
-            assertEquals(new WorldState.Mode("Planned", start, end, ZoneOffset.ofHours(2)), time.toOpenHab(mode));
+            assertEquals(new WorldState.Mode(ModeState.PLANNED, start, end, ZoneOffset.ofHours(2)),
+                    time.toOpenHab(mode));
         }
     }
 
@@ -55,8 +57,8 @@ class ControllerTimeTest {
         assertEquals(Instant.parse("2026-10-17T01:17:59.750Z"), time.toController(deadline));
         assertEquals(deadline.plusMillis(250), time.toOpenHab(NOW.plusSeconds(1800)));
         assertNull(time.toOpenHab((WorldState.Mode) null));
-        assertEquals(new WorldState.Mode("Active", null, null, null),
-                time.toOpenHab(new WorldState.Mode("Active", null, null, null)));
+        assertEquals(new WorldState.Mode(ModeState.ACTIVE, null, null, null),
+                time.toOpenHab(new WorldState.Mode(ModeState.ACTIVE, null, null, null)));
     }
 
     @Test

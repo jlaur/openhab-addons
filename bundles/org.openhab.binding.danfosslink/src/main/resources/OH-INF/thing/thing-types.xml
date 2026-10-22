@@ -53,7 +53,10 @@
 		<description>A room managed by the controller</description>
 
 		<channels>
-			<channel id="temperature" typeId="temperature"/>
+			<channel id="temperature" typeId="system.indoor-temperature">
+				<label>Temperature</label>
+				<description>Measured room temperature</description>
+			</channel>
 			<channel id="setpoint" typeId="setpoint"/>
 			<channel id="home-setpoint" typeId="home-setpoint"/>
 			<channel id="away-setpoint" typeId="away-setpoint"/>
