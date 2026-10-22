@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -30,7 +30,7 @@ public final class Operation implements Closeable {
     private final List<Socket> sockets = new ArrayList<>();
     private boolean closed;
 
-    synchronized void add(Socket socket) throws IOException {
+    public synchronized void add(Socket socket) throws IOException {
         if (closed) {
             socket.close();
             throw new IOException("Operation cancelled");
