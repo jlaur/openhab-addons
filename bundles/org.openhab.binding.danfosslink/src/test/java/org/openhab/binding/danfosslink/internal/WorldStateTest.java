@@ -23,6 +23,8 @@ import java.util.Map;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
+import org.openhab.binding.danfosslink.internal.protocol.Identity;
+import org.openhab.binding.danfosslink.internal.protocol.Operation;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.QuantityType;
@@ -351,7 +353,7 @@ class WorldStateTest {
 
     @Test
     void systemInfoTimestampRoundTripsThroughGson() {
-        var gson = org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON;
+        var gson = org.openhab.binding.danfosslink.internal.ProtocolJson.GSON;
         var json = JsonParser.parseString("""
                 {"systemTime":"2026-10-16T14:30:00+02:00","serialNo":"0000521691"}
                 """);
@@ -480,7 +482,7 @@ class WorldStateTest {
 
     @Test
     void modeDtoRetainsLocalAndUtcFieldsAndSentinelsWithoutConversion() {
-        var gson = org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON;
+        var gson = org.openhab.binding.danfosslink.internal.ProtocolJson.GSON;
         var json = JsonParser.parseString("""
                 {"type":"Vacation","state":"Planned",
                 "startTime":"2026-12-23T08:24:52","endTime":"9999-12-31T23:59:59",

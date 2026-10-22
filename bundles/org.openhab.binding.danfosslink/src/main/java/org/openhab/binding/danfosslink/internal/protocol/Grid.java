@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -30,7 +30,7 @@ import org.slf4j.LoggerFactory;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class Grid implements Closeable {
+public final class Grid implements Closeable {
     private static final List<String> HOSTS = List.of("5.179.92.180", "5.179.92.182", "77.66.11.90", "77.66.11.92");
     private final Logger logger = LoggerFactory.getLogger(Grid.class);
     private final Transport control;
@@ -44,7 +44,7 @@ final class Grid implements Closeable {
         this.operation = operation;
     }
 
-    static Grid connect(Identity identity, Transport.Verifier trust, Operation operation) throws IOException {
+    public static Grid connect(Identity identity, Transport.Verifier trust, Operation operation) throws IOException {
         IOException failure = new IOException("No MDG control server was available");
         for (String host : HOSTS) {
             operation.check();
@@ -80,13 +80,13 @@ final class Grid implements Closeable {
         }
     }
 
-    Transport call(X509CertificateHolder controller) throws Exception {
+    public Transport call(X509CertificateHolder controller) throws Exception {
         String peerId = Identity.peerId(controller);
         request(20, 21, Wire.fields().text(2, peerId));
         return route(request(10, 11, Wire.fields().text(2, peerId).text(3, "cc_json")), Transport.pinned(controller));
     }
 
-    X509CertificateHolder pair(String code) throws Exception {
+    public X509CertificateHolder pair(String code) throws Exception {
         if (!code.matches("[0-9]{9}")) {
             throw new IllegalArgumentException("The cloud pairing code must contain nine digits");
         }
@@ -211,7 +211,7 @@ final class Grid implements Closeable {
         throw new IOException("Too many unsolicited MDG messages");
     }
 
-    void maintain() throws IOException {
+    public void maintain() throws IOException {
         while (true) {
             operation.check();
             next();

@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.io.Closeable;
 import java.io.FilterInputStream;
@@ -63,7 +63,7 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class Transport implements Closeable {
+public final class Transport implements Closeable {
     private final Socket socket;
     private InputStream input;
     private OutputStream output;
@@ -96,7 +96,7 @@ final class Transport implements Closeable {
         output = socket.getOutputStream();
     }
 
-    static Transport connect(String host, int port, Operation operation) throws IOException {
+    public static Transport connect(String host, int port, Operation operation) throws IOException {
         var socket = new Socket();
         operation.add(socket);
         try {
@@ -109,11 +109,11 @@ final class Transport implements Closeable {
         }
     }
 
-    interface Verifier {
+    public interface Verifier {
         void verify(List<X509CertificateHolder> chain) throws Exception;
     }
 
-    void startTls(Identity identity, boolean controller, Verifier verifier) throws IOException {
+    public void startTls(Identity identity, boolean controller, Verifier verifier) throws IOException {
         var crypto = new BcTlsCrypto();
         var protocol = new TlsClientProtocol(input, output);
         protocol.connect(new DefaultTlsClient(crypto) {
@@ -181,7 +181,7 @@ final class Transport implements Closeable {
         output = protocol.getOutputStream();
     }
 
-    static Verifier pinned(X509CertificateHolder expected) {
+    public static Verifier pinned(X509CertificateHolder expected) {
         return chain -> {
             if (!MessageDigest.isEqual(expected.getEncoded(), chain.getFirst().getEncoded())) {
                 throw new IOException("Controller certificate differs from the pairing");
@@ -189,7 +189,7 @@ final class Transport implements Closeable {
         };
     }
 
-    static Verifier cloudTrust(InputStream bundle) throws Exception {
+    public static Verifier cloudTrust(InputStream bundle) throws Exception {
         var converter = new JcaX509CertificateConverter().setProvider(Identity.PROVIDER);
         var anchors = new HashSet<TrustAnchor>();
         try (var reader = new PEMParser(
@@ -239,11 +239,11 @@ final class Transport implements Closeable {
         return certificates.getFirst();
     }
 
-    void send(byte[] packet) throws IOException {
+    public void send(byte[] packet) throws IOException {
         Wire.write(output, packet);
     }
 
-    byte[] receive() throws IOException {
+    public byte[] receive() throws IOException {
         return Wire.read(input);
     }
 

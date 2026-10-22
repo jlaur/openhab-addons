@@ -32,6 +32,9 @@ import org.bouncycastle.asn1.teletrust.TeleTrusTNamedCurves;
 import org.bouncycastle.math.ec.ECPoint;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
+import org.openhab.binding.danfosslink.internal.protocol.Identity;
+import org.openhab.binding.danfosslink.internal.protocol.Pairing;
+import org.openhab.binding.danfosslink.internal.protocol.Wire;
 
 /**
  * Protocol boundaries and PACE exchange with an independently implemented

@@ -18,6 +18,7 @@ import java.util.Base64;
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.core.storage.Storage;
 
 import com.google.gson.Gson;
@@ -25,7 +26,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 /**
- * Bridge identities and controller pins in openHAB storage, following the HomeKit key-store pattern.
+ * Bridge identities and controller pins in openHAB storage.
  *
  * @author Jacob Laursen - Initial contribution
  */

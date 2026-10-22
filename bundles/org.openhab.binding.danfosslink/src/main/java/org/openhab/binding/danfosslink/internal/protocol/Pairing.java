@@ -10,7 +10,7 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.danfosslink.internal;
+package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -34,6 +34,7 @@ import org.bouncycastle.crypto.generators.PKCS5S2ParametersGenerator;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.math.ec.ECPoint;
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants;
 
 /**
  * MDG PACE pairing, binding the displayed password to both TLS public keys.
@@ -41,20 +42,20 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-final class Pairing {
+public final class Pairing {
     private static final X9ECParameters CURVE = TeleTrusTNamedCurves.getByName("brainpoolP320r1");
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private Pairing() {
     }
 
-    interface Exchange {
+    public interface Exchange {
         void send(byte[] packet) throws IOException;
 
         byte[] receive() throws IOException;
     }
 
-    static void run(Exchange connection, byte[] password, byte[] serverPublicKey, byte[] clientPublicKey)
+    public static void run(Exchange connection, byte[] password, byte[] serverPublicKey, byte[] clientPublicKey)
             throws Exception {
         connection.send(Wire.message(1).fixed32(1, 0xf09d8ca7).number(2, 1).number(3, 0).build());
         var hello = receive(connection, 2);
@@ -98,7 +99,7 @@ final class Pairing {
         receive(connection, 6).text(1);
     }
 
-    static byte[] passwordKey(byte[] password, byte[] server, byte[] client, byte[] salt) throws IOException {
+    public static byte[] passwordKey(byte[] password, byte[] server, byte[] client, byte[] salt) throws IOException {
         var buffer = new ByteArrayOutputStream();
         var out = new DataOutputStream(buffer);
         for (byte[] value : new byte[][] { password, server, client }) {
@@ -114,7 +115,7 @@ final class Pairing {
         return ((KeyParameter) kdf.generateDerivedParameters(128)).getKey();
     }
 
-    static byte[] proof(byte[] key, byte[] point) throws Exception {
+    public static byte[] proof(byte[] key, byte[] point) throws Exception {
         var mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(key, "HmacSHA256"));
         return HexFormat.of().formatHex(mac.doFinal(point)).getBytes(StandardCharsets.US_ASCII);
