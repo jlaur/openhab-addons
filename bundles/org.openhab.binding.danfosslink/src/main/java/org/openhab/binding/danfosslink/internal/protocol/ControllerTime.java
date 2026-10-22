@@ -14,7 +14,11 @@ package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -38,6 +42,15 @@ public record ControllerTime(Duration skew) {
         return value.plus(skew);
     }
 
+    public LocalDateTime toControllerLocal(Instant value, @Nullable ZoneId zone) {
+        var local = LocalDateTime.ofInstant(toController(value), zone == null ? ZoneOffset.UTC : zone)
+                .truncatedTo(ChronoUnit.SECONDS);
+        if (local.getYear() < 1970 || local.getYear() > 2099) {
+            throw new IllegalArgumentException("Controller deadline must be between 1970 and 2099");
+        }
+        return local;
+    }
+
     public Instant toOpenHab(Instant value) {
         return value.minus(skew);
     }
@@ -49,6 +62,6 @@ public record ControllerTime(Duration skew) {
         Instant start = mode.start();
         Instant end = mode.end();
         return new Mode(mode.state(), start == null ? null : toOpenHab(start), end == null ? null : toOpenHab(end),
-                mode.localOffset());
+                mode.localZone());
     }
 }

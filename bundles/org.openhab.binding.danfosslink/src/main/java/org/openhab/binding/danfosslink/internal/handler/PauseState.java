@@ -22,14 +22,13 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.WorldState.Mode;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
-import org.openhab.binding.danfosslink.internal.protocol.serialization.ModeRequestSerializer;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
-
-import com.google.gson.JsonObject;
 
 /**
  * Validates timed Pause commands and publishes controller-confirmed state.
@@ -39,18 +38,18 @@ import com.google.gson.JsonObject;
 @NonNullByDefault
 final class PauseState {
     record Request(boolean cancel, @Nullable Instant until) {
-        JsonObject body(@Nullable Mode current, Instant now, ControllerTime time) {
+        ModeRequestDTO body(@Nullable Mode current, Instant now, ControllerTime time) {
             if (current == null) {
                 throw new IllegalArgumentException("Pause state is unavailable");
             }
-            var body = new ModeRequestDTO("Pause", cancel ? "Inactive" : "Active");
+            var body = new ModeRequestDTO(ModeType.PAUSE, ModeState.fromBoolean(!cancel));
             if (!cancel) {
                 Instant requested = until;
                 Instant end = (requested == null ? now.plusSeconds(3600) : requested).truncatedTo(ChronoUnit.SECONDS);
                 validate(end, now);
-                body.endTime = time.toController(end);
+                body.endTime = time.toControllerLocal(end, current.localZone());
             }
-            return ModeRequestSerializer.serialize(body, current.localOffset());
+            return body;
         }
     }
 
@@ -70,7 +69,7 @@ final class PauseState {
         if (pause == null) {
             return UnDefType.UNDEF;
         }
-        boolean active = "Active".equals(pause.state());
+        boolean active = pause.state() == ModeState.ACTIVE;
         Instant end = pause.end();
         return switch (channel) {
             case CHANNEL_PAUSE -> active ? OnOffType.ON : OnOffType.OFF;

@@ -15,9 +15,6 @@ package org.openhab.binding.danfosslink.internal.protocol.dto;
 import java.time.ZonedDateTime;
 
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.danfosslink.internal.protocol.serialization.ControllerTimeAdapter;
-
-import com.google.gson.annotations.JsonAdapter;
 
 /**
  * Controller identification and clock information.
@@ -30,7 +27,6 @@ public class SystemInfoDTO {
     public @Nullable Boolean limitPauseDuration;
     public @Nullable String name;
     public @Nullable String serialNo;
-    @JsonAdapter(ControllerTimeAdapter.class)
     public @Nullable ZonedDateTime systemTime;
     public @Nullable String uptime;
     public @Nullable String version;

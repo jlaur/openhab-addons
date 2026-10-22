@@ -12,14 +12,18 @@
  */
 package org.openhab.binding.danfosslink.internal;
 
+import static org.openhab.binding.danfosslink.internal.protocol.ProtocolJson.GSON;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneId;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
 import org.openhab.core.common.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,24 +86,24 @@ public final class CloudClient implements AutoCloseable {
             this.maintenance = maintenance;
         }
 
-        public WorldState world() throws IOException {
-            return WorldState.parse(request("GET", "/api/world", new JsonObject()).getAsJsonObject());
+        public WorldState world(ZoneId zone) throws IOException {
+            return WorldState.parse(request("GET", "/api/world", new JsonObject()).getAsJsonObject(), zone);
         }
 
         public void apply(WorldState.Patch patch) throws IOException {
             request("PATCH", patch.uri(), patch.body());
         }
 
-        public void home(JsonObject body) throws IOException {
-            request("PUT", "/api/modes/athome", body);
+        public void home(ModeRequestDTO body) throws IOException {
+            request("PUT", "/api/modes/athome", modeContent(body));
         }
 
-        public void pause(JsonObject body) throws IOException {
-            request("PUT", "/api/modes/pause", body);
+        public void pause(ModeRequestDTO body) throws IOException {
+            request("PUT", "/api/modes/pause", modeContent(body));
         }
 
-        public void vacation(JsonObject body) throws IOException {
-            request("PUT", "/api/modes/vacation", body);
+        public void vacation(ModeRequestDTO body) throws IOException {
+            request("PUT", "/api/modes/vacation", modeContent(body));
         }
 
         private JsonElement request(String method, String uri, JsonObject content) throws IOException {
@@ -133,6 +137,10 @@ public final class CloudClient implements AutoCloseable {
             operation.close();
             maintenance.cancel(true);
         }
+    }
+
+    static JsonObject modeContent(ModeRequestDTO body) {
+        return GSON.toJsonTree(body).getAsJsonObject();
     }
 
     public static final class ControllerResponseException extends IOException {
@@ -190,6 +198,7 @@ public final class CloudClient implements AutoCloseable {
         Logger logger = LoggerFactory.getLogger(CloudClient.class);
         try {
             String json = new String(bytes, StandardCharsets.UTF_8);
+            logger.trace("Controller response {} payload: {}", id, json);
             // The controller's cc_json encoder emits an omitted value on empty write responses.
             // This exact firmware defect also requires normalization in the official app.
             json = json.replace("\"content\":}}", "\"content\":null}}");

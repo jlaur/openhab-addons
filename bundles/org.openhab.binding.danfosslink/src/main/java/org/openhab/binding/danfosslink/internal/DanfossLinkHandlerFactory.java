@@ -21,6 +21,7 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.handler.ControllerHandler;
 import org.openhab.binding.danfosslink.internal.handler.LivingZoneHandler;
 import org.openhab.binding.danfosslink.internal.handler.RoomHandler;
+import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.storage.StorageService;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
@@ -44,12 +45,14 @@ public class DanfossLinkHandlerFactory extends BaseThingHandlerFactory {
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(THING_TYPE_CONTROLLER, THING_TYPE_ROOM,
             THING_TYPE_LIVING_ZONE);
 
+    private final TimeZoneProvider timeZoneProvider;
     private final PairingStore store;
     private final DanfossLinkStateDescriptionProvider descriptions;
 
     @Activate
     public DanfossLinkHandlerFactory(@Reference StorageService storageService,
-            @Reference DanfossLinkStateDescriptionProvider descriptions) {
+            @Reference DanfossLinkStateDescriptionProvider descriptions, @Reference TimeZoneProvider timeZoneProvider) {
+        this.timeZoneProvider = timeZoneProvider;
         this.descriptions = descriptions;
         store = new PairingStore(
                 storageService.getStorage("org.openhab.binding.danfosslink.pairings", getClass().getClassLoader()));
@@ -64,7 +67,7 @@ public class DanfossLinkHandlerFactory extends BaseThingHandlerFactory {
     protected @Nullable ThingHandler createHandler(Thing thing) {
         if (DanfossLinkBindingConstants.THING_TYPE_CONTROLLER.equals(thing.getThingTypeUID())
                 && thing instanceof Bridge bridge) {
-            return new ControllerHandler(bridge, store);
+            return new ControllerHandler(bridge, store, timeZoneProvider);
         }
         if (DanfossLinkBindingConstants.THING_TYPE_LIVING_ZONE.equals(thing.getThingTypeUID())) {
             return new LivingZoneHandler(thing);

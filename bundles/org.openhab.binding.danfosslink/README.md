@@ -138,6 +138,9 @@ TRACE logging includes the Home request for troubleshooting.
 ### Controller Clock Conversion
 
 Pause and Vacation DateTime channels use openHAB time.
+For local controller timestamps, the binding uses the timezone configured in openHAB regional settings.
+Configure openHAB and the controller for the same timezone.
+The offset is calculated separately for each date, so planned periods can cross daylight-saving transitions.
 For each world response, the binding estimates clock skew by comparing the controller's `systemTime` with openHAB time when the response is received.
 Outgoing deadlines are shifted into controller time; incoming mode dates are shifted back into openHAB time before validation or publication.
 This also applies to vacations configured outside openHAB and to edits of planned vacation dates.
@@ -166,7 +169,7 @@ The controller manages expiration, so openHAB does not schedule a separate cance
 Arbitrary durations still need verification on a real controller.
 To test, send a deadline five minutes in the future, check the returned `pause-until`, and confirm that `pause` returns to OFF after expiration (allowing for the polling interval).
 A successful request alone does not prove that the controller honors the requested duration.
-Timestamps use the controller's reported UTC offset and the clock-skew conversion described above.
+Timestamps use the configured timezone and the clock-skew conversion described above.
 TRACE logging includes the outgoing Pause request for comparison with readback.
 
 ### Vacation

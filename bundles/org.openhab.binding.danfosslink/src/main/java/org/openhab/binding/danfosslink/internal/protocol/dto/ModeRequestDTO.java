@@ -12,7 +12,7 @@
  */
 package org.openhab.binding.danfosslink.internal.protocol.dto;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -20,19 +20,19 @@ import org.eclipse.jdt.annotation.Nullable;
 
 /**
  * Mode update payload. Unused fields are omitted by Gson.
- * Deadlines represent controller time.
+ * Deadlines represent controller-local time.
  *
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
 public class ModeRequestDTO {
-    public final String type;
-    public final String state;
-    public @Nullable Instant startTime;
-    public @Nullable Instant endTime;
+    public final ModeType type;
+    public final ModeState state;
+    public @Nullable LocalDateTime startTime;
+    public @Nullable LocalDateTime endTime;
     public @Nullable List<Integer> rooms;
 
-    public ModeRequestDTO(String type, String state) {
+    public ModeRequestDTO(ModeType type, ModeState state) {
         this.type = type;
         this.state = state;
     }

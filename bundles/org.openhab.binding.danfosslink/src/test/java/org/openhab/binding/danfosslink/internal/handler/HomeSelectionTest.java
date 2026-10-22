@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
 import org.openhab.binding.danfosslink.internal.WorldState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.types.UnDefType;
 
@@ -50,10 +52,10 @@ class HomeSelectionTest {
         assertEquals(OnOffType.ON, selection.state(2, snapshot));
         assertEquals(OnOffType.OFF, selection.state(0, snapshot));
         selection.select(0, OnOffType.ON, snapshot);
-        assertEquals(JsonParser.parseString("[0,1,2]"), selection.request(OnOffType.ON).body(snapshot).get("rooms"));
+        assertEquals(java.util.List.of(0, 1, 2), selection.request(OnOffType.ON).body(snapshot).rooms);
         selection.select(2, OnOffType.OFF, snapshot);
         assertEquals(OnOffType.OFF, selection.state(1, snapshot));
-        assertEquals(JsonParser.parseString("[0]"), selection.request(OnOffType.ON).body(snapshot).get("rooms"));
+        assertEquals(java.util.List.of(0), selection.request(OnOffType.ON).body(snapshot).rooms);
     }
 
     @Test
@@ -64,10 +66,12 @@ class HomeSelectionTest {
         var request = selection.request(OnOffType.ON);
         selection.select(0, OnOffType.OFF, snapshot);
         selection.select(null, OnOffType.ON, snapshot);
-        assertEquals(JsonParser.parseString("[0]"), request.body(snapshot).get("rooms"));
+        assertEquals(java.util.List.of(0), request.body(snapshot).rooms);
         var cancel = selection.request(OnOffType.OFF).body(snapshot);
-        assertEquals(JsonParser.parseString("{\"type\":\"AtHome\",\"state\":\"Inactive\"}"), cancel);
-        assertEquals(JsonParser.parseString("[1,2]"), selection.request(OnOffType.ON).body(snapshot).get("rooms"));
+        assertEquals(ModeType.AT_HOME, cancel.type);
+        assertEquals(ModeState.INACTIVE, cancel.state);
+        assertNull(cancel.rooms);
+        assertEquals(java.util.List.of(1, 2), selection.request(OnOffType.ON).body(snapshot).rooms);
     }
 
     @Test
@@ -89,8 +93,7 @@ class HomeSelectionTest {
         assertThrows(IllegalArgumentException.class, () -> selection.select(0, OnOffType.ON, WorldState.parse(json)));
         selection.select(0, OnOffType.OFF, WorldState.parse(json));
         selection.select(null, OnOffType.ON, WorldState.parse(json));
-        assertEquals(JsonParser.parseString("[1,2]"),
-                selection.request(OnOffType.ON).body(WorldState.parse(json)).get("rooms"));
+        assertEquals(java.util.List.of(1, 2), selection.request(OnOffType.ON).body(WorldState.parse(json)).rooms);
         json.remove("modes");
         assertThrows(IllegalArgumentException.class,
                 () -> selection.request(OnOffType.OFF).body(WorldState.parse(json)));
@@ -106,11 +109,11 @@ class HomeSelectionTest {
         var fresh = WorldState.parse(json);
         assertThrows(IllegalArgumentException.class, () -> previous.body(fresh));
         selection.select(null, OnOffType.ON, fresh);
-        assertEquals(JsonParser.parseString("[0,1,2]"), selection.request(OnOffType.ON).body(fresh).get("rooms"));
+        assertEquals(java.util.List.of(0, 1, 2), selection.request(OnOffType.ON).body(fresh).rooms);
         var zone = selection.request(OnOffType.ON);
         json.getAsJsonArray("allRooms")
                 .add(JsonParser.parseString("{\"id\":3,\"zone\":\"Living\",\"regulation\":{\"type\":\"Schedule\"}}"));
-        assertEquals(JsonParser.parseString("[0,1,2,3]"), zone.body(WorldState.parse(json)).get("rooms"));
+        assertEquals(java.util.List.of(0, 1, 2, 3), zone.body(WorldState.parse(json)).rooms);
         json.getAsJsonArray("allRooms").get(3).getAsJsonObject().getAsJsonObject("regulation").addProperty("type",
                 "Manual");
         assertThrows(IllegalArgumentException.class, () -> zone.body(WorldState.parse(json)));
