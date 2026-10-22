@@ -31,6 +31,9 @@ import org.openhab.binding.danfosslink.internal.Identity;
 import org.openhab.binding.danfosslink.internal.Operation;
 import org.openhab.binding.danfosslink.internal.PairingStore;
 import org.openhab.binding.danfosslink.internal.WorldState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
@@ -61,7 +64,7 @@ class ControllerHandlerTest {
         var online = new CountDownLatch(1);
         var state = new WorldState(Map.of(), null, "serial", "firmware", "Danfoss",
                 java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), null, null, null, null);
-        when(session.world()).thenAnswer(call -> {
+        when(session.world(any())).thenAnswer(call -> {
             entered.countDown();
             assertTrue(release.await(10, TimeUnit.SECONDS));
             return state;
@@ -128,7 +131,7 @@ class ControllerHandlerTest {
             var json = JsonParser.parseString("{\"allRooms\":[{\"id\":0,\"zone\":\"" + initialZone + "\"}]}")
                     .getAsJsonObject();
             var snapshot = new AtomicReference<>(WorldState.parse(json));
-            when(session.world()).thenAnswer(call -> snapshot.get());
+            when(session.world(any())).thenAnswer(call -> snapshot.get());
             var handler = new ControllerHandler(bridge, store) {
                 @Override
                 CloudClient connect(Identity credentials, Operation operation) {
@@ -178,7 +181,7 @@ class ControllerHandlerTest {
         var client = mock(CloudClient.class);
         var session = mock(CloudClient.Session.class);
         when(client.open(any())).thenReturn(session);
-        when(session.world()).thenReturn(WorldState.parse(JsonParser.parseString("""
+        when(session.world(any())).thenReturn(WorldState.parse(JsonParser.parseString("""
                 {"allRooms":[{"id":0,"zone":"None"}]}
                 """).getAsJsonObject()));
         doThrow(new CloudClient.ControllerResponseException(400)).when(session).apply(any());
@@ -232,15 +235,15 @@ class ControllerHandlerTest {
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
             var inactive = new WorldState(Map.of(), null, null, null, null, null,
-                    new WorldState.Mode("Inactive", null, null, null), null, null, null);
+                    new WorldState.Mode(ModeState.INACTIVE, null, null, null), null, null, null);
             var snapshot = new AtomicReference<>(inactive);
-            when(session.world()).thenAnswer(call -> snapshot.get());
+            when(session.world(any())).thenAnswer(call -> snapshot.get());
             doAnswer(call -> {
                 if (reject) {
                     throw new CloudClient.ControllerResponseException(400);
                 }
                 snapshot.set(new WorldState(Map.of(), null, null, null, null, null,
-                        new WorldState.Mode("Active", null, null, null), null, null, null));
+                        new WorldState.Mode(ModeState.ACTIVE, null, null, null), null, null, null));
                 return null;
             }).when(session).vacation(any());
             var handler = new ControllerHandler(bridge, store) {
@@ -268,10 +271,13 @@ class ControllerHandlerTest {
             try {
                 handler.initialize();
                 assertTrue(finished.await(10, TimeUnit.SECONDS));
-                var body = ArgumentCaptor.forClass(com.google.gson.JsonObject.class);
+                var body = ArgumentCaptor.forClass(ModeRequestDTO.class);
                 verify(session, times(1)).vacation(body.capture());
-                assertEquals(JsonParser.parseString("{\"type\":\"Vacation\",\"state\":\"Active\"}"), body.getValue());
-                verify(session, times(3)).world();
+                assertEquals(ModeType.VACATION, body.getValue().type);
+                assertEquals(ModeState.ACTIVE, body.getValue().state);
+                assertNull(body.getValue().startTime);
+                assertNull(body.getValue().endTime);
+                verify(session, times(3)).world(any());
                 verify(callback, atLeastOnce()).stateUpdated(
                         new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION),
                         reject ? OnOffType.OFF : OnOffType.ON);
@@ -291,24 +297,26 @@ class ControllerHandlerTest {
         var session = mock(CloudClient.Session.class);
         when(client.open(any())).thenReturn(session);
         var now = java.time.Instant.parse("2026-10-17T12:00:00Z");
-        var controllerNow = now.minusSeconds(1500).atZone(java.time.ZoneOffset.UTC);
+        var offset = java.time.ZoneOffset.ofHours(2);
+        var controllerNow = now.minusSeconds(1500).atZone(offset);
         var start = now.plusSeconds(86400);
         var end = start.plusSeconds(86400);
         var laterEnd = end.plusSeconds(86400);
         var snapshot = new AtomicReference<>(new WorldState(Map.of(), null, null, null, null, controllerNow,
-                new WorldState.Mode("Planned", start.minusSeconds(1500), end.minusSeconds(1500), null), null, null,
-                null));
-        when(session.world()).thenAnswer(call -> snapshot.get());
+                new WorldState.Mode(ModeState.PLANNED, start.minusSeconds(1500), end.minusSeconds(1500), offset), null,
+                null, null));
+        when(session.world(any())).thenAnswer(call -> snapshot.get());
         doAnswer(call -> {
-            com.google.gson.JsonObject body = call.getArgument(0);
-            snapshot.set(
-                    new WorldState(Map.of(), null, null, null, null, controllerNow,
-                            new WorldState.Mode("Planned", java.time.Instant.parse(body.get("startTime").getAsString()),
-                                    java.time.Instant.parse(body.get("endTime").getAsString()), null),
-                            null, null, null));
+            ModeRequestDTO body = call.getArgument(0);
+            snapshot.set(new WorldState(Map.of(), null, null, null, null, controllerNow,
+                    new WorldState.Mode(ModeState.PLANNED,
+                            java.util.Objects.requireNonNull(body.startTime).toInstant(offset),
+                            java.util.Objects.requireNonNull(body.endTime).toInstant(offset), offset),
+                    null, null, null));
             return null;
         }).when(session).vacation(any());
-        var handler = new ControllerHandler(bridge, store, java.time.Clock.fixed(now, java.time.ZoneOffset.UTC)) {
+        var handler = new ControllerHandler(bridge, store, java.time.Clock.fixed(now, java.time.ZoneOffset.UTC),
+                () -> java.time.ZoneId.of("Europe/Copenhagen")) {
             @Override
             CloudClient connect(Identity credentials, Operation operation) {
                 return client;
@@ -336,15 +344,15 @@ class ControllerHandlerTest {
         try {
             handler.initialize();
             assertTrue(finished.await(10, TimeUnit.SECONDS));
-            var bodies = ArgumentCaptor.forClass(com.google.gson.JsonObject.class);
+            var bodies = ArgumentCaptor.forClass(ModeRequestDTO.class);
             verify(session, times(2)).vacation(bodies.capture());
-            assertEquals(start.minusSeconds(1500).toString(),
-                    bodies.getAllValues().get(0).get("startTime").getAsString());
-            assertEquals(end.minusSeconds(1500).toString(),
-                    bodies.getAllValues().get(1).get("startTime").getAsString());
-            assertEquals(laterEnd.minusSeconds(1500).toString(),
-                    bodies.getAllValues().get(1).get("endTime").getAsString());
-            verify(session, times(4)).world();
+            assertEquals(start.minusSeconds(1500),
+                    java.util.Objects.requireNonNull(bodies.getAllValues().get(0).startTime).toInstant(offset));
+            assertEquals(end.minusSeconds(1500),
+                    java.util.Objects.requireNonNull(bodies.getAllValues().get(1).startTime).toInstant(offset));
+            assertEquals(laterEnd.minusSeconds(1500),
+                    java.util.Objects.requireNonNull(bodies.getAllValues().get(1).endTime).toInstant(offset));
+            verify(session, times(4)).world(eq(java.time.ZoneId.of("Europe/Copenhagen")));
             verify(callback, atLeastOnce()).stateUpdated(
                     new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION_END),
                     new org.openhab.core.library.types.DateTimeType(laterEnd));
@@ -365,7 +373,7 @@ class ControllerHandlerTest {
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
             var time = now.plusSeconds(seconds).atZone(java.time.ZoneOffset.ofHours(2));
-            when(session.world())
+            when(session.world(any()))
                     .thenReturn(new WorldState(Map.of(), null, null, null, null, time, null, null, null, null));
             var logger = mock(org.slf4j.Logger.class);
             try (var factory = mockStatic(org.slf4j.LoggerFactory.class, CALLS_REAL_METHODS)) {
@@ -422,13 +430,13 @@ class ControllerHandlerTest {
             var initialClock = now.plusSeconds(1500).atZone(java.time.ZoneOffset.UTC);
             var correctedClock = now.minusSeconds(600).atZone(java.time.ZoneOffset.UTC);
             var inactive = new WorldState(Map.of(), null, null, null, null, correctedClock, null,
-                    new WorldState.Mode("Inactive", null, null, null), null, null);
+                    new WorldState.Mode(ModeState.INACTIVE, null, null, null), null, null);
             var snapshot = new AtomicReference<>(
                     new WorldState(Map.of(), null, null, null, null, initialClock, null, inactive.pause(), null, null));
-            when(session.world()).thenAnswer(call -> snapshot.get());
+            when(session.world(any())).thenAnswer(call -> snapshot.get());
             doAnswer(call -> {
-                com.google.gson.JsonObject body = call.getArgument(0);
-                if ("Inactive".equals(body.get("state").getAsString())) {
+                ModeRequestDTO body = call.getArgument(0);
+                if (body.state == ModeState.INACTIVE) {
                     snapshot.set(inactive);
                 } else if (failure == -1) {
                     throw new java.io.IOException("Connection closed");
@@ -437,7 +445,7 @@ class ControllerHandlerTest {
                 } else {
                     // Simulate a controller adjusting the requested five minutes to one hour.
                     snapshot.set(new WorldState(Map.of(), null, null, null, null, correctedClock, null,
-                            new WorldState.Mode("Active", null, now.plusSeconds(3000), null), null, null));
+                            new WorldState.Mode(ModeState.ACTIVE, null, now.plusSeconds(3000), null), null, null));
                 }
                 return null;
             }).when(session).pause(any());
@@ -477,11 +485,11 @@ class ControllerHandlerTest {
             try {
                 handler.initialize();
                 assertTrue(finished.await(10, TimeUnit.SECONDS));
-                var bodies = ArgumentCaptor.forClass(com.google.gson.JsonObject.class);
+                var bodies = ArgumentCaptor.forClass(ModeRequestDTO.class);
                 verify(session, times(2)).pause(bodies.capture());
-                assertEquals(now.minusSeconds(300).toString(),
-                        bodies.getAllValues().get(0).get("endTime").getAsString());
-                assertEquals("Inactive", bodies.getAllValues().get(1).get("state").getAsString());
+                assertEquals(now.minusSeconds(300), java.util.Objects
+                        .requireNonNull(bodies.getAllValues().get(0).endTime).toInstant(java.time.ZoneOffset.UTC));
+                assertEquals(ModeState.INACTIVE, bodies.getAllValues().get(1).state);
                 verify(callback, never()).stateUpdated(until,
                         new org.openhab.core.library.types.DateTimeType(now.plusSeconds(300)));
                 if (failure == 0) {
@@ -518,7 +526,7 @@ class ControllerHandlerTest {
                     "systemStatus":{"currentState":"AtHome"},
                     "modes":[{"type":"AtHome","state":"Inactive"}]}
                     """).getAsJsonObject();
-            when(session.world()).thenAnswer(call -> WorldState.parse(json));
+            when(session.world(any())).thenAnswer(call -> WorldState.parse(json));
             var writes = new java.util.concurrent.atomic.AtomicInteger();
             doAnswer(call -> {
                 if (writes.getAndIncrement() == 0) {
@@ -528,8 +536,8 @@ class ControllerHandlerTest {
                         throw new java.io.IOException("Connection closed");
                     }
                 }
-                com.google.gson.JsonObject body = call.getArgument(0);
-                json.getAsJsonArray("modes").get(0).getAsJsonObject().add("state", body.get("state"));
+                ModeRequestDTO body = call.getArgument(0);
+                json.getAsJsonArray("modes").get(0).getAsJsonObject().addProperty("state", body.state.toString());
                 return null;
             }).when(session).home(any());
             var handler = new ControllerHandler(bridge, store) {
@@ -572,13 +580,13 @@ class ControllerHandlerTest {
             try {
                 handler.initialize();
                 assertTrue(finished.await(10, TimeUnit.SECONDS));
-                var bodies = ArgumentCaptor.forClass(com.google.gson.JsonObject.class);
+                var bodies = ArgumentCaptor.forClass(ModeRequestDTO.class);
                 verify(session, times(4)).home(bodies.capture());
-                assertEquals(JsonParser.parseString("[0]"), bodies.getAllValues().get(0).get("rooms"));
-                assertEquals(JsonParser.parseString("[1,2]"), bodies.getAllValues().get(1).get("rooms"));
-                assertEquals(JsonParser.parseString("{\"type\":\"AtHome\",\"state\":\"Inactive\"}"),
-                        bodies.getAllValues().get(2));
-                assertEquals(JsonParser.parseString("[1,2]"), bodies.getAllValues().get(3).get("rooms"));
+                assertEquals(java.util.List.of(0), bodies.getAllValues().get(0).rooms);
+                assertEquals(java.util.List.of(1, 2), bodies.getAllValues().get(1).rooms);
+                assertEquals(ModeState.INACTIVE, bodies.getAllValues().get(2).state);
+                assertNull(bodies.getAllValues().get(2).rooms);
+                assertEquals(java.util.List.of(1, 2), bodies.getAllValues().get(3).rooms);
                 verify(callback, times(5)).stateUpdated(currentStateChannel,
                         new org.openhab.core.library.types.StringType("AtHome"));
                 verify(callback, atLeastOnce()).stateUpdated(channel, OnOffType.ON);

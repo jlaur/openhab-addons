@@ -40,6 +40,7 @@ import org.openhab.binding.danfosslink.internal.config.ControllerConfiguration;
 import org.openhab.binding.danfosslink.internal.discovery.RoomDiscoveryService;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.core.common.ThreadPoolManager;
+import org.openhab.core.i18n.TimeZoneProvider;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.thing.Bridge;
@@ -73,6 +74,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     private final ExecutorService worker = ThreadPoolManager.getPool("binding-danfosslink");
     private final PairingStore store;
     private final Clock clock;
+    private final TimeZoneProvider timeZoneProvider;
     private final Object lifecycle = new Object();
 
     private record CommandTarget(@Nullable Integer roomId, String channel) {
@@ -97,12 +99,21 @@ public class ControllerHandler extends BaseBridgeHandler {
     private @Nullable WorldState world;
     private @Nullable RoomDiscoveryService discovery;
 
-    public ControllerHandler(Bridge bridge, PairingStore store) {
+    public ControllerHandler(Bridge bridge, PairingStore store, TimeZoneProvider timeZoneProvider) {
+        this(bridge, store, Clock.systemUTC(), timeZoneProvider);
+    }
+
+    ControllerHandler(Bridge bridge, PairingStore store) {
         this(bridge, store, Clock.systemUTC());
     }
 
     ControllerHandler(Bridge bridge, PairingStore store, Clock clock) {
+        this(bridge, store, clock, clock::getZone);
+    }
+
+    ControllerHandler(Bridge bridge, PairingStore store, Clock clock, TimeZoneProvider timeZoneProvider) {
         super(bridge);
+        this.timeZoneProvider = timeZoneProvider;
         this.store = store;
         this.clock = clock;
     }
@@ -409,7 +420,8 @@ public class ControllerHandler extends BaseBridgeHandler {
                         for (var request : pendingVacation.values()) {
                             operation.check();
                             try {
-                                var body = request.body(snapshot.state().vacation(), clock.instant(), snapshot.time());
+                                var mode = snapshot.state().vacation();
+                                var body = request.body(mode, clock.instant(), snapshot.time());
                                 stage = "writing /api/modes/vacation";
                                 session.vacation(body);
                                 stage = "reading back vacation";
@@ -427,10 +439,9 @@ public class ControllerHandler extends BaseBridgeHandler {
                         if (pendingPause != null) {
                             operation.check();
                             try {
-                                var body = pendingPause.body(snapshot.state().pause(), clock.instant(),
-                                        snapshot.time());
+                                var mode = snapshot.state().pause();
+                                var body = pendingPause.body(mode, clock.instant(), snapshot.time());
                                 stage = "writing /api/modes/pause";
-                                logger.trace("Controller {} applying pause request: {}", getThing().getUID(), body);
                                 session.pause(body);
                                 stage = "reading back pause";
                                 snapshot = readWorld(session);
@@ -449,7 +460,6 @@ public class ControllerHandler extends BaseBridgeHandler {
                             try {
                                 var body = pendingHome.body(snapshot.state());
                                 stage = "writing /api/modes/athome";
-                                logger.trace("Controller {} applying Home request: {}", getThing().getUID(), body);
                                 session.home(body);
                                 stage = "reading back Home";
                                 snapshot = readWorld(session);
@@ -524,7 +534,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     }
 
     private Snapshot readWorld(CloudClient.Session session) throws IOException {
-        WorldState raw = session.world();
+        WorldState raw = session.world(timeZoneProvider.getTimeZone());
         // Keep each conversion with its own response; never reuse a skew after reconnect or clock correction.
         ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
         var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
