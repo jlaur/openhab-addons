@@ -24,16 +24,24 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
+import org.openhab.binding.veluxactive.internal.action.VeluxActivePairingActions;
 import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
+import org.openhab.binding.veluxactive.internal.crypto.NetcomPairing;
+import org.openhab.binding.veluxactive.internal.crypto.SigningKey;
+import org.openhab.binding.veluxactive.internal.crypto.SigningKeyStore;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.thing.Bridge;
@@ -64,8 +72,76 @@ class VeluxActiveGatewayHandlerTest {
     private final Bridge bridge = mock(Bridge.class);
     private final VeluxActiveAccountHandler account = mock(VeluxActiveAccountHandler.class);
     private final ThingHandlerCallback callback = mock(ThingHandlerCallback.class);
-    private final VeluxActiveGatewayHandler handler = new VeluxActiveGatewayHandler(thing);
+    private final SigningKeyStore signingKeys = mock(SigningKeyStore.class);
+    private final VeluxActiveGatewayHandler handler = new VeluxActiveGatewayHandler(thing, signingKeys);
     private final Map<String, State> states = new HashMap<>();
+
+    @Test
+    @Timeout(15)
+    void pairingActionPersistsVerifiedKeyAndEnablesUnlock() throws Exception {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"gateway","firmware_revision_netatmo":203}]}}
+                """);
+        var stored = new CompletableFuture<SigningKey>();
+        doAnswer(i -> {
+            stored.complete(i.getArgument(1));
+            return null;
+        }).when(signingKeys).put(eq("gateway"), any());
+        var actions = new VeluxActivePairingActions();
+        actions.setThingHandler(handler);
+        var key = new SigningKey(new byte[16], new byte[32]);
+        try (var mocked = mockConstruction(NetcomPairing.class,
+                (session, context) -> when(session.attempt()).thenReturn(key))) {
+            assertThat(actions.pair("192.0.2.1").startsWith("STARTED"), is(true));
+            assertThat(actions.pair("192.0.2.1"), is("IN_PROGRESS"));
+            var accepted = ArgumentCaptor.forClass(Runnable.class);
+            verify(account).retrieveKey(any(), accepted.capture(), any());
+            accepted.getValue().run();
+            assertThat(stored.get(10, TimeUnit.SECONDS), is(key));
+            assertThat(actions.pairingStatus(), is("PAIRED"));
+            verify(mocked.constructed().getFirst()).close();
+        } finally {
+            handler.dispose();
+        }
+    }
+
+    @Test
+    void disposalCancelsPairingAndSuppressesLateCloudAcceptance() throws Exception {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"gateway","firmware_revision_netatmo":203}]}}
+                """);
+        try (var mocked = mockConstruction(NetcomPairing.class)) {
+            handler.pair("192.0.2.1");
+            var accepted = ArgumentCaptor.forClass(Runnable.class);
+            verify(account).retrieveKey(any(), accepted.capture(), any());
+            handler.dispose();
+            accepted.getValue().run();
+            verify(mocked.constructed().getFirst()).close();
+            verify(mocked.constructed().getFirst(), never()).attempt();
+            verify(signingKeys, never()).put(anyString(), any());
+            assertThat(handler.pairingStatus(), is("CANCELLED"));
+        }
+    }
+
+    @Test
+    void pairedGatewayRoutesOffAndOnlyPublishesAfterAcceptance() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"gateway","locked":true,"firmware_revision_netatmo":203}]}}
+                """);
+        when(signingKeys.contains("gateway")).thenReturn(true);
+        handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LOCKED), OnOffType.OFF);
+        verify(account).unlock(any());
+        assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.ON));
+        handler.unlockAccepted(requireNonNull(handler.captureRequestContext()));
+        assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.OFF));
+    }
+
+    @Test
+    void removalDeletesCredentialsAfterDisposal() {
+        handler.dispose();
+        handler.handleRemoval();
+        verify(signingKeys).remove("gateway");
+    }
 
     @BeforeEach
     void setup() {

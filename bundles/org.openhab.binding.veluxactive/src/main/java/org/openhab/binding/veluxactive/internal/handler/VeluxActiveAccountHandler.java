@@ -499,6 +499,59 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         }
     }
 
+    void unlock(ModuleRequestContext target) {
+        if (target.handler() instanceof VeluxActiveGatewayHandler gateway) {
+            sendCommand(target, (token, timezone) -> {
+                var signature = gateway.sign(target, target.moduleId(), "scenario", "home", api.signingTime());
+                api.unlock(token, target.homeId(), target.moduleId(), timezone, signature);
+            }, () -> gateway.unlockAccepted(target));
+        }
+    }
+
+    void setSignedPosition(ModuleRequestContext target, int position) {
+        ModuleRequestContext parent = target.parent();
+        if (parent != null && parent.handler() instanceof VeluxActiveGatewayHandler gateway
+                && target.handler() instanceof VeluxActiveOpeningHandler opening) {
+            sendCommand(target, (token, timezone) -> {
+                var signature = gateway.sign(parent, target.moduleId(), "target_position", position, api.signingTime());
+                api.setSignedPosition(token, target.homeId(), target.moduleId(), parent.moduleId(), position, timezone,
+                        signature);
+            }, () -> opening.positionAccepted(target, position));
+        }
+    }
+
+    synchronized void retrieveKey(ModuleRequestContext target, Runnable accepted, Runnable rejected) {
+        if (!running) {
+            rejected.run();
+            return;
+        }
+        long session = generation;
+        enqueue(session, () -> {
+            String token = accessToken;
+            if (token == null || !isCurrent(session) || target.homeId().isBlank()
+                    || !target.handler().isRequestContextCurrent(target)) {
+                rejected.run();
+                return;
+            }
+            try {
+                api.retrieveKey(token, target.homeId(), target.moduleId(), timeZoneProvider.getTimeZone().getId());
+                synchronized (this) {
+                    if (isCurrent(session) && target.handler().isRequestContextCurrent(target)) {
+                        accepted.run();
+                    } else {
+                        rejected.run();
+                    }
+                }
+            } catch (ApiException e) {
+                rejected.run();
+                recoverAuthentication(session, e);
+            } catch (InterruptedException e) {
+                rejected.run();
+                Thread.currentThread().interrupt();
+            }
+        });
+    }
+
     void setPosition(ModuleRequestContext target, String gatewayId, int position) {
         if (target.handler() instanceof VeluxActiveOpeningHandler opening) {
             sendCommand(target, (token, timezone) -> api.setPosition(token, target.homeId(), target.moduleId(),

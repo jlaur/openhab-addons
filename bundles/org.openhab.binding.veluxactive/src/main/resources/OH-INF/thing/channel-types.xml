@@ -7,7 +7,7 @@
 	<channel-type id="locked">
 		<item-type>Switch</item-type>
 		<label>Departure Locked</label>
-		<description>Reported departure lock state. Send ON to lock; unlocking is not supported.</description>
+		<description>Reported departure lock state. Send ON to lock or OFF to unlock after pairing the gateway.</description>
 		<category>Lock</category>
 		<autoUpdatePolicy>veto</autoUpdatePolicy>
 	</channel-type>
@@ -54,7 +54,7 @@
 	<channel-type id="position">
 		<item-type>Rollershutter</item-type>
 		<label>Position</label>
-		<description>0% open, 100% closed. Window opening requires signing and is not supported. STOP stops all movements on
+		<description>0% open, 100% closed. Window opening requires gateway pairing. STOP stops all movements on
 			the gateway.</description>
 		<category>Blinds</category>
 		<tags>

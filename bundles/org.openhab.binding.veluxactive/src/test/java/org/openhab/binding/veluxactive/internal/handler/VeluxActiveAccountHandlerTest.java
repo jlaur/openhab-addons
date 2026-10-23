@@ -44,6 +44,7 @@ import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
 import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.ModuleType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
+import org.openhab.binding.veluxactive.internal.crypto.SigningKeyStore;
 import org.openhab.binding.veluxactive.internal.exception.ApiException;
 import org.openhab.binding.veluxactive.internal.exception.ApiUnauthorizedException;
 import org.openhab.core.auth.client.oauth2.AccessTokenResponse;
@@ -350,6 +351,33 @@ class VeluxActiveAccountHandlerTest {
     }
 
     @Test
+    void signedUnlockUsesServerTimeAndAcknowledgesAfterSuccess() throws Exception {
+        var gateway = gateway("home", "gateway");
+        var target = java.util.Objects.requireNonNull(gateway.captureRequestContext());
+        when(gateway.isRequestContextCurrent(target)).thenReturn(true);
+        when(client.getAccessTokenResponse()).thenReturn(token());
+        when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
+        when(api.signingTime()).thenReturn(1700000000L);
+        var signature = java.util.Map.<String, Object> of("hash_scenario", "signature");
+        when(gateway.sign(target, "gateway", "scenario", "home", 1700000000L)).thenReturn(signature);
+        handler.initialize();
+        executor.runAll();
+        clearInvocations(api, gateway);
+        handler.unlock(target);
+        executor.runAll();
+        var order = inOrder(api, gateway);
+        order.verify(gateway).sign(target, "gateway", "scenario", "home", 1700000000L);
+        order.verify(api).unlock("access", "home", "gateway", "Europe/Copenhagen", signature);
+        order.verify(gateway).unlockAccepted(target);
+        doThrow(new ApiException("Rejected")).when(api).unlock(anyString(), anyString(), anyString(), anyString(),
+                anyMap());
+        clearInvocations(gateway);
+        handler.unlock(target);
+        executor.runAll();
+        verify(gateway, never()).unlockAccepted(any());
+    }
+
+    @Test
     void lockCommandUsesConfiguredTimezoneAndPollsForConfirmation() throws Exception {
         var gateway = gateway("home", "gateway");
         var target = java.util.Objects.requireNonNull(gateway.captureRequestContext());
@@ -628,7 +656,7 @@ class VeluxActiveAccountHandlerTest {
     private VeluxActiveGatewayHandler realGateway() {
         Bridge gatewayThing = spy(BridgeBuilder.create(THING_TYPE_GATEWAY, "gateway").withBridge(bridge.getUID())
                 .withConfiguration(new Configuration(Map.of("moduleId", "gateway"))).build());
-        var gateway = new VeluxActiveGatewayHandler(gatewayThing);
+        var gateway = new VeluxActiveGatewayHandler(gatewayThing, mock(SigningKeyStore.class));
         when(gatewayThing.getHandler()).thenReturn(gateway);
         when(bridge.getHandler()).thenReturn(handler);
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);

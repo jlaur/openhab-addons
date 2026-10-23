@@ -52,6 +52,43 @@ class VeluxActiveApiTest {
     private final ContentResponse response = mock(ContentResponse.class);
     private final VeluxActiveApi api = new VeluxActiveApi(http);
 
+    @Test
+    void signedCommandsPreserveRoutingWithoutRainOverride() throws Exception {
+        when(response.getContentAsString()).thenReturn("{\"status\":\"ok\"}");
+        var signature = java.util.Map.<String, Object> of("sign_key_id", "key-id", "timestamp", 1700000000L, "nonce", 1,
+                "hash_target_position", "signature");
+        api.setSignedPosition("token", "home", "window", "gateway", 50, "Europe/Copenhagen", signature);
+        var module = commandBody().getAsJsonObject("home").getAsJsonArray("modules").get(0).getAsJsonObject();
+        assertThat(module.get("bridge").getAsString(), is("gateway"));
+        assertThat(module.get("hash_target_position").getAsString(), is("signature"));
+        assertThat(module.get("target_position").getAsInt(), is(50));
+        assertThat(module.has("force"), is(false));
+        clearInvocations(request);
+        api.unlock("token", "home", "gateway", "Europe/Copenhagen", java.util.Map.of("hash_scenario", "signature"));
+        module = commandBody().getAsJsonObject("home").getAsJsonArray("modules").get(0).getAsJsonObject();
+        assertThat(module.get("scenario").getAsString(), is("home"));
+        assertThat(module.get("hash_scenario").getAsString(), is("signature"));
+    }
+
+    @Test
+    void retrieveKeyAcceptsEmptyAcknowledgementAndRejectsModuleErrors() throws Exception {
+        when(response.getContentAsString()).thenReturn("{\"status\":\"ok\"}");
+        api.retrieveKey("token", "home", "gateway", "Europe/Copenhagen");
+        assertThat(commandBody().getAsJsonObject("home").getAsJsonArray("modules").get(0).getAsJsonObject()
+                .get("retrieve_key").getAsBoolean(), is(true));
+        when(response.getContentAsString())
+                .thenReturn("{\"status\":\"ok\",\"body\":{\"errors\":[{\"id\":\"gateway\",\"code\":6}]}}");
+        assertThrows(ApiException.class, () -> api.retrieveKey("token", "home", "gateway", "Europe/Copenhagen"));
+    }
+
+    @Test
+    void signingRequiresServerClockSample() throws Exception {
+        assertThrows(ApiException.class, api::signingTime);
+        when(response.getContentAsString()).thenReturn("{\"status\":\"ok\",\"time_server\":1700000000}");
+        api.lock("token", "home", "gateway", "Europe/Copenhagen");
+        assertThat(api.signingTime() >= 1700000000L && api.signingTime() < 1700000010L, is(true));
+    }
+
     @BeforeEach
     void setup() throws Exception {
         when(http.newRequest(anyString())).thenReturn(request);

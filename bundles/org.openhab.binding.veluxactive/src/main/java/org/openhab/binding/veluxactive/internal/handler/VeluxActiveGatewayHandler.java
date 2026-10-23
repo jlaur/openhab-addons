@@ -14,19 +14,32 @@ package org.openhab.binding.veluxactive.internal.handler;
 
 import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants.*;
 
+import java.io.IOException;
+import java.security.GeneralSecurityException;
 import java.time.DateTimeException;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.veluxactive.internal.action.VeluxActivePairingActions;
 import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.binding.veluxactive.internal.api.dto.ModuleError;
+import org.openhab.binding.veluxactive.internal.config.VeluxActiveModuleConfiguration;
+import org.openhab.binding.veluxactive.internal.crypto.NetcomPairing;
+import org.openhab.binding.veluxactive.internal.crypto.SigningKey;
+import org.openhab.binding.veluxactive.internal.crypto.SigningKeyStore;
 import org.openhab.binding.veluxactive.internal.discovery.VeluxActiveGatewayDiscoveryService;
+import org.openhab.binding.veluxactive.internal.exception.ApiException;
+import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.thing.Bridge;
@@ -34,6 +47,7 @@ import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
+import org.openhab.core.thing.ThingStatusInfo;
 import org.openhab.core.thing.binding.BridgeHandler;
 import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerService;
@@ -45,7 +59,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Publishes gateway state and requests unsigned departure locking.
+ * Publishes gateway state and manages pairing and departure commands.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -53,8 +67,180 @@ import org.slf4j.LoggerFactory;
 public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implements BridgeHandler {
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveGatewayHandler.class);
 
-    public VeluxActiveGatewayHandler(Bridge thing) {
+    private final SigningKeyStore signingKeys;
+    private volatile @Nullable Integer firmwareVersion;
+    private @Nullable NetcomPairing pairing;
+    private @Nullable ScheduledFuture<?> pairingTask;
+    private @Nullable ScheduledFuture<?> pairingTimeout;
+    private String pairingResult = "IDLE";
+
+    public VeluxActiveGatewayHandler(Bridge thing, SigningKeyStore signingKeys) {
         super(thing);
+        this.signingKeys = signingKeys;
+    }
+
+    @Override
+    public void initialize() {
+        synchronized (this) {
+            finishPairing("CANCELLED");
+            firmwareVersion = null;
+            pairingResult = "IDLE";
+        }
+        super.initialize();
+    }
+
+    public String pair(String host) {
+        ModuleRequestContext context = captureRequestContext();
+        VeluxActiveAccountHandler account = account();
+        NetcomPairing attempt;
+        synchronized (this) {
+            if (pairing != null) {
+                return "IN_PROGRESS";
+            }
+            if (context == null || account == null || context.homeId().isBlank() || !isRequestContextCurrent(context)
+                    || getThing().getStatus() != ThingStatus.ONLINE) {
+                return "UNAVAILABLE: Gateway must be online with a resolved home.";
+            }
+            Integer firmware = firmwareVersion;
+            if (firmware == null || firmware < 27) {
+                return "UNAVAILABLE: Signing firmware support is unknown or unavailable.";
+            }
+            try {
+                attempt = new NetcomPairing(host.trim());
+            } catch (IOException e) {
+                return "INVALID_ADDRESS: Supply the gateway's LAN IP address.";
+            }
+            pairing = attempt;
+            pairingResult = "STARTING";
+            pairingTimeout = scheduler.schedule(() -> {
+                synchronized (this) {
+                    if (attempt.equals(pairing)) {
+                        finishPairing("TIMED_OUT: Press the gateway button and try again.");
+                    }
+                }
+            }, 60, TimeUnit.SECONDS);
+        }
+        account.retrieveKey(context, () -> {
+            synchronized (this) {
+                if (attempt.equals(pairing) && isRequestContextCurrent(context)) {
+                    pairingResult = "WAITING_FOR_BUTTON";
+                    schedulePairing(context, attempt, 0);
+                }
+            }
+        }, () -> {
+            synchronized (this) {
+                if (attempt.equals(pairing)) {
+                    finishPairing("FAILED: Cloud key retrieval was not accepted.");
+                }
+            }
+        });
+        return "STARTED: Press the gateway button, then check pairingStatus().";
+    }
+
+    public synchronized String pairingStatus() {
+        ModuleRequestContext context = captureRequestContext();
+        if ("IDLE".equals(pairingResult) && context != null && signingKeys.contains(context.moduleId())) {
+            return "PAIRED";
+        }
+        return pairingResult;
+    }
+
+    private void schedulePairing(ModuleRequestContext context, NetcomPairing attempt, int delay) {
+        pairingTask = ThreadPoolManager.getScheduledPool(BINDING_ID + "-pairing").schedule(() -> {
+            try {
+                SigningKey key = attempt.attempt();
+                synchronized (this) {
+                    if (!attempt.equals(pairing)) {
+                        return;
+                    }
+                    if (!isRequestContextCurrent(context) || getThing().getStatus() != ThingStatus.ONLINE) {
+                        finishPairing("CANCELLED");
+                        return;
+                    }
+                    if (key != null) {
+                        signingKeys.put(context.moduleId(), key);
+                        finishPairing("PAIRED");
+                    } else if (attempt.expired()) {
+                        finishPairing("TIMED_OUT");
+                    } else {
+                        schedulePairing(context, attempt, 1);
+                    }
+                }
+            } catch (IOException | GeneralSecurityException e) {
+                synchronized (this) {
+                    if (attempt.equals(pairing)) {
+                        finishPairing(
+                                "FAILED: Local gateway pairing failed. Check the address and button, then try again.");
+                    }
+                }
+            } catch (RuntimeException e) {
+                synchronized (this) {
+                    if (attempt.equals(pairing)) {
+                        finishPairing("FAILED: Could not retain gateway credentials.");
+                    }
+                }
+                logger.debug("Gateway pairing failed unexpectedly ({})", e.getClass().getSimpleName());
+            }
+        }, delay, TimeUnit.SECONDS);
+    }
+
+    private void finishPairing(String result) {
+        NetcomPairing attempt = pairing;
+        pairing = null;
+        ScheduledFuture<?> task = pairingTask;
+        pairingTask = null;
+        if (task != null) {
+            task.cancel(false);
+        }
+        ScheduledFuture<?> timeout = pairingTimeout;
+        pairingTimeout = null;
+        if (timeout != null) {
+            timeout.cancel(false);
+        }
+        if (attempt != null) {
+            attempt.close();
+            pairingResult = result;
+        }
+    }
+
+    boolean canSign() {
+        ModuleRequestContext context = captureRequestContext();
+        Integer firmware = firmwareVersion;
+        return context != null && getThing().getStatus() == ThingStatus.ONLINE && firmware != null && firmware >= 27
+                && signingKeys.contains(context.moduleId());
+    }
+
+    Map<String, Object> sign(ModuleRequestContext context, String moduleId, String field, Object value, long serverTime)
+            throws ApiException {
+        Integer firmware = firmwareVersion;
+        if (!isRequestContextCurrent(context) || firmware == null || firmware < 27) {
+            throw new ApiException("Gateway signing support is unavailable.");
+        }
+        return signingKeys.sign(context.moduleId(), moduleId, field, value, serverTime, firmware >= 60);
+    }
+
+    @Override
+    public void bridgeStatusChanged(ThingStatusInfo status) {
+        synchronized (this) {
+            finishPairing("CANCELLED");
+        }
+        super.bridgeStatusChanged(status);
+    }
+
+    @Override
+    public synchronized void dispose() {
+        finishPairing("CANCELLED");
+        super.dispose();
+    }
+
+    @Override
+    public synchronized void handleRemoval() {
+        finishPairing("CANCELLED");
+        String moduleId = getConfigAs(VeluxActiveModuleConfiguration.class).moduleId;
+        if (!moduleId.isBlank()) {
+            signingKeys.remove(moduleId);
+        }
+        super.handleRemoval();
     }
 
     @Override
@@ -72,7 +258,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
 
     @Override
     public Collection<Class<? extends ThingHandlerService>> getServices() {
-        return Set.of(VeluxActiveGatewayDiscoveryService.class);
+        return Set.of(VeluxActiveGatewayDiscoveryService.class, VeluxActivePairingActions.class);
     }
 
     public void discover(Consumer<List<ModuleInfo>> consumer) {
@@ -120,7 +306,11 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
             if (command == OnOffType.ON) {
                 account.lock(target);
             } else if (command == OnOffType.OFF) {
-                logger.warn("Unlocking departure mode is not supported; ignoring OFF for {}", getThing().getUID());
+                if (canSign()) {
+                    account.unlock(target);
+                } else {
+                    logger.warn("Pair the gateway before unlocking {}", getThing().getUID());
+                }
             }
         }
     }
@@ -135,6 +325,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
                     "@text/offline.comm-error.gateway.home-unresolved");
         } else if (homeChanged) {
+            finishPairing("CANCELLED");
             clearState();
         }
     }
@@ -146,6 +337,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         ModuleError error = status.error(target.moduleId());
         Module module = status.module(target.moduleId());
         if (error != null || module != null && Boolean.FALSE.equals(module.reachable)) {
+            finishPairing("CANCELLED");
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
                     error != null && !Integer.valueOf(6).equals(error.code)
@@ -159,6 +351,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
             Integer hardware = module.hardwareVersion;
             if (firmware != null) {
                 properties.put(Thing.PROPERTY_FIRMWARE_VERSION, firmware.toString());
+                firmwareVersion = firmware;
             }
             if (hardware != null) {
                 properties.put(Thing.PROPERTY_HARDWARE_VERSION, hardware.toString());
@@ -183,6 +376,20 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         if (isRequestContextCurrent(target)) {
             // The API acknowledged the command; the immediate status poll reconciles actual gateway state.
             updateState(CHANNEL_LOCKED, OnOffType.ON);
+        }
+    }
+
+    @Override
+    synchronized void failed(ModuleRequestContext context, @Nullable String message) {
+        if (isRequestContextCurrent(context)) {
+            finishPairing("CANCELLED");
+        }
+        super.failed(context, message);
+    }
+
+    synchronized void unlockAccepted(ModuleRequestContext context) {
+        if (isRequestContextCurrent(context)) {
+            updateState(CHANNEL_LOCKED, OnOffType.OFF);
         }
     }
 
