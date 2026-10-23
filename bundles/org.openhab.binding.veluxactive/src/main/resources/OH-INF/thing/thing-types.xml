@@ -8,19 +8,6 @@
 		<label>VELUX ACTIVE Account</label>
 		<description>Account used to access VELUX ACTIVE with NETATMO</description>
 		<config-description>
-			<parameter name="clientId" type="text">
-				<label>Client ID</label>
-				<description>OAuth client ID for VELUX ACTIVE</description>
-				<advanced>true</advanced>
-				<default>5931426da127d981e76bdd3f</default>
-			</parameter>
-			<parameter name="clientSecret" type="text">
-				<context>password</context>
-				<label>Client Secret</label>
-				<description>OAuth client secret for VELUX ACTIVE</description>
-				<advanced>true</advanced>
-				<default>6ae2d89d15e767ae5c56b456b452d319</default>
-			</parameter>
 			<parameter name="username" type="text" required="true">
 				<label>Username</label>
 				<description>Email address of the VELUX ACTIVE account</description>

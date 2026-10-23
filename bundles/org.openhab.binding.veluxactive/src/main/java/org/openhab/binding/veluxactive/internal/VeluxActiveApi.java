@@ -14,6 +14,7 @@ package org.openhab.binding.veluxactive.internal;
 
 import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -195,7 +196,7 @@ public class VeluxActiveApi {
                 .header(HttpHeader.AUTHORIZATION, "Bearer " + token).followRedirects(false)
                 .timeout(10, TimeUnit.SECONDS)
                 .content(new StringContentProvider(json ? "application/json" : "application/x-www-form-urlencoded",
-                        payload, java.nio.charset.StandardCharsets.UTF_8));
+                        payload, StandardCharsets.UTF_8));
         ContentResponse response;
         try {
             logger.trace("GET request for {}", request.getURI());

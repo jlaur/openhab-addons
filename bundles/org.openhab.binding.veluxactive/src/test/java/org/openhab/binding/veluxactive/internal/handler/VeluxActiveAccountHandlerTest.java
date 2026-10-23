@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
@@ -81,7 +82,7 @@ class VeluxActiveAccountHandlerTest {
 
     @BeforeEach
     void setUp() {
-        when(factory.createOAuthClientService(anyString(), eq(TOKEN_URL), isNull(), eq("client"), eq("secret"),
+        when(factory.createOAuthClientService(anyString(), eq(TOKEN_URL), isNull(), eq(CLIENT_ID), eq(CLIENT_SECRET),
                 eq(SCOPE), eq(false))).thenReturn(originalClient);
         when(originalClient.withGsonBuilder(any())).thenReturn(client);
         when(scheduler.schedule(any(Runnable.class), anyLong(), eq(TimeUnit.SECONDS))).thenAnswer(invocation -> {
@@ -149,7 +150,7 @@ class VeluxActiveAccountHandlerTest {
         handler.initialize();
         executor.runAll();
         assertThat(status().getStatusDetail(), is(ThingStatusDetail.CONFIGURATION_ERROR));
-        assertThat(String.valueOf(status().getDescription()).contains("secret"), is(false));
+        assertThat(String.valueOf(status().getDescription()).contains(CLIENT_SECRET), is(false));
         assertThat(scheduled.isEmpty(), is(true));
     }
 
@@ -202,8 +203,8 @@ class VeluxActiveAccountHandlerTest {
         var order = inOrder(factory);
         order.verify(factory).ungetOAuthService(anyString());
         order.verify(factory).deleteServiceAndAccessToken(anyString());
-        order.verify(factory).createOAuthClientService(anyString(), eq(TOKEN_URL), isNull(), eq("client"), eq("secret"),
-                eq(SCOPE), eq(false));
+        order.verify(factory).createOAuthClientService(anyString(), eq(TOKEN_URL), isNull(), eq(CLIENT_ID),
+                eq(CLIENT_SECRET), eq(SCOPE), eq(false));
         assertThat(status().getStatus(), is(ThingStatus.ONLINE));
     }
 
@@ -215,8 +216,8 @@ class VeluxActiveAccountHandlerTest {
         handler.thingUpdated(bridge("another-user", "password"));
         executor.runAll();
         var handles = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(factory, times(2)).createOAuthClientService(handles.capture(), eq(TOKEN_URL), isNull(), eq("client"),
-                eq("secret"), eq(SCOPE), eq(false));
+        verify(factory, times(2)).createOAuthClientService(handles.capture(), eq(TOKEN_URL), isNull(), eq(CLIENT_ID),
+                eq(CLIENT_SECRET), eq(SCOPE), eq(false));
         assertThat(handles.getAllValues().get(1), not(handles.getAllValues().get(0)));
     }
 
@@ -353,7 +354,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void signedUnlockUsesServerTimeAndAcknowledgesAfterSuccess() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = java.util.Objects.requireNonNull(gateway.captureRequestContext());
+        var target = Objects.requireNonNull(gateway.captureRequestContext());
         when(gateway.isRequestContextCurrent(target)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
@@ -380,7 +381,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void lockCommandUsesConfiguredTimezoneAndPollsForConfirmation() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = java.util.Objects.requireNonNull(gateway.captureRequestContext());
+        var target = Objects.requireNonNull(gateway.captureRequestContext());
         when(gateway.isRequestContextCurrent(target)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
@@ -400,7 +401,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void rejectedLockDoesNotPublishAcknowledgement() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = java.util.Objects.requireNonNull(gateway.captureRequestContext());
+        var target = Objects.requireNonNull(gateway.captureRequestContext());
         when(gateway.isRequestContextCurrent(target)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
@@ -416,7 +417,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void disposalDuringLockSuppressesAcknowledgementAndRefresh() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = java.util.Objects.requireNonNull(gateway.captureRequestContext());
+        var target = Objects.requireNonNull(gateway.captureRequestContext());
         when(gateway.isRequestContextCurrent(target)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
@@ -436,7 +437,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void queuedLockIsDiscardedWhenGatewayWasDisposed() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = java.util.Objects.requireNonNull(gateway.captureRequestContext());
+        var target = Objects.requireNonNull(gateway.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
@@ -482,7 +483,7 @@ class VeluxActiveAccountHandlerTest {
     void openingAndGatewaySharePollingAndCommandsTriggerFastPoll() throws Exception {
         var gateway = gateway("home", "gateway");
         var opening = opening();
-        var target = java.util.Objects.requireNonNull(opening.captureRequestContext());
+        var target = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         var response = new HomeStatus();
         when(api.homeStatus("access", "home")).thenReturn(response);
@@ -509,7 +510,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void openingCommandFailureRecoversAndRefreshesRejectedAuthentication() throws Exception {
         var opening = opening();
-        var target = java.util.Objects.requireNonNull(opening.captureRequestContext());
+        var target = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(client.refreshToken()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
@@ -532,7 +533,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void queuedOpeningCommandsAreDiscardedAfterChildDisposal() throws Exception {
         var opening = opening();
-        var target = java.util.Objects.requireNonNull(opening.captureRequestContext());
+        var target = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
@@ -549,7 +550,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void accountDisposalDuringMovementSuppressesFollowUpPoll() throws Exception {
         var opening = opening();
-        var target = java.util.Objects.requireNonNull(opening.captureRequestContext());
+        var target = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
@@ -578,7 +579,7 @@ class VeluxActiveAccountHandlerTest {
         executor.runAll();
         assertThat(handler.homeId("gateway"), is(""));
         verify(api, never()).homeStatus(anyString(), anyString());
-        handler.lock(java.util.Objects.requireNonNull(gateway.captureRequestContext()));
+        handler.lock(Objects.requireNonNull(gateway.captureRequestContext()));
         executor.runAll();
         verify(api, never()).lock(anyString(), anyString(), anyString(), anyString());
 
@@ -605,7 +606,7 @@ class VeluxActiveAccountHandlerTest {
         when(api.homeStatus(anyString(), anyString())).thenReturn(new HomeStatus());
         handler.initialize();
         executor.runAll();
-        var old = java.util.Objects.requireNonNull(gateway.captureRequestContext());
+        var old = Objects.requireNonNull(gateway.captureRequestContext());
         handler.requestPoll();
         handler.lock(old);
         executor.runAll();
@@ -713,9 +714,8 @@ class VeluxActiveAccountHandlerTest {
     }
 
     private static Bridge bridge(String username, String password) {
-        return BridgeBuilder.create(THING_TYPE_ACCOUNT, "test").withConfiguration(new Configuration(
-                Map.of("clientId", "client", "clientSecret", "secret", "username", username, "password", password)))
-                .build();
+        return BridgeBuilder.create(THING_TYPE_ACCOUNT, "test")
+                .withConfiguration(new Configuration(Map.of("username", username, "password", password))).build();
     }
 
     private static AccessTokenResponse token() {

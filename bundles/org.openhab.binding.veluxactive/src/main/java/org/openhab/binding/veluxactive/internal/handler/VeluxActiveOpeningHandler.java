@@ -141,12 +141,7 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         String type = module.veluxType;
         if (type != null) {
             veluxType = type;
-            properties.put("veluxType", type);
-        }
-        ModuleRequestContext parent = target.parent();
-        String bridge = parent == null ? null : parent.moduleId();
-        if (bridge != null) {
-            properties.put("gatewayId", bridge);
+            properties.put(PROPERTY_VELUX_TYPE, type);
         }
         Integer firmware = module.firmwareRevision;
         if (firmware != null) {

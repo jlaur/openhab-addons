@@ -50,16 +50,16 @@ public class VeluxActiveHandlerFactory extends BaseThingHandlerFactory {
             THING_TYPE_INDOOR_SENSOR, THING_TYPE_DEPARTURE_SWITCH, THING_TYPE_OPENING);
 
     private final OAuthFactory oAuthFactory;
-    private final SigningKeyStore signingKeys;
+    private final SigningKeyStore signingKeyStore;
     private final VeluxActiveApi api;
     private final TimeZoneProvider timeZoneProvider;
 
     @Activate
     public VeluxActiveHandlerFactory(@Reference OAuthFactory oAuthFactory,
             @Reference HttpClientFactory httpClientFactory, @Reference TimeZoneProvider timeZoneProvider,
-            @Reference SigningKeyStore signingKeys) {
+            @Reference SigningKeyStore signingKeyStore) {
         this.oAuthFactory = oAuthFactory;
-        this.signingKeys = signingKeys;
+        this.signingKeyStore = signingKeyStore;
         this.api = new VeluxActiveApi(httpClientFactory.getCommonHttpClient());
         this.timeZoneProvider = timeZoneProvider;
     }
@@ -75,7 +75,7 @@ public class VeluxActiveHandlerFactory extends BaseThingHandlerFactory {
             return new VeluxActiveAccountHandler(bridge, oAuthFactory, api, timeZoneProvider);
         }
         if (THING_TYPE_GATEWAY.equals(thing.getThingTypeUID()) && thing instanceof Bridge bridge) {
-            return new VeluxActiveGatewayHandler(bridge, signingKeys);
+            return new VeluxActiveGatewayHandler(bridge, signingKeyStore);
         }
         if (THING_TYPE_INDOOR_SENSOR.equals(thing.getThingTypeUID())) {
             return new VeluxActiveIndoorSensorHandler(thing);

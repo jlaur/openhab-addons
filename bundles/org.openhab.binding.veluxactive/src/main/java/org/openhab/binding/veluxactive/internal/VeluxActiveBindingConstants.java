@@ -43,7 +43,11 @@ public class VeluxActiveBindingConstants {
     public static final String CHANNEL_LOCKING = "locking";
     public static final String CHANNEL_LAST_SEEN = "last-seen";
 
+    public static final String PROPERTY_VELUX_TYPE = "veluxType";
+
     public static final String TOKEN_URL = "https://api.netatmo.com/oauth2/token";
     public static final String SCOPE = "velux_scopes";
     public static final String APP_VERSION = "791302006";
+    public static final String CLIENT_ID = "5931426da127d981e76bdd3f";
+    public static final String CLIENT_SECRET = "6ae2d89d15e767ae5c56b456b452d319";
 }

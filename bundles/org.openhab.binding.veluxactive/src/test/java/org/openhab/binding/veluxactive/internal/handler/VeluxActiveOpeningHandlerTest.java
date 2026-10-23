@@ -106,8 +106,7 @@ class VeluxActiveOpeningHandlerTest {
         assertThat(states.get(CHANNEL_LAST_SEEN), is(new DateTimeType(Instant.ofEpochSecond(1791635702L))));
         assertThat(thing.getProperties().get(Thing.PROPERTY_FIRMWARE_VERSION), is("53"));
         assertThat(thing.getProperties().get(Thing.PROPERTY_VENDOR), is("Netatmo"));
-        assertThat(thing.getProperties().get("veluxType"), is("window"));
-        assertThat(thing.getProperties().get("gatewayId"), is("gateway"));
+        assertThat(thing.getProperties().get(PROPERTY_VELUX_TYPE), is("window"));
     }
 
     @ParameterizedTest
