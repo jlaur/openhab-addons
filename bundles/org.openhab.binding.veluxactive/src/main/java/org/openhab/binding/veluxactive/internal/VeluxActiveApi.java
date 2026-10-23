@@ -15,6 +15,7 @@ package org.openhab.binding.veluxactive.internal;
 import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants.*;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -61,6 +62,19 @@ public class VeluxActiveApi {
 
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveApi.class);
     private final HttpClient httpClient;
+    private volatile @Nullable ServerTime serverTime;
+
+    private record ServerTime(long seconds, long receivedNanos) {
+    }
+
+    public long signingTime() throws ApiException {
+        ServerTime sample = serverTime;
+        if (sample == null || sample.seconds() <= 0
+                || System.nanoTime() - sample.receivedNanos() > TimeUnit.MINUTES.toNanos(5)) {
+            throw new ApiException("Server time is unavailable for signing.");
+        }
+        return sample.seconds() + TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - sample.receivedNanos());
+    }
 
     public VeluxActiveApi(HttpClient httpClient) {
         this.httpClient = httpClient;
@@ -134,6 +148,31 @@ public class VeluxActiveApi {
         setState(token, homeId, timezone, Map.of("id", moduleId, "bridge", gatewayId, "target_position", position));
     }
 
+    public void retrieveKey(String token, String homeId, String gatewayId, String timezone)
+            throws ApiException, InterruptedException {
+        setState(token, homeId, timezone, Map.of("id", gatewayId, "retrieve_key", true));
+    }
+
+    public void unlock(String token, String homeId, String gatewayId, String timezone, Map<String, Object> signature)
+            throws ApiException, InterruptedException {
+        var module = new HashMap<String, Object>(signature);
+        module.put("id", gatewayId);
+        module.put("scenario", "home");
+        setState(token, homeId, timezone, module);
+    }
+
+    public void setSignedPosition(String token, String homeId, String moduleId, String gatewayId, int position,
+            String timezone, Map<String, Object> signature) throws ApiException, InterruptedException {
+        if (position < 0 || position > 100) {
+            throw new IllegalArgumentException("Position must be between 0 and 100.");
+        }
+        var module = new HashMap<String, Object>(signature);
+        module.put("id", moduleId);
+        module.put("bridge", gatewayId);
+        module.put("target_position", position);
+        setState(token, homeId, timezone, module);
+    }
+
     public void stopMovements(String token, String homeId, String gatewayId, String timezone)
             throws ApiException, InterruptedException {
         setState(token, homeId, timezone, Map.of("id", gatewayId, "stop_movements", "all"));
@@ -164,7 +203,12 @@ public class VeluxActiveApi {
         } catch (ExecutionException | TimeoutException e) {
             throw new ApiException("Could not communicate with VELUX ACTIVE.");
         }
-        return parseResponse(response.getStatus(), response.getContentAsString());
+        ApiResponse result = parseResponse(response.getStatus(), response.getContentAsString());
+        Long seconds = result.timeServer;
+        if (seconds != null && seconds > 0) {
+            serverTime = new ServerTime(seconds, System.nanoTime());
+        }
+        return result;
     }
 
     static ApiResponse parseResponse(int httpStatus, String content) throws ApiException {

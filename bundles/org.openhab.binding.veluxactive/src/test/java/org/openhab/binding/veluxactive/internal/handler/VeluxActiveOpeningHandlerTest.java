@@ -336,6 +336,17 @@ class VeluxActiveOpeningHandlerTest {
         assertThat(states.get(CHANNEL_MODE), is(new StringType(publishedMode)));
     }
 
+    @Test
+    void pairedWindowOpeningUsesSignedCommand() {
+        when(gateway.canSign()).thenReturn(true);
+        update("""
+                {"home":{"modules":[{"id":"opening","velux_type":"window","current_position":0}]}}
+                """);
+        command(new PercentType(25));
+        verify(account).setSignedPosition(requireNonNull(handler.captureRequestContext()), 75);
+        verify(account, never()).setPosition(any(), anyString(), anyInt());
+    }
+
     private void command(Command command) {
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_POSITION), command);
     }
