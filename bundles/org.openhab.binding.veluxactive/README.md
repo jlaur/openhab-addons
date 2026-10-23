@@ -5,13 +5,13 @@ For KLF 200 gateways, use the [Velux binding](https://www.openhab.org/addons/bin
 
 ## Supported Things
 
-| Thing | Thing type | Description |
-| --- | --- | --- |
-| Account | `account` | OAuth authentication and shared home status polling |
-| Gateway | `gateway` | NXG gateway status and departure locking |
-| Indoor Climate Sensor | `indoor-sensor` | NXS diagnostics and climate measurements from its assigned room |
-| Departure Switch | `departure-switch` | NXD battery and connectivity diagnostics |
-| Window/Cover | `opening` | NXO position, operating mode and movement commands |
+| Thing                 | Thing type         | Description                                                     |
+| --------------------- | ------------------ | --------------------------------------------------------------- |
+| Account               | `account`          | OAuth authentication and shared home status polling             |
+| Gateway               | `gateway`          | NXG gateway status and departure locking                        |
+| Indoor Climate Sensor | `indoor-sensor`    | NXS diagnostics and climate measurements from its assigned room |
+| Departure Switch      | `departure-switch` | NXD battery and connectivity diagnostics                        |
+| Window/Cover          | `opening`          | NXO position, operating mode and movement commands              |
 
 Gateway Bridges are children of the Account Bridge.
 Indoor sensors, departure switches and windows/covers are children of their Gateway Bridge and inherit its home ID.
@@ -30,52 +30,68 @@ Status polling requests each configured home once per interval and distributes t
 
 ## Account Configuration
 
-| Parameter | Required | Default | Description |
-| --- | --- | --- | --- |
-| username | Yes | | Email address of the VELUX ACTIVE account |
-| password | Yes | | Password of the VELUX ACTIVE account |
-| clientId | No | VELUX application client ID | OAuth client ID override |
-| clientSecret | No | VELUX application client secret | OAuth client secret override |
-| refreshInterval | No | 60 | Home status polling interval in seconds; minimum 10 |
-
-The binding uses core OAuth with a form-encoded password grant at `https://api.netatmo.com/oauth2/token`.
-It requests scope `velux_scopes` and sends `user_prefix=velux` and `app_version=791302006`.
-Core stores access and refresh tokens and handles refresh-token rotation.
-Tokens survive Bridge disposal and openHAB restarts.
-Removing the Bridge deletes its current OAuth credentials from the token store.
-Changing account credentials while the binding is running invalidates its previous token session.
-
-Token renewal is scheduled shortly before expiry.
-A rejected refresh token triggers a new password grant.
-Communication failures retry after 60 seconds without discarding stored tokens.
-Rejected account or client credentials set the Bridge OFFLINE with a configuration error; correct the configuration to retry.
-An API response rejecting the access token triggers token renewal; commands are not automatically replayed.
+| Parameter       | Required | Default | Description                                         |
+| --------------- | -------- | ------- | --------------------------------------------------- |
+| username        | Yes      |         | Email address of the VELUX ACTIVE account           |
+| password        | Yes      |         | Password of the VELUX ACTIVE account                |
+| refreshInterval | No       | 60      | Home status polling interval in seconds; minimum 10 |
 
 ## Gateway Configuration
 
 Discovery supplies the module identifier.
 For manual configuration, obtain it from `homesdata` or `homestatus`.
 The binding resolves the home automatically from account topology.
-Existing `homeId` configuration is ignored and can be removed.
 Topology is refreshed during shared polling; communication failures retain the last successful association.
 An unresolved or ambiguous gateway is OFFLINE until its home is resolved and a status response confirms connectivity.
 Commands require a resolved home.
 Its children remain OFFLINE until the gateway recovers.
 
-| Parameter | Required | Description |
-| --- | --- | --- |
-| moduleId | Yes | ID of the NXG gateway, usually formatted as a MAC address |
+| Parameter | Required | Description                                               |
+| --------- | -------- | --------------------------------------------------------- |
+| moduleId  | Yes      | ID of the NXG gateway, usually formatted as a MAC address |
+
+### Gateway Pairing
+
+Pair each gateway once to enable departure unlocking and window-opening commands.
+The gateway must be ONLINE, and openHAB must be able to reach its LAN IP address on TCP port 25050.
+The binding uses a temporary encrypted local connection to retrieve the signing key; ordinary commands continue through the cloud API.
+
+1. Get the gateway's IP address from your router. Use the address of the gateway represented by this Bridge.
+1. Invoke the gateway Thing action `pair(host)` using its IP address.
+1. When `pairingStatus()` returns `WAITING_FOR_BUTTON`, briefly press the gateway's physical button to authorize retrieval.
+1. Check `pairingStatus()` until it returns `PAIRED`. The attempt times out after 60 seconds.
+
+For example, in a Rules DSL rule:
+
+```java
+val gatewayActions = getActions("veluxactive", "veluxactive:gateway:home:main")
+logInfo("velux", "{}", gatewayActions.pair("192.168.1.50"))
+// In a later rule invocation, after pressing the gateway button:
+logInfo("velux", "{}", gatewayActions.pairingStatus())
+```
+
+The action returns immediately. Progress is STARTING, WAITING_FOR_BUTTON, then PAIRED, FAILED or TIMED_OUT.
+Removing, reinitializing or disconnecting the gateway cancels an active attempt.
+If pairing fails, check the IP address, LAN access and physical button, then invoke the action again.
+Signed commands require a recent server clock sample and reported Netatmo firmware support (27 or later).
+Firmware 60 and later uses HMAC-SHA512 with a nonce; earlier supported firmware uses the legacy SHA-512 signature.
+
+Keys and replay counters are retained in private openHAB storage across normal restarts, not in Thing configuration or properties.
+Protect openHAB's userdata and backups as they contain these credentials.
+Removing the gateway Thing removes its locally stored key; a gateway factory reset requires pairing again.
+Deleting the local key does not revoke it on the gateway.
+After pairing, send OFF to the gateway's `locked` channel to leave departure mode, or send position commands to its window Things.
 
 ## Channels
 
 The Account Bridge has no channels.
 Gateway Bridges provide:
 
-| Channel | Item type | Access | Description |
-| --- | --- | --- | --- |
-| locked | Switch | Read/write | Reported departure lock state; send ON to lock or OFF to unlock after pairing |
-| locking | Switch | Read-only | ON while the gateway reports locking in progress |
-| last-seen | DateTime | Read-only | Last contact timestamp reported by the service |
+| Channel   | Item type | Access     | Description                                                                   |
+| --------- | --------- | ---------- | ----------------------------------------------------------------------------- |
+| locked    | Switch    | Read/write | Reported departure lock state; send ON to lock or OFF to unlock after pairing |
+| locking   | Switch    | Read-only  | ON while the gateway reports locking in progress                              |
+| last-seen | DateTime  | Read-only  | Last contact timestamp reported by the service                                |
 
 Departure locking sends the unsigned `away` scenario through the gateway.
 This blocks movement through the VELUX system; it is not a door-lock command.
@@ -99,16 +115,16 @@ The binding resolves the room from `room_id`, falling back to room membership wh
 The module ID determines the Thing identity, so room reassignment preserves Item links.
 The assigned room name appears as a Thing property, along with the sensor firmware version.
 
-| Channel | Item type | Description |
-| --- | --- | --- |
-| temperature | Number:Temperature | Room temperature |
-| humidity | Number:Dimensionless | Relative humidity in percent |
-| co2 | Number:Dimensionless | CO₂ concentration in ppm |
-| illuminance | Number:Illuminance | Room illuminance in lux |
-| battery-level | Number | Battery percentage |
-| low-battery | Switch | ON for low or very low reported battery state |
-| signal-strength | Number | Radio quality from 0 (very low) to 4 (full) |
-| last-seen | DateTime | Last contact reported by the service |
+| Channel         | Item type            | Description                                   |
+| --------------- | -------------------- | --------------------------------------------- |
+| temperature     | Number:Temperature   | Room temperature                              |
+| humidity        | Number:Dimensionless | Relative humidity in percent                  |
+| co2             | Number:Dimensionless | CO₂ concentration in ppm                      |
+| illuminance     | Number:Illuminance   | Room illuminance in lux                       |
+| battery-level   | Number               | Battery percentage                            |
+| low-battery     | Switch               | ON for low or very low reported battery state |
+| signal-strength | Number               | Radio quality from 0 (very low) to 4 (full)   |
+| last-seen       | DateTime             | Last contact reported by the service          |
 
 All sensor channels are read-only.
 Account topology is refreshed once per shared polling cycle to resolve gateway homes and sensor rooms.
@@ -134,13 +150,12 @@ Departure lock state and locking commands remain on the Gateway Bridge's `locked
 NXO modules are discovered as Window/Cover Things (`opening`), covering roof windows, blinds, venetian blinds, shutters and awning blinds.
 Manual configuration under a Gateway Bridge requires `moduleId`.
 The device subtype is learned from home status; commands use the parent gateway.
-Reported properties include `veluxType`, `gatewayId`, `firmwareVersion` and `vendor`.
 
-| Channel | Item type | Access | Description |
-| --- | --- | --- | --- |
-| position | Rollershutter | Read/write | Current position: 0% open, 100% closed |
-| mode | String | Read-only | Reported operating mode, for example `algo-available` or `algo-disabled` |
-| last-seen | DateTime | Read-only | Last contact timestamp reported by the service |
+| Channel   | Item type     | Access     | Description                                                              |
+| --------- | ------------- | ---------- | ------------------------------------------------------------------------ |
+| position  | Rollershutter | Read/write | Current position: 0% open, 100% closed                                   |
+| mode      | String        | Read-only  | Reported operating mode, for example `algo-available` or `algo-disabled` |
+| last-seen | DateTime      | Read-only  | Last contact timestamp reported by the service                           |
 
 The binding normalizes the different API position conventions for windows and covers.
 UP requests fully open, DOWN requests fully closed, and percentage commands set intermediate positions.
@@ -190,41 +205,6 @@ Switch VeluxDepartureLocked "Departure Locked" { channel="veluxactive:gateway:ho
 Switch VeluxDepartureLocking "Locking" { channel="veluxactive:gateway:home:main:locking" }
 DateTime VeluxGatewayLastSeen "Last Seen" { channel="veluxactive:gateway:home:main:last-seen" }
 ```
-
-Send ON to `VeluxDepartureLocked` to request departure locking.
-Use `VeluxDepartureLocked` as the reported state in rules.
-
-## Gateway Pairing
-
-Pair each gateway once to enable departure unlocking and window-opening commands.
-The gateway must be ONLINE, and openHAB must be able to reach its LAN IP address on TCP port 25050.
-The binding uses a temporary encrypted local connection to retrieve the signing key; ordinary commands continue through the cloud API.
-
-1. Get the gateway's IP address from your router. Use the address of the gateway represented by this Bridge.
-1. Invoke the gateway Thing action `pair(host)` using its IP address.
-1. When `pairingStatus()` returns `WAITING_FOR_BUTTON`, briefly press the gateway's physical button to authorize retrieval.
-1. Check `pairingStatus()` until it returns `PAIRED`. The attempt times out after 60 seconds.
-
-For example, in a Rules DSL rule:
-
-```java
-val gatewayActions = getActions("veluxactive", "veluxactive:gateway:home:main")
-logInfo("velux", "{}", gatewayActions.pair("192.168.1.50"))
-// In a later rule invocation, after pressing the gateway button:
-logInfo("velux", "{}", gatewayActions.pairingStatus())
-```
-
-The action returns immediately. Progress is STARTING, WAITING_FOR_BUTTON, then PAIRED, FAILED or TIMED_OUT.
-Removing, reinitializing or disconnecting the gateway cancels an active attempt.
-If pairing fails, check the IP address, LAN access and physical button, then invoke the action again.
-Signed commands require a recent server clock sample and reported Netatmo firmware support (27 or later).
-Firmware 60 and later uses HMAC-SHA512 with a nonce; earlier supported firmware uses the legacy SHA-512 signature.
-
-Keys and replay counters are retained in private openHAB storage across normal restarts, not in Thing configuration or properties.
-Protect openHAB's userdata and backups as they contain these credentials.
-Removing the gateway Thing removes its locally stored key; a gateway factory reset requires pairing again.
-Deleting the local key does not revoke it on the gateway.
-After pairing, send OFF to the gateway's `locked` channel to leave departure mode, or send position commands to its window Things.
 
 ## Protocol References
 

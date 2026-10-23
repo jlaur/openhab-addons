@@ -46,8 +46,8 @@ public class SigningKeyStore {
     private final Gson gson = new Gson();
 
     @Activate
-    public SigningKeyStore(@Reference StorageService service) {
-        storage = service.getStorage(getClass().getName(), getClass().getClassLoader());
+    public SigningKeyStore(@Reference StorageService storageService) {
+        storage = storageService.getStorage(getClass().getName(), getClass().getClassLoader());
     }
 
     public synchronized void put(String gatewayId, SigningKey key) {

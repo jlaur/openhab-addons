@@ -145,12 +145,11 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             return;
         }
         // Include the account identity so editing a Thing while openHAB is stopped cannot reuse another user's token.
-        String identity = configuration.clientId + "\n" + configuration.username;
+        String identity = CLIENT_ID + "\n" + configuration.username;
         String serviceHandle = getThing().getUID() + ":"
                 + UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
         OAuthClientService service = oAuthFactory
-                .createOAuthClientService(serviceHandle, TOKEN_URL, null, configuration.clientId,
-                        configuration.clientSecret, SCOPE, false)
+                .createOAuthClientService(serviceHandle, TOKEN_URL, null, CLIENT_ID, CLIENT_SECRET, SCOPE, false)
                 .withGsonBuilder(new GsonBuilder().registerTypeAdapter(AccessTokenResponse.class,
                         new VeluxActiveTokenResponseDeserializer()));
         handle = serviceHandle;
