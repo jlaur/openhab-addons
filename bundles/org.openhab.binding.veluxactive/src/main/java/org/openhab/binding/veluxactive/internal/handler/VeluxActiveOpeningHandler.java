@@ -36,7 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Reports NXO windows and covers and sends commands that do not require gateway signing keys.
+ * Reports NXO windows and covers and routes signed and unsigned movement commands.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -104,16 +104,20 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             return;
         }
         int apiPosition = "window".equals(type) ? 100 - position : position;
-        if ("window".equals(type) && apiPosition != 0) {
-            logger.warn("Opening windows requires signing, which is not yet supported; ignoring command for {}",
-                    getThing().getUID());
-            return;
-        }
         if (gateway == null || gateway.isBlank()) {
             logger.warn("Cannot control {} until its gateway is known", getThing().getUID());
             return;
         }
-        account.setPosition(target, gateway, apiPosition);
+        if ("window".equals(type) && apiPosition != 0) {
+            ModuleRequestContext parent = target.parent();
+            if (parent != null && parent.handler() instanceof VeluxActiveGatewayHandler handler && handler.canSign()) {
+                account.setSignedPosition(target, apiPosition);
+            } else {
+                logger.warn("Pair the gateway before opening windows for {}", getThing().getUID());
+            }
+        } else {
+            account.setPosition(target, gateway, apiPosition);
+        }
     }
 
     @Override
