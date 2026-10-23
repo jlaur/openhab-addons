@@ -21,19 +21,16 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  */
 @NonNullByDefault
 public class VeluxActiveAccountConfiguration {
-    public String clientId = "5931426da127d981e76bdd3f";
-    public String clientSecret = "6ae2d89d15e767ae5c56b456b452d319";
     public String username = "";
     public String password = "";
 
     public int refreshInterval = 60;
 
     public boolean isComplete() {
-        return !clientId.isBlank() && !clientSecret.isBlank() && !username.isBlank() && !password.isBlank();
+        return !username.isBlank() && !password.isBlank();
     }
 
     public boolean hasSameCredentials(VeluxActiveAccountConfiguration other) {
-        return clientId.equals(other.clientId) && clientSecret.equals(other.clientSecret)
-                && username.equals(other.username) && password.equals(other.password);
+        return username.equals(other.username) && password.equals(other.password);
     }
 }
