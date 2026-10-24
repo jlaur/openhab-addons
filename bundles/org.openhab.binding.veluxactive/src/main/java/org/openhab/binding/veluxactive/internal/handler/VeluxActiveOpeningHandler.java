@@ -19,6 +19,7 @@ import java.time.Instant;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.veluxactive.internal.ModuleRequestContext;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.core.library.types.DateTimeType;

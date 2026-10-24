@@ -28,6 +28,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.openhab.binding.veluxactive.internal.ModuleRequestContext;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.DateTimeType;
