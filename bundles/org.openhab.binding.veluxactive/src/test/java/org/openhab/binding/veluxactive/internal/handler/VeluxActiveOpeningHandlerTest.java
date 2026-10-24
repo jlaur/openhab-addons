@@ -30,6 +30,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.openhab.binding.veluxactive.internal.ModuleRequestContext;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.DateTimeType;

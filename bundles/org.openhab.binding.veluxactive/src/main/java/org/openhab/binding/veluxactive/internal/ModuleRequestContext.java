@@ -10,10 +10,11 @@
  *
  * SPDX-License-Identifier: EPL-2.0
  */
-package org.openhab.binding.veluxactive.internal.handler;
+package org.openhab.binding.veluxactive.internal;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.veluxactive.internal.handler.VeluxActiveModuleHandler;
 
 /**
  * Captures a module's API address and handler lifecycle for asynchronous polling and commands.
@@ -39,6 +40,6 @@ import org.eclipse.jdt.annotation.Nullable;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-record ModuleRequestContext(VeluxActiveModuleHandler handler, String homeId, String moduleId, long generation,
+public record ModuleRequestContext(VeluxActiveModuleHandler handler, String homeId, String moduleId, long generation,
         @Nullable ModuleRequestContext parent) {
 }
