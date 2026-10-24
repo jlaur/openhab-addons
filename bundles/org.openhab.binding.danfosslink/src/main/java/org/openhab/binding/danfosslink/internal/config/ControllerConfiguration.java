@@ -24,4 +24,5 @@ public class ControllerConfiguration {
     public static final int MINIMUM_REFRESH_INTERVAL = 10;
 
     public int refreshInterval = 60;
+    public String timeZone = "";
 }
