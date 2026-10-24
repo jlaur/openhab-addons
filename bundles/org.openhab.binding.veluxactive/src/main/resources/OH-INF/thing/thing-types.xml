@@ -35,7 +35,6 @@
 		<category>NetworkAppliance</category>
 		<channels>
 			<channel id="locked" typeId="locked"/>
-			<channel id="locking" typeId="locking"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 		<config-description-ref uri="thing-type:veluxactive:module"/>

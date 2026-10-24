@@ -73,6 +73,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     private @Nullable ScheduledFuture<?> pairingTask;
     private @Nullable ScheduledFuture<?> pairingTimeout;
     private String pairingResult = "IDLE";
+    private boolean lockPending;
 
     public VeluxActiveGatewayHandler(Bridge thing, SigningKeyStore signingKeys) {
         super(thing);
@@ -84,6 +85,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         synchronized (this) {
             finishPairing("CANCELLED");
             firmwareVersion = null;
+            lockPending = false;
             pairingResult = "IDLE";
         }
         super.initialize();
@@ -222,6 +224,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     @Override
     public void bridgeStatusChanged(ThingStatusInfo status) {
         synchronized (this) {
+            lockPending = false;
             finishPairing("CANCELLED");
         }
         super.bridgeStatusChanged(status);
@@ -359,8 +362,11 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
             updateProperties(properties);
             Boolean locked = module.locked;
             Boolean locking = module.locking;
-            updateState(CHANNEL_LOCKED, locked == null ? UnDefType.UNDEF : OnOffType.from(locked));
-            updateState(CHANNEL_LOCKING, locking == null ? UnDefType.UNDEF : OnOffType.from(locking));
+            // During locking, the gateway still reports the previous unlocked state.
+            if (!(lockPending && Boolean.TRUE.equals(locking) && Boolean.FALSE.equals(locked))) {
+                lockPending = false;
+                updateState(CHANNEL_LOCKED, locked == null ? UnDefType.UNDEF : OnOffType.from(locked));
+            }
             Long lastSeen = module.lastSeen;
             try {
                 updateState(CHANNEL_LAST_SEEN,
@@ -374,7 +380,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
 
     synchronized void lockAccepted(ModuleRequestContext target) {
         if (isRequestContextCurrent(target)) {
-            // The API acknowledged the command; the immediate status poll reconciles actual gateway state.
+            lockPending = true;
             updateState(CHANNEL_LOCKED, OnOffType.ON);
         }
     }
@@ -389,14 +395,15 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
 
     synchronized void unlockAccepted(ModuleRequestContext context) {
         if (isRequestContextCurrent(context)) {
+            lockPending = false;
             updateState(CHANNEL_LOCKED, OnOffType.OFF);
         }
     }
 
     @Override
     protected void clearState() {
+        lockPending = false;
         updateState(CHANNEL_LOCKED, UnDefType.UNDEF);
-        updateState(CHANNEL_LOCKING, UnDefType.UNDEF);
         updateState(CHANNEL_LAST_SEEN, UnDefType.UNDEF);
     }
 }

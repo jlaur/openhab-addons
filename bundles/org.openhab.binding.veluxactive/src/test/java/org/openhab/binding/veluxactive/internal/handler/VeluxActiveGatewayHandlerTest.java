@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.openhab.binding.veluxactive.internal.action.VeluxActivePairingActions;
 import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
@@ -171,11 +172,9 @@ class VeluxActiveGatewayHandlerTest {
                 """);
         assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
         assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.ON));
-        assertThat(states.get(CHANNEL_LOCKING), is(OnOffType.OFF));
         assertThat(states.get(CHANNEL_LAST_SEEN), not(UnDefType.UNDEF));
         update("{\"home\":{\"id\":\"home\",\"modules\":[{\"id\":\"gateway\"}]}}");
         assertThat(states.get(CHANNEL_LOCKED), is(UnDefType.UNDEF));
-        assertThat(states.get(CHANNEL_LOCKING), is(UnDefType.UNDEF));
         assertThat(states.get(CHANNEL_LAST_SEEN), is(UnDefType.UNDEF));
     }
 
@@ -202,7 +201,7 @@ class VeluxActiveGatewayHandlerTest {
     @Test
     void onlyOnOnLockedChannelSendsCommandWithoutOptimisticState() {
         clearInvocations(account);
-        handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LOCKING), OnOffType.ON);
+        handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LAST_SEEN), OnOffType.ON);
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LOCKED), OnOffType.OFF);
         verify(account, never()).lock(any());
         verify(account, never()).requestPoll();
@@ -232,9 +231,62 @@ class VeluxActiveGatewayHandlerTest {
                 """);
         handler.lockAccepted(requireNonNull(handler.captureRequestContext()));
         assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.ON));
-        assertThat(states.get(CHANNEL_LOCKING), is(OnOffType.OFF));
         update("""
                 {"home":{"id":"home","modules":[{"id":"gateway","locked":false}]}}
+                """);
+        assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.OFF));
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = { true, false })
+    void acknowledgedLockDoesNotBounceWhileLockingAndReconcilesCompletion(boolean completed) {
+        handler.lockAccepted(requireNonNull(handler.captureRequestContext()));
+        for (int poll = 0; poll < 2; poll++) {
+            update("""
+                    {"home":{"modules":[{"id":"gateway","locked":false,"locking":true}]}}
+                    """);
+            assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.ON));
+        }
+        update("""
+                {"home":{"modules":[{"id":"gateway","locked":%s,"locking":false}]}}
+                """.formatted(completed));
+        assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.from(completed)));
+        update("""
+                {"home":{"modules":[{"id":"gateway","locked":false,"locking":true}]}}
+                """);
+        assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.OFF));
+    }
+
+    @Test
+    void unlockingClearsPendingLock() {
+        var context = requireNonNull(handler.captureRequestContext());
+        handler.lockAccepted(context);
+        handler.unlockAccepted(context);
+        update("""
+                {"home":{"modules":[{"id":"gateway","locked":false,"locking":true}]}}
+                """);
+        assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.OFF));
+    }
+
+    @Test
+    void bridgeStatusChangeClearsPendingLock() {
+        handler.lockAccepted(requireNonNull(handler.captureRequestContext()));
+        handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
+        update("""
+                {"home":{"modules":[{"id":"gateway","locked":false,"locking":true}]}}
+                """);
+        assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.OFF));
+    }
+
+    @Test
+    void unreachableGatewayClearsPendingLock() {
+        handler.lockAccepted(requireNonNull(handler.captureRequestContext()));
+        update("""
+                {"home":{"modules":[{"id":"gateway","reachable":false}]}}
+                """);
+        assertThat(states.get(CHANNEL_LOCKED), is(UnDefType.UNDEF));
+        update("""
+                {"home":{"modules":[{"id":"gateway","locked":false,"locking":true}]}}
                 """);
         assertThat(states.get(CHANNEL_LOCKED), is(OnOffType.OFF));
     }

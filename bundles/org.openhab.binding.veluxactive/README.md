@@ -100,7 +100,6 @@ Gateway Bridges provide:
 | Channel   | Item type | Access     | Description                                                                   |
 | --------- | --------- | ---------- | ----------------------------------------------------------------------------- |
 | locked    | Switch    | Read/write | Reported departure lock state; send ON to lock or OFF to unlock after pairing |
-| locking   | Switch    | Read-only  | ON while the gateway reports locking in progress                              |
 | last-seen | DateTime  | Read-only  | Last contact timestamp reported by the service                                |
 
 Departure locking sends the unsigned `away` scenario through the gateway.
@@ -108,6 +107,7 @@ This blocks movement through the VELUX system; it is not a door-lock command.
 OFF sends the signed `home` scenario after gateway pairing. Without pairing it is ignored with a warning.
 Automatic state prediction is disabled.
 The binding updates `locked` to the requested state when the API acknowledges the command without errors.
+While the gateway reports locking in progress, an acknowledged lock remains ON until polling reports the result.
 This acknowledgement confirms command acceptance; the following status polls reconcile the channel with the gateway’s reported state.
 After a successful command, the binding requests status immediately and then polls every five seconds for up to 30 seconds.
 
@@ -212,7 +212,6 @@ Bridge veluxactive:account:home "VELUX ACTIVE Account" [
 ```java
 Rollershutter VeluxWindow { channel="veluxactive:opening:home:main:window:position" }
 Switch VeluxDepartureLocked "Departure Locked" { channel="veluxactive:gateway:home:main:locked", autoupdate="false" }
-Switch VeluxDepartureLocking "Locking" { channel="veluxactive:gateway:home:main:locking" }
 DateTime VeluxGatewayLastSeen "Last Seen" { channel="veluxactive:gateway:home:main:last-seen" }
 ```
 
