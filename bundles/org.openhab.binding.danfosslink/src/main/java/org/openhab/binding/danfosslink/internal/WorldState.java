@@ -36,6 +36,9 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
+import org.openhab.binding.danfosslink.internal.protocol.dto.RoomDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.SystemInfoDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.SystemStatusDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.WorldDTO;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
@@ -88,7 +91,7 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             if (allRooms == null) {
                 throw new IOException("Missing room list");
             }
-            for (var room : allRooms) {
+            for (RoomDTO room : allRooms) {
                 var identifier = room.id;
                 if (identifier == null) {
                     throw new IOException("Missing room ID");
@@ -110,8 +113,8 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
                                 regulation == null ? null : regulation.manualSetpoint,
                                 regulation == null ? null : regulation.type, room.zone));
             }
-            var info = response.systemInfo;
-            var status = response.systemStatus;
+            SystemInfoDTO info = response.systemInfo;
+            SystemStatusDTO status = response.systemStatus;
             String currentState = status == null ? null : status.currentState;
             if (currentState != null) {
                 // The app uses the first component when the controller reports a composite state.
