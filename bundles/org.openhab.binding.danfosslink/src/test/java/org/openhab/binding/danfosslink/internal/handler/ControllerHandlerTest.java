@@ -602,4 +602,58 @@ class ControllerHandlerTest {
             }
         }
     }
+
+    @Test
+    void configuredTimeZoneOverridesDefaultAndInvalidConfigurationCanRecover() throws Exception {
+        for (String configured : new String[] { "", "   ", "Europe/Copenhagen" }) {
+            var configuration = new org.openhab.core.config.core.Configuration(Map.of("timeZone", "Invalid/Zone"));
+            var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "zone-test").withConfiguration(configuration)
+                    .build();
+            var identity = Identity.generate();
+            var store = mock(PairingStore.class);
+            when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+            var client = mock(CloudClient.class);
+            var session = mock(CloudClient.Session.class);
+            when(client.open(any())).thenReturn(session);
+            when(session.world(any()))
+                    .thenReturn(new WorldState(Map.of(), null, null, null, null, null, null, null, null, null));
+            var handler = new ControllerHandler(bridge, store, () -> java.time.ZoneId.of("Europe/London")) {
+                void configureTimeZone(String zone) {
+                    updateConfiguration(new org.openhab.core.config.core.Configuration(Map.of("timeZone", zone)));
+                }
+
+                @Override
+                CloudClient connect(Identity credentials, Operation operation) {
+                    return client;
+                }
+            };
+            var callback = mock(ThingHandlerCallback.class);
+            handler.setCallback(callback);
+            try {
+                handler.initialize();
+                var capturedStatus = ArgumentCaptor.forClass(org.openhab.core.thing.ThingStatusInfo.class);
+                verify(callback).statusUpdated(eq(bridge), capturedStatus.capture());
+                assertEquals(ThingStatus.OFFLINE, capturedStatus.getValue().getStatus());
+                assertEquals(org.openhab.core.thing.ThingStatusDetail.CONFIGURATION_ERROR,
+                        capturedStatus.getValue().getStatusDetail());
+                verifyNoInteractions(client);
+                handler.dispose();
+                handler.configureTimeZone(configured);
+                var online = new CountDownLatch(1);
+                doAnswer(call -> {
+                    org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                    if (status.getStatus() == ThingStatus.ONLINE) {
+                        online.countDown();
+                    }
+                    return null;
+                }).when(callback).statusUpdated(eq(bridge), any());
+                handler.initialize();
+                assertTrue(online.await(10, TimeUnit.SECONDS));
+                var expected = java.time.ZoneId.of(configured.isBlank() ? "Europe/London" : configured);
+                verify(session).world(eq(expected));
+            } finally {
+                handler.dispose();
+            }
+        }
+    }
 }

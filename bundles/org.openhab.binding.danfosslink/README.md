@@ -41,9 +41,13 @@ Removing a Thing does not revoke its app registration on the physical controller
 
 ## Configuration
 
+The controller Bridge supports an optional advanced `timeZone` setting.
+Use a timezone ID such as `Europe/Copenhagen`, or leave it empty to use openHAB's timezone.
+
 | Thing | Parameter | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | controller | refreshInterval | No | 60 | Poll interval in seconds, minimum 10 |
+| controller | timeZone | No | openHAB timezone | Controller timezone ID; advanced setting |
 | room | roomId | Yes | | Non-negative room ID supplied by discovery |
 
 The Bridge exposes the controller's serial number and firmware version as Thing properties.
@@ -138,8 +142,9 @@ TRACE logging includes the Home request for troubleshooting.
 ### Controller Clock Conversion
 
 Pause and Vacation DateTime channels use openHAB time.
-For local controller timestamps, the binding uses the timezone configured in openHAB regional settings.
-Configure openHAB and the controller for the same timezone.
+For local controller timestamps, the binding uses the controller Bridge's optional advanced `timeZone` setting (for example, `Europe/Copenhagen`).
+Leave it empty to use the timezone configured in openHAB regional settings.
+Set it to the controller's timezone when that differs from openHAB; invalid timezone IDs put the Bridge OFFLINE with a configuration error.
 The offset is calculated separately for each date, so planned periods can cross daylight-saving transitions.
 For each world response, the binding estimates clock skew by comparing the controller's `systemTime` with openHAB time when the response is received.
 Outgoing deadlines are shifted into controller time; incoming mode dates are shifted back into openHAB time before validation or publication.

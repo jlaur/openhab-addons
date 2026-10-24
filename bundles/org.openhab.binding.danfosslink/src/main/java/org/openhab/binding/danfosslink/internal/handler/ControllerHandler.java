@@ -16,7 +16,9 @@ import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstan
 
 import java.io.IOException;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
+import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
@@ -75,6 +77,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     private final PairingStore store;
     private final Clock clock;
     private final TimeZoneProvider timeZoneProvider;
+    private volatile TimeZoneProvider controllerTimeZoneProvider;
     private final Object lifecycle = new Object();
 
     private record CommandTarget(@Nullable Integer roomId, String channel) {
@@ -114,20 +117,33 @@ public class ControllerHandler extends BaseBridgeHandler {
     ControllerHandler(Bridge bridge, PairingStore store, Clock clock, TimeZoneProvider timeZoneProvider) {
         super(bridge);
         this.timeZoneProvider = timeZoneProvider;
+        this.controllerTimeZoneProvider = timeZoneProvider;
         this.store = store;
         this.clock = clock;
     }
 
     @Override
     public void initialize() {
-        int interval = getConfigAs(ControllerConfiguration.class).refreshInterval;
+        var config = getConfigAs(ControllerConfiguration.class);
+        int interval = config.refreshInterval;
         if (interval < ControllerConfiguration.MINIMUM_REFRESH_INTERVAL) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                     "Refresh interval must be at least " + ControllerConfiguration.MINIMUM_REFRESH_INTERVAL
                             + " seconds");
             return;
         }
+        TimeZoneProvider selectedTimeZoneProvider = timeZoneProvider;
+        try {
+            if (!config.timeZone.isBlank()) {
+                ZoneId zone = ZoneId.of(config.timeZone);
+                selectedTimeZoneProvider = () -> zone;
+            }
+        } catch (DateTimeException e) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, e.getMessage());
+            return;
+        }
         synchronized (lifecycle) {
+            controllerTimeZoneProvider = selectedTimeZoneProvider;
             clockWarningLogged = false;
             running = true;
             updateStatus(ThingStatus.UNKNOWN);
@@ -534,7 +550,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     }
 
     private Snapshot readWorld(CloudClient.Session session) throws IOException {
-        WorldState raw = session.world(timeZoneProvider.getTimeZone());
+        WorldState raw = session.world(controllerTimeZoneProvider.getTimeZone());
         // Keep each conversion with its own response; never reuse a skew after reconnect or clock correction.
         ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
         var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
