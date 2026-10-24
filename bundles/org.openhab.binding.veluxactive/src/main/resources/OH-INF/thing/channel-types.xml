@@ -12,13 +12,6 @@
 		<autoUpdatePolicy>veto</autoUpdatePolicy>
 	</channel-type>
 
-	<channel-type id="locking">
-		<item-type>Switch</item-type>
-		<label>Locking</label>
-		<description>Whether the gateway is applying departure locking</description>
-		<state readOnly="true"/>
-	</channel-type>
-
 	<channel-type id="last-seen">
 		<item-type>DateTime</item-type>
 		<label>Last Seen</label>
