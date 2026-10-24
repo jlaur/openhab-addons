@@ -1,17 +1,27 @@
 # VELUX ACTIVE Binding
 
-This binding supports VELUX ACTIVE with NETATMO accounts, NXG gateways, NXS indoor climate sensors, NXD departure switches and NXO windows/covers.
+This binding supports VELUX ACTIVE with NETATMO accounts, gateways, indoor climate sensors, departure switches and connected windows/covers.
 For KLF 200 gateways, use the [Velux binding](https://www.openhab.org/addons/bindings/velux/).
 
 ## Supported Things
 
-| Thing                 | Thing type         | Description                                                     |
-| --------------------- | ------------------ | --------------------------------------------------------------- |
-| Account               | `account`          | OAuth authentication and shared home status polling             |
-| Gateway               | `gateway`          | NXG gateway status and departure locking                        |
-| Indoor Climate Sensor | `indoor-sensor`    | NXS diagnostics and climate measurements from its assigned room |
-| Departure Switch      | `departure-switch` | NXD battery and connectivity diagnostics                        |
-| Window/Cover          | `opening`          | NXO position, operating mode and movement commands              |
+| Thing                 | Thing type         | API module type | VELUX product                                      | Description                                                 |
+| --------------------- | ------------------ | --------------- | -------------------------------------------------- | ----------------------------------------------------------- |
+| Account               | `account`          |                 | VELUX ACTIVE with NETATMO account                  | OAuth authentication and shared home status polling         |
+| Gateway               | `gateway`          | `NXG`           | Gateway supplied with KIG 300 or KIX 300           | Gateway status and departure locking/unlocking              |
+| Indoor Climate Sensor | `indoor-sensor`    | `NXS`           | KLA 300                                            | Diagnostics and climate measurements from its assigned room |
+| Departure Switch      | `departure-switch` | `NXD`           | KLN 300                                            | Battery and connectivity diagnostics                        |
+| Window/Cover          | `opening`          | `NXO`           | Connected window, blind or shutter; various models | Position, operating mode and movement commands              |
+
+The codes `NXG`, `NXS`, `NXD` and `NXO` are module types reported by the Netatmo API.
+VELUX uses separate commercial references for products and kits:
+
+- **KIG 300** is VELUX App Control, supplying the gateway for app-based operation.
+- **KIX 300** is the VELUX ACTIVE starter kit, containing a gateway, an indoor climate sensor and a departure switch. These appear as separate `NXG`, `NXS` and `NXD` modules in the API.
+- **KLA 300** and **KLN 300** identify the indoor climate sensor and departure switch respectively, including when purchased separately.
+
+`NXO` covers multiple actuator models; the API's `velux_type` field distinguishes windows, blinds and shutters.
+See the [VELUX product overview](https://www.velux.co.uk/professionals/technical-library/smart-home-systems/operation-and-remote-controls) for the commercial product references.
 
 Gateway Bridges are children of the Account Bridge.
 Indoor sensors, departure switches and windows/covers are children of their Gateway Bridge and inherit its home ID.
