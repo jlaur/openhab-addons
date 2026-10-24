@@ -40,7 +40,10 @@ public final class Wire {
     }
 
     public static byte[] read(InputStream input) throws IOException {
-        int length = new DataInputStream(input).readUnsignedShort();
+        // The caller owns the stream; closing this wrapper would close the connection.
+        @SuppressWarnings("resource")
+        var data = new DataInputStream(input);
+        int length = data.readUnsignedShort();
         if (length == 0) {
             throw new IOException("Empty MDG frame");
         }
@@ -55,7 +58,10 @@ public final class Wire {
         if (packet.length == 0 || packet.length > 65535) {
             throw new IOException("Invalid MDG frame length");
         }
-        new DataOutputStream(output).writeShort(packet.length);
+        // The caller owns the stream; closing this wrapper would close the connection.
+        @SuppressWarnings("resource")
+        var data = new DataOutputStream(output);
+        data.writeShort(packet.length);
         output.write(packet);
         output.flush();
     }

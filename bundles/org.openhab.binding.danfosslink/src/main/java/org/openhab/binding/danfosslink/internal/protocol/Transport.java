@@ -16,10 +16,12 @@ import java.io.Closeable;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.cert.CertPathValidator;
 import java.security.cert.CertificateFactory;
@@ -30,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Vector;
 
 import org.bouncycastle.asn1.x500.style.BCStyle;
@@ -55,6 +58,7 @@ import org.bouncycastle.tls.crypto.TlsCryptoParameters;
 import org.bouncycastle.tls.crypto.impl.bc.BcDefaultTlsCredentialedSigner;
 import org.bouncycastle.tls.crypto.impl.bc.BcTlsCrypto;
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 
 /**
  * TLS 1.2 over a direct cloud socket or the relay stream, using BC's
@@ -87,8 +91,7 @@ public final class Transport implements Closeable {
             }
 
             @Override
-            public int read(byte @org.eclipse.jdt.annotation.Nullable [] bytes, int offset, int length)
-                    throws IOException {
+            public int read(byte @Nullable [] bytes, int offset, int length) throws IOException {
                 remaining();
                 return in.read(bytes, offset, length);
             }
@@ -131,7 +134,7 @@ public final class Transport implements Closeable {
 
             @Override
             @SuppressWarnings("rawtypes")
-            protected Vector getSupportedGroups(@org.eclipse.jdt.annotation.Nullable Vector roles) {
+            protected Vector getSupportedGroups(@Nullable Vector roles) {
                 // Trifork used group 29 for brainpoolP320r1, conflicting with today's x25519.
                 // Omitting this extension avoids the collision; the documented peer selects
                 // P-256 ECDHE.
@@ -142,11 +145,9 @@ public final class Transport implements Closeable {
             public TlsAuthentication getAuthentication() {
                 return new TlsAuthentication() {
                     @Override
-                    public void notifyServerCertificate(
-                            @org.eclipse.jdt.annotation.Nullable TlsServerCertificate server) throws IOException {
+                    public void notifyServerCertificate(@Nullable TlsServerCertificate server) throws IOException {
                         List<X509CertificateHolder> chain = new ArrayList<>();
-                        for (var cert : java.util.Objects.requireNonNull(server).getCertificate()
-                                .getCertificateList()) {
+                        for (var cert : Objects.requireNonNull(server).getCertificate().getCertificateList()) {
                             chain.add(new X509CertificateHolder(cert.getEncoded()));
                         }
                         if (chain.isEmpty()) {
@@ -161,10 +162,10 @@ public final class Transport implements Closeable {
                     }
 
                     @Override
-                    public TlsCredentials getClientCredentials(
-                            @org.eclipse.jdt.annotation.Nullable CertificateRequest request) throws IOException {
+                    public TlsCredentials getClientCredentials(@Nullable CertificateRequest request)
+                            throws IOException {
                         var signature = new SignatureAndHashAlgorithm(HashAlgorithm.sha256, SignatureAlgorithm.ecdsa);
-                        java.util.Objects.requireNonNull(request);
+                        Objects.requireNonNull(request);
                         if (request.getSupportedSignatureAlgorithms() != null
                                 && !request.getSupportedSignatureAlgorithms().contains(signature)) {
                             throw new TlsFatalAlert(AlertDescription.handshake_failure);
@@ -192,8 +193,7 @@ public final class Transport implements Closeable {
     public static Verifier cloudTrust(InputStream bundle) throws Exception {
         var converter = new JcaX509CertificateConverter().setProvider(Identity.PROVIDER);
         var anchors = new HashSet<TrustAnchor>();
-        try (var reader = new PEMParser(
-                new java.io.InputStreamReader(bundle, java.nio.charset.StandardCharsets.US_ASCII))) {
+        try (var reader = new PEMParser(new InputStreamReader(bundle, StandardCharsets.US_ASCII))) {
             Object object;
             while ((object = reader.readObject()) != null) {
                 if (!(object instanceof X509CertificateHolder holder)) {

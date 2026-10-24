@@ -7,6 +7,7 @@
 	<bridge-type id="controller">
 		<label>Danfoss Link Controller</label>
 		<description>Danfoss Link CC connected through the cloud relay</description>
+		<semantic-equipment-tag>WebService</semantic-equipment-tag>
 
 		<channels>
 			<channel id="current-state" typeId="current-state"/>
@@ -40,6 +41,7 @@
 
 		<label>Danfoss Link Living Zone</label>
 		<description>Shared regulation for rooms in the controller's Living zone</description>
+		<semantic-equipment-tag>Zone</semantic-equipment-tag>
 
 		<channels>
 			<channel id="home-selected" typeId="home-selected"/>
@@ -56,6 +58,7 @@
 
 		<label>Danfoss Link Room</label>
 		<description>A room managed by the controller</description>
+		<semantic-equipment-tag>Zone</semantic-equipment-tag>
 
 		<channels>
 			<channel id="temperature" typeId="system.indoor-temperature">
