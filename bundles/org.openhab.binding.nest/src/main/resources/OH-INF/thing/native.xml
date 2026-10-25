@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<thing:thing-descriptions bindingId="nest"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:thing="https://openhab.org/schemas/thing-description/v1.0.0"
+	xsi:schemaLocation="https://openhab.org/schemas/thing-description/v1.0.0 https://openhab.org/schemas/thing-description-1.0.0.xsd">
+	<bridge-type id="native_account">
+		<label>Nest Native Account</label>
+		<description>A Google account accessing Nest Protect through the native Nest API. Authenticate using the Thing action.</description>
+		<semantic-equipment-tag>WebService</semantic-equipment-tag>
+	</bridge-type>
+	<thing-type id="native_protect">
+		<supported-bridge-type-refs>
+			<bridge-type-ref id="native_account"/>
+		</supported-bridge-type-refs>
+		<label>Nest Protect</label>
+		<description>Read-only smoke and carbon monoxide detector observations through the native Nest API</description>
+		<semantic-equipment-tag>SmokeDetector</semantic-equipment-tag>
+		<channels>
+			<channel id="smoke-status" typeId="native-smoke-status"/>
+			<channel id="co-status" typeId="native-co-status"/>
+			<channel id="battery-health" typeId="native-battery-health"/>
+			<channel id="line-power" typeId="native-line-power"/>
+			<channel id="online" typeId="native-online"/>
+			<channel id="replace-by" typeId="native-replace-by"/>
+			<channel id="last-test-started" typeId="native-last-test-started"/>
+			<channel id="last-test-ended" typeId="native-last-test-ended"/>
+		</channels>
+		<config-description>
+			<parameter name="deviceId" type="text" required="true">
+				<label>Device ID</label>
+				<description>Protect bucket identifier, without the topaz. prefix</description>
+			</parameter>
+		</config-description>
+	</thing-type>
+	<channel-type id="native-smoke-status">
+		<item-type>String</item-type>
+		<label>Smoke Status</label>
+		<description>Native smoke alarm state</description>
+		<tags>
+			<tag>Alarm</tag>
+			<tag>Smoke</tag>
+		</tags>
+		<state readOnly="true">
+			<options>
+				<option value="NONE">NONE</option>
+				<option value="HEADS_UP_1">HEADS UP 1</option>
+				<option value="HEADS_UP_2">HEADS UP 2</option>
+				<option value="ALARM">ALARM</option>
+			</options>
+		</state>
+	</channel-type>
+	<channel-type id="native-co-status">
+		<item-type>String</item-type>
+		<label>Carbon Monoxide Status</label>
+		<description>Native carbon monoxide alarm state</description>
+		<tags>
+			<tag>Alarm</tag>
+			<tag>CO</tag>
+		</tags>
+		<state readOnly="true">
+			<options>
+				<option value="NONE">NONE</option>
+				<option value="HEADS_UP_1">HEADS UP 1</option>
+				<option value="HEADS_UP_2">HEADS UP 2</option>
+				<option value="ALARM">ALARM</option>
+			</options>
+		</state>
+	</channel-type>
+	<channel-type id="native-battery-health">
+		<item-type>String</item-type>
+		<label>Battery Health</label>
+		<description>Battery replacement interval reported by the Protect</description>
+		<tags>
+			<tag>Status</tag>
+		</tags>
+		<state readOnly="true">
+			<options>
+				<option value="GOOD">GOOD</option>
+				<option value="SIX_MONTHS">SIX MONTHS</option>
+				<option value="THREE_MONTHS">THREE MONTHS</option>
+				<option value="FOUR_WEEKS">FOUR WEEKS</option>
+				<option value="TWO_WEEKS">TWO WEEKS</option>
+			</options>
+		</state>
+	</channel-type>
+	<channel-type id="native-line-power">
+		<item-type>Switch</item-type>
+		<label>Line Power</label>
+		<description>Whether mains power is present</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Power</tag>
+		</tags>
+		<state readOnly="true"></state>
+	</channel-type>
+	<channel-type id="native-online">
+		<item-type>Switch</item-type>
+		<label>Online</label>
+		<description>Device connectivity, when reported by the native API</description>
+		<tags>
+			<tag>Status</tag>
+		</tags>
+		<state readOnly="true"></state>
+	</channel-type>
+	<channel-type id="native-replace-by">
+		<item-type>DateTime</item-type>
+		<label>Replace By</label>
+		<description>Detector replacement date</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Timestamp</tag>
+		</tags>
+		<state readOnly="true"></state>
+	</channel-type>
+	<channel-type id="native-last-test-started">
+		<item-type>DateTime</item-type>
+		<label>Last Manual Test Started</label>
+		<description>Start time of the latest manual sound check</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Timestamp</tag>
+		</tags>
+		<state readOnly="true"></state>
+	</channel-type>
+	<channel-type id="native-last-test-ended">
+		<item-type>DateTime</item-type>
+		<label>Last Manual Test Ended</label>
+		<description>End time of the latest manual sound check</description>
+		<tags>
+			<tag>Status</tag>
+			<tag>Timestamp</tag>
+		</tags>
+		<state readOnly="true"></state>
+	</channel-type>
+</thing:thing-descriptions>

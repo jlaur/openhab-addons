@@ -1,6 +1,6 @@
 # Nest Binding
 
-The Nest binding integrates devices by [Nest](https://store.google.com/category/connected_home) using the [Smart Device Management](https://developers.google.com/nest/device-access/api) (SDM) API.
+The Nest binding integrates devices by [Nest](https://store.google.com/category/connected_home) using the [Smart Device Management](https://developers.google.com/nest/device-access/api) (SDM) API, and provides read-only Nest Protect support through the native Nest API.
 
 To use the SDM API, you must first [register](https://developers.google.com/nest/device-access/registration) and pay a non-refundable US$5 registration fee.
 
@@ -24,9 +24,73 @@ The table below lists the Nest binding Thing types:
 | Nest Thermostat (E)                     | A Thermostat to control the various aspects of the house's HVAC system | sdm_thermostat |
 
 The SDM API currently does not support Nest Protect devices.
+For Protects, use the native account bridge below; no SDM project is needed.
+
+| Thing                 | Description                           | Thing Type       |
+| --------------------- | ------------------------------------- | ---------------- |
+| Nest Native Account   | Native API account bridge             | native_account   |
+| Nest Protect          | Read-only smoke and CO observations   | native_protect   |
 
 To use the Nest SDM API, add an Account Thing using the UI and configure the required parameters.
 After configuring an Account Thing, you can use it to discover the connected devices, which are then added to the Inbox.
+
+## Native Nest Protect Setup
+
+The native API is an undocumented cloud API used by the Nest app.
+This implementation supports Google accounts authenticated through a browser; it does not implement legacy Nest email/password login.
+It exposes observations only and provides no commands to hush an alarm or initiate a test.
+
+1. Add a **Nest Native Account** bridge. It initially waits for authentication.
+1. Follow the [browser capture procedure](docs/native-authentication.md#initial-browser-capture) to obtain the complete Google issueToken request URL and the Cookie request-header value from a successful Google RotateCookies request.
+1. Invoke the bridge's **Authenticate** Thing action with `issueTokenUrl` and `cookieHeader`.
+   Its boolean result indicates whether the request was accepted; watch the bridge status for the authentication result.
+   Both values are action inputs, not Thing configuration parameters.
+1. Once the bridge is ONLINE, scan for Nest Things and add the discovered Protects from the Inbox.
+   Discovery uses the account's latest successful snapshot.
+
+Use openHAB's Thing action interface to submit the credentials once.
+The action is also exposed through the standard REST actions API: list the actions with `GET /rest/actions/{bridgeUID}`, then submit the two named inputs to the returned Authenticate action UID with `POST /rest/actions/{bridgeUID}/{actionUID}`.
+URL-encode the action UID, including any signature suffix.
+This invocation does not create a persistent rule.
+If you instead use a temporary rule or script, remove the credentials from it afterwards.
+
+The binding encrypts authentication state using openHAB's core credential cipher before storing it.
+Refreshed cookies and the rotation schedule survive ordinary restarts; removing the account Thing deletes its stored credentials.
+Access tokens are reacquired after restart.
+If Google invalidates the session, repeat the capture and invoke Authenticate again.
+The credentials grant access to a Google browser session and must not be shared in logs or issue reports.
+
+A manually configured Protect requires its discovered `deviceId` (the bucket identifier without the `topaz.` prefix):
+
+```java
+Bridge nest:native_account:home "Nest Native Account" {
+    Thing native_protect hallway "Hallway Protect" [ deviceId="REPLACE_WITH_DISCOVERED_ID" ]
+}
+```
+
+### Native Protect Channels
+
+| Channel ID          | Item Type   | Description                                              |
+| ------------------- | ----------- | -------------------------------------------------------- |
+| smoke-status        | String      | NONE, HEADS_UP_1, HEADS_UP_2, or ALARM                   |
+| co-status           | String      | NONE, HEADS_UP_1, HEADS_UP_2, or ALARM                   |
+| battery-health      | String      | GOOD, SIX_MONTHS, THREE_MONTHS, FOUR_WEEKS, or TWO_WEEKS |
+| line-power          | Switch      | Whether mains power is present                           |
+| online              | Switch      | Device connectivity when explicitly reported             |
+| replace-by          | DateTime    | Detector replacement date                                |
+| last-test-started   | DateTime    | Start of the latest manual sound check                   |
+| last-test-ended     | DateTime    | End of the latest manual sound check                     |
+
+All channels are read-only.
+Missing or unknown values are UNDEF; a missing connectivity field does not mean the detector is offline.
+A Thing being ONLINE means its account observation is available, unless the detector explicitly reports itself offline.
+A manual sound check is represented by its timestamps, not by mapping an alarm state to a test state.
+Refresh commands request a new account snapshot after the current request completes, which can take up to two minutes during long polling.
+
+The binding rotates Google cookies at ten-minute intervals and renews tokens before their effective expiry.
+It retries temporary communication failures and rate limits; rejected Google credentials require the Authenticate action.
+Cloud observations may be delayed or unavailable and do not replace the detector's local alarm.
+The research probe verified renewal and a short restart; the Java binding still needs live runtime validation, including longer outages and multi-day operation.
 
 ## Account Configuration
 
