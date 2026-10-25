@@ -1,0 +1,214 @@
+/*
+ * Copyright (c) 2010-2026 Contributors to the openHAB project
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+package org.openhab.binding.nest.internal.nativeapi;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+
+import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.client.api.ContentResponse;
+import org.eclipse.jetty.client.api.Request;
+import org.eclipse.jetty.http.HttpFields;
+import org.junit.jupiter.api.Test;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos;
+import org.openhab.core.types.UnDefType;
+
+/**
+ * Tests protocol transitions with synthetic credentials and DTO payloads only.
+ *
+ * @author Jacob Laursen - Initial contribution
+ */
+@NonNullByDefault
+class NativeClientTest {
+    private static final String SNAPSHOT = """
+            {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
+             "updated_buckets":[{"object_key":"topaz.device","object_revision":1,"object_timestamp":10,
+             "value":{"smoke_status":0,"co_status":0,"line_power_present":true}}]}
+            """;
+    private static final String UPDATE = """
+            {"objects":[{"object_key":"topaz.device","object_revision":2,"object_timestamp":11,
+             "value":{"co_status":3}}]}
+            """;
+
+    @Test
+    void authenticationSnapshotPartialUpdateAndTimeout() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=secret");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\",\"expires_in\":3600}"),
+                response(200, "{\"jwt\":\"nest\"}"),
+                response(200, "{\"userid\":\"user\",\"access_token\":\"session\"}"), response(200, SNAPSHOT),
+                response(200, UPDATE));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        client.refresh();
+        assertEquals(0, Objects.requireNonNull(client.devices().get("device")).smoke);
+        client.poll();
+        assertEquals(0, Objects.requireNonNull(client.devices().get("device")).smoke);
+        assertEquals(3, Objects.requireNonNull(client.devices().get("device")).carbonMonoxide);
+        assertTrue(Objects.requireNonNull(client.devices().get("device")).linePower);
+        for (Request request : requests) {
+            verify(request).followRedirects(false);
+        }
+        verify(requests.get(3)).header("Authorization", "Basic session");
+        Request timeout = mock(Request.class, RETURNS_SELF);
+        doReturn(timeout).when(http).newRequest(anyString());
+        when(timeout.send()).thenThrow(new TimeoutException(), new ExecutionException(new TimeoutException()));
+        client.poll();
+        client.poll();
+        assertEquals(3, Objects.requireNonNull(client.devices().get("device")).carbonMonoxide);
+    }
+
+    @Test
+    void malformedUpdatesAreAtomicAndSnapshotCanRecover() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        client.accept(
+                Objects.requireNonNull(NativeClient.GSON.fromJson(SNAPSHOT, NativeDtos.LaunchResponse.class)).buckets,
+                true);
+        var update = Objects.requireNonNull(NativeClient.GSON.fromJson(UPDATE, NativeDtos.SubscribeResponse.class));
+        update.objects.add(new NativeDtos.Bucket());
+        assertThrows(NativeClient.Failure.class, () -> client.accept(update.objects, false));
+        assertEquals(0, Objects.requireNonNull(client.devices().get("device")).carbonMonoxide);
+        client.accept(List.of(), true);
+        assertTrue(client.devices().isEmpty());
+    }
+
+    @Test
+    void rejectedGoogleSessionPersistsReceivedCookiesAndStops() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=old");
+        state.lastRotation = System.currentTimeMillis();
+        ContentResponse rejected = response(200, "{\"error\":\"USER_LOGGED_OUT\"}");
+        rejected.getHeaders().add("Set-Cookie", "SID=new; Secure; Path=/");
+        var saved = new ArrayList<String>();
+        var requests = new ArrayList<Request>();
+        var client = new NativeClient(transport(requests, rejected), state,
+                value -> saved.add(NativeClient.GSON.toJson(value)));
+        var failure = assertThrows(NativeClient.Failure.class, client::refresh);
+        assertEquals(NativeClient.FailureKind.AUTHENTICATION, failure.kind);
+        assertEquals(1, requests.size());
+        assertEquals("new",
+                Objects.requireNonNull(
+                        NativeClient.GSON.fromJson(saved.getFirst(), NativeDtos.Credentials.class)).cookies
+                        .getFirst().value);
+        assertFalse(Objects.requireNonNull(failure.getMessage()).contains("SID"));
+    }
+
+    @Test
+    void rateLimitDoesNotAdvanceRotationTime() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=old");
+        ContentResponse limited = response(429, "private response");
+        limited.getHeaders().add("Retry-After", "1200");
+        var client = new NativeClient(transport(new ArrayList<>(), limited), state, ignored -> {
+        });
+        var failure = assertThrows(NativeClient.Failure.class, client::refresh);
+        assertEquals(NativeClient.FailureKind.RATE_LIMIT, failure.kind);
+        assertEquals(1200, failure.retrySeconds);
+        assertEquals(0, state.lastRotation);
+    }
+
+    @Test
+    void rotationSavesTimestampBeforeAuthenticating() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=old");
+        ContentResponse rotated = response(200, "not-json");
+        rotated.getHeaders().add("Set-Cookie", "__Secure-3PSIDTS=rotated; Secure; Domain=.google.com; Path=/");
+        var saved = new ArrayList<Long>();
+        var client = new NativeClient(
+                transport(new ArrayList<>(), rotated, response(200, "{\"error\":\"USER_LOGGED_OUT\"}")), state,
+                value -> saved.add(value.lastRotation));
+        assertThrows(NativeClient.Failure.class, client::refresh);
+        assertTrue(saved.getFirst() > 0);
+    }
+
+    @Test
+    void rejectsTransportLookalikesAndKeepsUnknownStatesUndefined() {
+        for (String url : List.of("http://transport.nest.com", "https://nest.com.evil.example",
+                "https://secret@transport.nest.com", "https://transport.nest.com/unexpected",
+                "https://transport.nest.com?secret")) {
+            assertThrows(NativeClient.Failure.class, () -> NativeClient.validateTransport(url));
+        }
+        assertSame(UnDefType.UNDEF, NativeProtectHandler.alarm(null));
+        assertSame(UnDefType.UNDEF, NativeProtectHandler.alarm(99));
+        assertEquals("HEADS_UP_1", NativeProtectHandler.alarm(1).toString());
+        assertEquals("HEADS_UP_2", NativeProtectHandler.alarm(2).toString());
+        assertSame(UnDefType.UNDEF, NativeProtectHandler.battery(-1));
+    }
+
+    @Test
+    void rejectedNestSessionCanBeReauthenticated() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=secret");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"old\"}"),
+                response(401, "private failure"), response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"new\"}"),
+                response(200, SNAPSHOT));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        assertEquals(NativeClient.FailureKind.COMMUNICATION,
+                assertThrows(NativeClient.Failure.class, client::refresh).kind);
+        client.refresh();
+        assertEquals(1, client.devices().size());
+        verify(requests.getLast()).header("Authorization", "Basic new");
+    }
+
+    @Test
+    void responseReceivedAfterCancellationCannotPersistCookies() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=secret");
+        var http = mock(HttpClient.class);
+        var request = mock(Request.class, RETURNS_SELF);
+        var saved = new ArrayList<String>();
+        var client = new NativeClient(http, state, value -> saved.add(NativeClient.GSON.toJson(value)));
+        when(http.newRequest(anyString())).thenReturn(request);
+        ContentResponse response = response(200, "private response");
+        response.getHeaders().add("Set-Cookie", "__Secure-3PSIDTS=obsolete; Secure");
+        when(request.send()).thenAnswer(invocation -> {
+            client.cancel();
+            return response;
+        });
+        assertThrows(NativeClient.Failure.class, client::refresh);
+        assertTrue(saved.isEmpty());
+        assertEquals(0, state.lastRotation);
+    }
+
+    private static HttpClient transport(List<Request> requests, ContentResponse... responses) throws Exception {
+        HttpClient http = mock(HttpClient.class);
+        var queue = new ArrayDeque<>(List.of(responses));
+        when(http.newRequest(anyString())).thenAnswer(invocation -> {
+            Request request = mock(Request.class, RETURNS_SELF);
+            when(request.send()).thenReturn(queue.removeFirst());
+            requests.add(request);
+            return request;
+        });
+        return http;
+    }
+
+    private static ContentResponse response(int status, String body) {
+        ContentResponse response = mock(ContentResponse.class);
+        when(response.getStatus()).thenReturn(status);
+        when(response.getContentAsString()).thenReturn(body);
+        when(response.getHeaders()).thenReturn(new HttpFields());
+        return response;
+    }
+}
