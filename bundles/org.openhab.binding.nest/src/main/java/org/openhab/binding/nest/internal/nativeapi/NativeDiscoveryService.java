@@ -25,7 +25,7 @@ import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.ServiceScope;
 
 /**
- * Discovers Protects from the authenticated account's current snapshot.
+ * Discovers Protects and structures from the authenticated account's current snapshot.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -33,7 +33,8 @@ import org.osgi.service.component.annotations.ServiceScope;
 @NonNullByDefault
 public class NativeDiscoveryService extends AbstractThingHandlerDiscoveryService<NativeAccountHandler> {
     public NativeDiscoveryService() {
-        super(NativeAccountHandler.class, Set.of(NativeThingHandlerFactory.PROTECT), 10, false);
+        super(NativeAccountHandler.class,
+                Set.of(NativeThingHandlerFactory.PROTECT, NativeThingHandlerFactory.STRUCTURE), 10, false);
     }
 
     @Override
@@ -48,5 +49,13 @@ public class NativeDiscoveryService extends AbstractThingHandlerDiscoveryService
                     .withBridge(bridge).withLabel("Nest Protect " + id).withProperty("deviceId", id)
                     .withRepresentationProperty("deviceId").build());
         }
+        thingHandler.structures().forEach((id, structure) -> {
+            String uid = UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8)).toString();
+            String name = structure.name;
+            thingDiscovered(
+                    DiscoveryResultBuilder.create(new ThingUID(NativeThingHandlerFactory.STRUCTURE, bridge, uid))
+                            .withBridge(bridge).withLabel(name == null || name.isBlank() ? "Nest Home " + id : name)
+                            .withProperty("structureId", id).withRepresentationProperty("structureId").build());
+        });
     }
 }

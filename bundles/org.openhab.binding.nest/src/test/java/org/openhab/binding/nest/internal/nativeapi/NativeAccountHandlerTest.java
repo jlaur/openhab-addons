@@ -41,6 +41,88 @@ import org.openhab.core.thing.binding.builder.BridgeBuilder;
 @NonNullByDefault
 class NativeAccountHandlerTest {
     @Test
+    @Timeout(20)
+    void modeCommandWakesSubscriptionAndPublishesOnlyObservedState() throws Exception {
+        var bridge = BridgeBuilder.create(NativeThingHandlerFactory.ACCOUNT, "commands").build();
+        var store = mock(NativeCredentialStore.class);
+        var credentials = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        credentials.lastRotation = System.currentTimeMillis();
+        when(store.load()).thenReturn(credentials);
+        var factory = mock(HttpClientFactory.class);
+        var http = mock(HttpClient.class);
+        when(factory.createHttpClient("nest-native")).thenReturn(http);
+        var polling = new CountDownLatch(1);
+        var observed = new CountDownLatch(1);
+        var writes = new AtomicInteger();
+        var handler = new NativeAccountHandler(bridge, factory, store);
+        when(http.newRequest(anyString())).thenAnswer(invocation -> {
+            String url = invocation.getArgument(0);
+            Request request = mock(Request.class, RETURNS_SELF);
+            var aborted = new CountDownLatch(1);
+            var cause = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+            when(request.abort(any())).thenAnswer(abort -> {
+                cause.set(abort.getArgument(0));
+                aborted.countDown();
+                return true;
+            });
+            when(request.send()).thenAnswer(send -> {
+                String body;
+                if (url.contains("iframerpc")) {
+                    body = "{\"access_token\":\"google\"}";
+                } else if (url.endsWith("issue_jwt")) {
+                    body = "{\"jwt\":\"nest\"}";
+                } else if (url.endsWith("/session")) {
+                    body = "{\"userid\":\"u\",\"access_token\":\"session\"}";
+                } else if (url.endsWith("/v6/subscribe")) {
+                    polling.countDown();
+                    assertTrue(aborted.await(10, TimeUnit.SECONDS));
+                    throw new ExecutionException(cause.get());
+                } else if (url.endsWith("/v2/put/structure.home")) {
+                    assertEquals(false, java.util.Objects.requireNonNull(handler.structures().get("home")).away);
+                    writes.incrementAndGet();
+                    body = "{}";
+                } else if (url.endsWith("/app_launch")) {
+                    body = """
+                            {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
+                             "updated_buckets":[{"object_key":"structure.home","object_revision":1,
+                             "object_timestamp":10,"value":{"away":%s}}]}
+                            """.formatted(writes.get() > 0);
+                } else {
+                    throw new AssertionError("Unexpected endpoint");
+                }
+                var response = mock(org.eclipse.jetty.client.api.ContentResponse.class);
+                when(response.getStatus()).thenReturn(200);
+                when(response.getHeaders()).thenReturn(new org.eclipse.jetty.http.HttpFields());
+                when(response.getContentAsString()).thenReturn(body);
+                return response;
+            });
+            return request;
+        });
+        var callback = mock(ThingHandlerCallback.class);
+        doAnswer(invocation -> {
+            ThingStatusInfo status = invocation.getArgument(1);
+            bridge.setStatusInfo(status);
+            var structure = handler.structures().get("home");
+            if (structure != null && Boolean.TRUE.equals(structure.away)) {
+                observed.countDown();
+            }
+            return null;
+        }).when(callback).statusUpdated(eq(bridge), any());
+        handler.setCallback(callback);
+        try {
+            handler.initialize();
+            assertTrue(polling.await(10, TimeUnit.SECONDS));
+            assertFalse(handler.setAway("unknown", true));
+            assertTrue(handler.setAway("home", true));
+            assertTrue(observed.await(10, TimeUnit.SECONDS));
+            assertEquals(1, writes.get());
+        } finally {
+            handler.dispose();
+        }
+        assertFalse(handler.setAway("home", false));
+    }
+
+    @Test
     @Timeout(15)
     void repeatedInitializationStopsThePreviousRun() throws Exception {
         var bridge = BridgeBuilder.create(NativeThingHandlerFactory.ACCOUNT, "repeat").build();

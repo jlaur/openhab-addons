@@ -25,10 +25,12 @@ import java.util.concurrent.TimeoutException;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.client.api.ContentProvider;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.http.HttpFields;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos;
 import org.openhab.core.types.UnDefType;
 
@@ -39,6 +41,106 @@ import org.openhab.core.types.UnDefType;
  */
 @NonNullByDefault
 class NativeClientTest {
+    private static final String STRUCTURE_SNAPSHOT = """
+            {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
+             "updated_buckets":[{"object_key":"structure.home","object_revision":1,"object_timestamp":10,
+             "value":{"name":"My Home","away":false}}]}
+            """;
+
+    @Test
+    void structureUpdatesMergeAtomicallyAndSnapshotRemovesMissingHomes() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        client.accept(Objects.requireNonNull(
+                NativeClient.GSON.fromJson(STRUCTURE_SNAPSHOT, NativeDtos.LaunchResponse.class)).buckets, true);
+        assertEquals(false, Objects.requireNonNull(client.structures().get("home")).away);
+        var update = Objects.requireNonNull(NativeClient.GSON.fromJson("""
+                {"objects":[{"object_key":"structure.home","object_revision":2,"object_timestamp":11,
+                "value":{"away":true}}]}
+                """, NativeDtos.SubscribeResponse.class));
+        client.accept(update.objects, false);
+        assertEquals("My Home", Objects.requireNonNull(client.structures().get("home")).name);
+        assertEquals(true, Objects.requireNonNull(client.structures().get("home")).away);
+        update.objects.getFirst().value.addProperty("away", "unknown");
+        assertThrows(NativeClient.Failure.class, () -> client.accept(update.objects, false));
+        assertEquals(true, Objects.requireNonNull(client.structures().get("home")).away);
+        update.objects.getFirst().value.remove("away");
+        client.accept(update.objects, true);
+        assertNull(Objects.requireNonNull(client.structures().get("home")).away);
+        client.accept(List.of(), true);
+        assertTrue(client.structures().isEmpty());
+    }
+
+    @Test
+    void awayWritesUseKnownStructureAndDoNotOptimisticallyUpdateState() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"session\"}"),
+                response(200, STRUCTURE_SNAPSHOT), response(200, "{}"), response(503, "private failure"),
+                response(200, STRUCTURE_SNAPSHOT.replace("false", "true")));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        client.refresh();
+        client.setAway("home", true);
+        verify(http).newRequest("https://transport.nest.com/v2/put/structure.home");
+        Request write = requests.getLast();
+        verify(write).method("POST");
+        verify(write).header("Authorization", "Basic session");
+        var content = ArgumentCaptor.forClass(ContentProvider.class);
+        verify(write).content(content.capture());
+        var body = new StringBuilder();
+        content.getValue().forEach(buffer -> body.append(java.nio.charset.StandardCharsets.UTF_8.decode(buffer)));
+        var dto = Objects.requireNonNull(NativeClient.GSON.fromJson(body.toString(), NativeDtos.AwayRequest.class));
+        assertTrue(dto.away);
+        assertEquals(0, dto.setter);
+        assertTrue(dto.timestamp > 0);
+        assertEquals(false, Objects.requireNonNull(client.structures().get("home")).away);
+        assertThrows(NativeClient.Failure.class, () -> client.setAway("unobserved", true));
+        assertEquals(5, requests.size());
+        assertThrows(NativeClient.Failure.class, () -> client.setAway("home", false));
+        assertEquals(false, Objects.requireNonNull(client.structures().get("home")).away);
+        client.refresh();
+        assertEquals(true, Objects.requireNonNull(client.structures().get("home")).away);
+    }
+
+    @Test
+    void wakingPollDoesNotCloseSessionOrAbortWrites() throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"session\"}"),
+                response(200, STRUCTURE_SNAPSHOT));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        client.refresh();
+        Request poll = mock(Request.class, RETURNS_SELF);
+        doReturn(poll).when(http).newRequest(endsWith("/v6/subscribe"));
+        var aborted = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        when(poll.abort(any())).thenAnswer(invocation -> {
+            aborted.set(invocation.getArgument(0));
+            return true;
+        });
+        when(poll.send()).thenAnswer(invocation -> {
+            client.wakePoll();
+            throw new ExecutionException(aborted.get());
+        });
+        client.poll();
+        verify(poll).abort(any());
+        Request write = mock(Request.class, RETURNS_SELF);
+        doReturn(write).when(http).newRequest(contains("/v2/put/"));
+        when(write.send()).thenAnswer(invocation -> {
+            client.wakePoll();
+            return response(200, "{}");
+        });
+        client.setAway("home", false);
+        verify(write, never()).abort(any());
+        assertEquals(false, Objects.requireNonNull(client.structures().get("home")).away);
+    }
+
     private static final String SNAPSHOT = """
             {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
              "updated_buckets":[{"object_key":"topaz.device","object_revision":1,"object_timestamp":10,

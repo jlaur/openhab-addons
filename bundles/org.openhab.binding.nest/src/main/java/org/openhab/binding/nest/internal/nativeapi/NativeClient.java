@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -31,6 +32,7 @@ import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.util.StringContentProvider;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.AwayRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Bucket;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Credentials;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Cursor;
@@ -40,6 +42,7 @@ import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.LaunchResponse
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.NestToken;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Protect;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Session;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Structure;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.SubscribeRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.SubscribeResponse;
 
@@ -47,7 +50,7 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 
 /**
- * Read-only native Nest protocol. Calls are serialized by the account handler; cancellation may occur on another
+ * Native Nest protocol. Calls are serialized by the account handler; cancellation may occur on another
  * thread.
  *
  * @author Jacob Laursen - Initial contribution
@@ -63,6 +66,9 @@ final class NativeClient {
     private final Consumer<Credentials> save;
     private final Map<String, Cursor> cursors = new LinkedHashMap<>();
     private final Map<String, Protect> devices = new LinkedHashMap<>();
+    private final Map<String, Structure> structures = new LinkedHashMap<>();
+    private final AtomicBoolean wakeRequested = new AtomicBoolean();
+    private volatile @Nullable Request activePoll;
     private volatile boolean closed;
     private volatile @Nullable Request active;
     private String token = "";
@@ -113,6 +119,34 @@ final class NativeClient {
         token = "";
     }
 
+    private static final class PollWakeup extends Exception {
+        private static final long serialVersionUID = 1L;
+    }
+
+    void wakePoll() {
+        wakeRequested.set(true);
+        Request request = activePoll;
+        if (request != null) {
+            request.abort(new PollWakeup());
+        }
+    }
+
+    Map<String, Structure> structures() {
+        return Map.copyOf(structures);
+    }
+
+    void setAway(String id, boolean away) throws Failure, InterruptedException {
+        if (token.isEmpty() || System.currentTimeMillis() >= renewAt) {
+            refresh();
+        }
+        if (!structures.containsKey(id)) {
+            throw new Failure(FailureKind.PROTOCOL, "Structure not present in the account snapshot");
+        }
+        request(transport + "/v2/put/structure." + encode(id), "POST", headers(),
+                GSON.toJson(new AwayRequest(away, Instant.now().getEpochSecond())), false, 30000);
+        // A successful write is not an observation. The account refreshes before publishing channel state.
+    }
+
     Map<String, Protect> devices() {
         return Map.copyOf(devices);
     }
@@ -132,6 +166,9 @@ final class NativeClient {
     }
 
     void poll() throws Failure, InterruptedException {
+        if (wakeRequested.getAndSet(false)) {
+            return;
+        }
         if (token.isEmpty() || System.currentTimeMillis() >= renewAt) {
             refresh();
             return;
@@ -236,11 +273,19 @@ final class NativeClient {
                     StandardCharsets.UTF_8));
         }
         active = request;
+        boolean subscription = url.endsWith("/v6/subscribe");
+        if (subscription) {
+            activePoll = request;
+        }
         if (closed) {
             request.abort(new IllegalStateException("Account session closed"));
             throw protocol();
         }
         try {
+            if (subscription && wakeRequested.getAndSet(false)) {
+                request.abort(new PollWakeup());
+                return "";
+            }
             ContentResponse response = request.send();
             if (closed) {
                 throw protocol();
@@ -289,11 +334,15 @@ final class NativeClient {
         } catch (TimeoutException e) {
             throw new Failure(FailureKind.TIMEOUT, "Request timed out");
         } catch (java.util.concurrent.ExecutionException e) {
+            if (subscription && e.getCause() instanceof PollWakeup) {
+                return "";
+            }
             if (e.getCause() instanceof TimeoutException) {
                 throw new Failure(FailureKind.TIMEOUT, "Request timed out");
             }
             throw new Failure(FailureKind.COMMUNICATION, "Request failed");
         } finally {
+            activePoll = null;
             active = null;
         }
     }
@@ -318,6 +367,7 @@ final class NativeClient {
         }
         Map<String, Cursor> nextCursors = snapshot ? new LinkedHashMap<>() : new LinkedHashMap<>(cursors);
         Map<String, Protect> nextDevices = snapshot ? new LinkedHashMap<>() : new LinkedHashMap<>(devices);
+        Map<String, Structure> nextStructures = snapshot ? new LinkedHashMap<>() : new LinkedHashMap<>(structures);
         for (@Nullable
         Bucket bucket : buckets) {
             if (bucket == null || bucket.key == null) {
@@ -336,13 +386,31 @@ final class NativeClient {
                 if (id.isBlank()) {
                     throw protocol();
                 }
-                nextDevices.put(id, merge(nextDevices.get(id), bucket.value));
+                nextDevices.put(id, merge(nextDevices.get(id), json(bucket.value.toString(), Protect.class)));
+            } else if (bucket.key.startsWith("structure.")) {
+                String id = bucket.key.substring(10);
+                if (id.isBlank()) {
+                    throw protocol();
+                }
+                var away = bucket.value.get("away");
+                if (away != null && !away.isJsonNull()
+                        && !(away.isJsonPrimitive() && away.getAsJsonPrimitive().isBoolean())) {
+                    throw protocol();
+                }
+                Structure update = json(bucket.value.toString(), Structure.class);
+                Structure old = nextStructures.get(id);
+                Structure structure = new Structure();
+                structure.name = update.name != null ? update.name : old == null ? null : old.name;
+                structure.away = update.away != null ? update.away : old == null ? null : old.away;
+                nextStructures.put(id, structure);
             }
         }
         cursors.clear();
         cursors.putAll(nextCursors);
         devices.clear();
         devices.putAll(nextDevices);
+        structures.clear();
+        structures.putAll(nextStructures);
     }
 
     private static Protect merge(@Nullable Protect old, Protect update) {
