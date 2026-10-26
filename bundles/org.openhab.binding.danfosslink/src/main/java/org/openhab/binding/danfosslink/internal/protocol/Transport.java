@@ -22,8 +22,10 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.cert.CertPathValidator;
+import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.PKIXParameters;
 import java.security.cert.TrustAnchor;
@@ -113,7 +115,7 @@ public final class Transport implements Closeable {
     }
 
     public interface Verifier {
-        void verify(List<X509CertificateHolder> chain) throws Exception;
+        void verify(List<X509CertificateHolder> chain) throws IOException, GeneralSecurityException;
     }
 
     public void startTls(Identity identity, boolean controller, Verifier verifier) throws IOException {
@@ -155,7 +157,7 @@ public final class Transport implements Closeable {
                         }
                         try {
                             verifier.verify(chain);
-                        } catch (Exception e) {
+                        } catch (GeneralSecurityException e) {
                             throw new IOException("Server certificate validation failed", e);
                         }
                         certificates.addAll(chain);
@@ -190,7 +192,7 @@ public final class Transport implements Closeable {
         };
     }
 
-    public static Verifier cloudTrust(InputStream bundle) throws Exception {
+    public static Verifier cloudTrust(InputStream bundle) throws IOException {
         var converter = new JcaX509CertificateConverter().setProvider(Identity.PROVIDER);
         var anchors = new HashSet<TrustAnchor>();
         try (var reader = new PEMParser(new InputStreamReader(bundle, StandardCharsets.US_ASCII))) {
@@ -201,6 +203,8 @@ public final class Transport implements Closeable {
                 }
                 anchors.add(new TrustAnchor(converter.getCertificate(holder), null));
             }
+        } catch (CertificateException e) {
+            throw new IOException("Cannot load cloud trust certificates", e);
         }
         if (anchors.isEmpty()) {
             throw new IOException("Empty CA bundle");

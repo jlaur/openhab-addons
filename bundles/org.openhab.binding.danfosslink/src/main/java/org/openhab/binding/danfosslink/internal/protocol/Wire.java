@@ -22,9 +22,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 
@@ -78,7 +80,7 @@ public final class Wire {
         if (packet.length == 0) {
             throw new IOException("Missing message type");
         }
-        return new Message(packet[0] & 255, decodeFields(java.util.Arrays.copyOfRange(packet, 1, packet.length)));
+        return new Message(packet[0] & 255, decodeFields(Arrays.copyOfRange(packet, 1, packet.length)));
     }
 
     public static Fields decodeFields(byte[] bytes) throws IOException {
@@ -106,7 +108,7 @@ public final class Wire {
                 case 5 -> Integer.toUnsignedLong(Integer.reverseBytes(new DataInputStream(input).readInt()));
                 default -> throw new IOException("Unsupported protobuf wire type");
             };
-            java.util.Objects.requireNonNull(fields.computeIfAbsent(field, ignored -> new ArrayList<>())).add(value);
+            Objects.requireNonNull(fields.computeIfAbsent(field, ignored -> new ArrayList<>())).add(value);
         }
         return new Fields(fields);
     }

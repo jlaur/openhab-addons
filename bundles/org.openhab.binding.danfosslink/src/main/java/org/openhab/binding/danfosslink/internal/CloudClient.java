@@ -17,12 +17,13 @@ import static org.openhab.binding.danfosslink.internal.ProtocolJson.GSON;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.ZoneId;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.exception.ControllerResponseException;
 import org.openhab.binding.danfosslink.internal.protocol.Grid;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Operation;
@@ -35,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 
 /**
@@ -50,7 +52,7 @@ public final class CloudClient implements AutoCloseable {
     private final Grid grid;
     private int requestId;
 
-    public CloudClient(Identity identity, Operation operation) throws Exception {
+    public CloudClient(Identity identity, Operation operation) throws IOException {
         this.operation = operation;
         try (var resource = CloudClient.class.getResourceAsStream("/certificates/mdg-ca.pem")) {
             if (resource == null) {
@@ -60,11 +62,11 @@ public final class CloudClient implements AutoCloseable {
         }
     }
 
-    public X509CertificateHolder pair(String pin) throws Exception {
+    public X509CertificateHolder pair(String pin) throws IOException {
         return grid.pair(pin);
     }
 
-    public Session open(X509CertificateHolder controller) throws Exception {
+    public Session open(X509CertificateHolder controller) throws IOException {
         Transport peer = grid.call(controller);
         Future<?> maintenance = CONTROL.submit(() -> {
             try {
@@ -91,7 +93,7 @@ public final class CloudClient implements AutoCloseable {
         }
 
         public WorldState world(ZoneId zone) throws IOException {
-            return WorldState.parse(request("GET", "/api/world", new JsonObject()).getAsJsonObject(), zone);
+            return WorldState.parse(object(request("GET", "/api/world", new JsonObject()), "world content"), zone);
         }
 
         public void apply(WorldState.Patch patch) throws IOException {
@@ -147,21 +149,6 @@ public final class CloudClient implements AutoCloseable {
         return GSON.toJsonTree(body).getAsJsonObject();
     }
 
-    public static final class ControllerResponseException extends IOException {
-        private static final long serialVersionUID = 1L;
-
-        private final int status;
-
-        public ControllerResponseException(int status) {
-            super("Controller returned HTTP status " + status);
-            this.status = status;
-        }
-
-        public int status() {
-            return status;
-        }
-    }
-
     static String errorDetails(JsonObject response) {
         JsonObject details = new JsonObject();
         JsonElement description = response.get("statusDescription");
@@ -206,18 +193,20 @@ public final class CloudClient implements AutoCloseable {
             // The controller's cc_json encoder emits an omitted value on empty write responses.
             // This exact firmware defect also requires normalization in the official app.
             json = json.replace("\"content\":}}", "\"content\":null}}");
-            JsonObject envelope = JsonParser.parseString(json).getAsJsonObject();
-            if (envelope.get("id").getAsInt() != id) {
-                logger.debug("Controller response ID {} does not match request {}", envelope.get("id").getAsInt(), id);
+            JsonObject envelope = object(JsonParser.parseString(json), "envelope");
+            int responseId = integer(envelope.get("id"), "ID");
+            if (responseId != id) {
+                logger.debug("Controller response ID {} does not match request {}", responseId, id);
                 throw new IOException("Mismatched controller response ID");
             }
-            JsonObject data = envelope.getAsJsonObject("data");
-            if (!"JsonWebResponse".equals(data.get("type").getAsString())) {
-                logger.debug("Controller request {} received an unexpected response type", id);
-                throw new IOException("Unexpected controller response type");
+            JsonObject data = object(envelope.get("data"), "data");
+            JsonElement type = data.get("type");
+            if (type == null || !type.isJsonPrimitive() || !type.getAsJsonPrimitive().isString()
+                    || !"JsonWebResponse".equals(type.getAsString())) {
+                throw new IOException("Missing or unexpected controller response type");
             }
-            JsonObject response = data.getAsJsonObject("data");
-            int status = response.get("status").getAsInt();
+            JsonObject response = object(data.get("data"), "response data");
+            int status = integer(response.get("status"), "status");
             logger.trace("Controller response {}: HTTP {}", id, status);
             if (status < 200 || status >= 300) {
                 logger.debug("Controller rejected request {} with HTTP {}", id, status);
@@ -226,11 +215,34 @@ public final class CloudClient implements AutoCloseable {
                 }
                 throw new ControllerResponseException(status);
             }
-            return Objects.requireNonNull(response.get("content"));
-        } catch (RuntimeException e) {
+            JsonElement content = response.get("content");
+            if (content == null) {
+                throw new IOException("Missing controller response content");
+            }
+            // Empty write acknowledgements use JSON null; world() requires an object.
+            return content;
+        } catch (JsonParseException e) {
             logger.debug("Cannot parse controller response for request {} ({}; {} bytes)", id,
                     e.getClass().getSimpleName(), bytes.length);
             throw new IOException("Malformed controller response", e);
+        }
+    }
+
+    private static JsonObject object(@Nullable JsonElement value, String field) throws IOException {
+        if (value == null || !value.isJsonObject()) {
+            throw new IOException("Missing or invalid controller response " + field);
+        }
+        return value.getAsJsonObject();
+    }
+
+    private static int integer(@Nullable JsonElement value, String field) throws IOException {
+        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
+            throw new IOException("Missing or invalid controller response " + field);
+        }
+        try {
+            return value.getAsBigDecimal().intValueExact();
+        } catch (ArithmeticException | NumberFormatException e) {
+            throw new IOException("Invalid controller response " + field, e);
         }
     }
 }
