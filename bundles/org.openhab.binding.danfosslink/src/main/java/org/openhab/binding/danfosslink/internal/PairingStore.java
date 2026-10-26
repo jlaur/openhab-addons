@@ -39,7 +39,7 @@ public final class PairingStore {
         this.storage = storage;
     }
 
-    public synchronized Credentials load(String uid) throws Exception {
+    public synchronized Credentials load(String uid) throws IOException {
         String value = storage.get(uid);
         if (value == null) {
             Identity identity = Identity.generate();

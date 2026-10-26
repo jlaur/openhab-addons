@@ -16,10 +16,17 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
+import java.io.IOException;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -29,15 +36,26 @@ import org.mockito.ArgumentCaptor;
 import org.openhab.binding.danfosslink.internal.CloudClient;
 import org.openhab.binding.danfosslink.internal.PairingStore;
 import org.openhab.binding.danfosslink.internal.WorldState;
+import org.openhab.binding.danfosslink.internal.exception.CloudServerException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerConnectionTimeoutException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerResponseException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerUnavailableException;
+import org.openhab.binding.danfosslink.internal.exception.RelayConnectionClosedException;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Operation;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
+import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
+import org.openhab.core.library.types.StringType;
+import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.ThingStatus;
+import org.openhab.core.thing.ThingStatusDetail;
+import org.openhab.core.thing.ThingStatusInfo;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
 import org.openhab.core.thing.binding.builder.BridgeBuilder;
+import org.openhab.core.types.UnDefType;
 
 import com.google.gson.JsonParser;
 
@@ -75,7 +93,7 @@ class ControllerHandlerTest {
         }).when(session).close();
         var callback = mock(ThingHandlerCallback.class);
         doAnswer(call -> {
-            org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+            ThingStatusInfo status = call.getArgument(1);
             if (status.getStatus() == ThingStatus.ONLINE) {
                 online.countDown();
             }
@@ -104,6 +122,57 @@ class ControllerHandlerTest {
         } finally {
             release.countDown();
             handler.dispose();
+        }
+    }
+
+    @Test
+    void connectionFailuresPublishSpecificStatusAndRecover() throws Exception {
+        for (IOException failure : new IOException[] { new ControllerUnavailableException(), new CloudServerException(),
+                new ControllerConnectionTimeoutException(),
+                new RelayConnectionClosedException(new java.io.EOFException()) }) {
+            var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "failure").build();
+            var identity = Identity.generate();
+            var store = mock(PairingStore.class);
+            when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+            var client = mock(CloudClient.class);
+            var session = mock(CloudClient.Session.class);
+            when(client.open(any())).thenThrow(failure).thenReturn(session);
+            when(session.world(any()))
+                    .thenReturn(new WorldState(Map.of(), null, null, null, null, null, null, null, null, null));
+            var handler = new ControllerHandler(bridge, store) {
+                @Override
+                CloudClient connect(Identity credentials, Operation operation) {
+                    return client;
+                }
+            };
+            var callback = mock(ThingHandlerCallback.class);
+            var offline = new CountDownLatch(1);
+            var online = new CountDownLatch(1);
+            var status = new AtomicReference<ThingStatusInfo>();
+            doAnswer(call -> {
+                ThingStatusInfo info = call.getArgument(1);
+                if (info.getStatus() == ThingStatus.OFFLINE) {
+                    status.set(info);
+                    offline.countDown();
+                } else if (info.getStatus() == ThingStatus.ONLINE) {
+                    online.countDown();
+                }
+                return null;
+            }).when(callback).statusUpdated(eq(bridge), any());
+            handler.setCallback(callback);
+            try {
+                handler.initialize();
+                assertTrue(offline.await(10, TimeUnit.SECONDS));
+                assertEquals(ThingStatusDetail.COMMUNICATION_ERROR,
+                        Objects.requireNonNull(status.get()).getStatusDetail());
+                assertEquals(failure.getMessage() + "; will retry",
+                        Objects.requireNonNull(status.get()).getDescription());
+                handler.dispose();
+                handler.initialize();
+                assertTrue(online.await(10, TimeUnit.SECONDS));
+            } finally {
+                handler.dispose();
+            }
         }
     }
 
@@ -142,7 +211,7 @@ class ControllerHandlerTest {
             var queued = new AtomicBoolean();
             var finished = new CountDownLatch(1);
             doAnswer(call -> {
-                org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                ThingStatusInfo status = call.getArgument(1);
                 if (status.getStatus() == ThingStatus.ONLINE) {
                     if (queued.compareAndSet(false, true)) {
                         // Queue room and zone commands while the initial operation is still active.
@@ -184,7 +253,7 @@ class ControllerHandlerTest {
         when(session.world(any())).thenReturn(WorldState.parse(JsonParser.parseString("""
                 {"allRooms":[{"id":0,"zone":"None"}]}
                 """).getAsJsonObject()));
-        doThrow(new CloudClient.ControllerResponseException(400)).when(session).apply(any());
+        doThrow(new ControllerResponseException(400)).when(session).apply(any());
         var handler = new ControllerHandler(bridge, store) {
             @Override
             CloudClient connect(Identity credentials, Operation operation) {
@@ -197,7 +266,7 @@ class ControllerHandlerTest {
         var recovered = new CountDownLatch(1);
         var description = new AtomicReference<String>();
         doAnswer(call -> {
-            org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+            ThingStatusInfo status = call.getArgument(1);
             if (status.getStatus() == ThingStatus.ONLINE) {
                 if (queued.compareAndSet(false, true)) {
                     handler.roomCommand(0, CHANNEL_MANUAL, OnOffType.ON);
@@ -205,7 +274,7 @@ class ControllerHandlerTest {
                     recovered.countDown();
                 }
             } else if (status.getStatus() == ThingStatus.OFFLINE) {
-                description.set(java.util.Objects.requireNonNull(status.getDescription()));
+                description.set(Objects.requireNonNull(status.getDescription()));
                 failed.countDown();
             }
             return null;
@@ -240,7 +309,7 @@ class ControllerHandlerTest {
             when(session.world(any())).thenAnswer(call -> snapshot.get());
             doAnswer(call -> {
                 if (reject) {
-                    throw new CloudClient.ControllerResponseException(400);
+                    throw new ControllerResponseException(400);
                 }
                 snapshot.set(new WorldState(Map.of(), null, null, null, null, null,
                         new WorldState.Mode(ModeState.ACTIVE, null, null, null), null, null, null));
@@ -256,11 +325,10 @@ class ControllerHandlerTest {
             var queued = new AtomicBoolean();
             var finished = new CountDownLatch(1);
             doAnswer(call -> {
-                org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                ThingStatusInfo status = call.getArgument(1);
                 if (status.getStatus() == ThingStatus.ONLINE) {
                     if (queued.compareAndSet(false, true)) {
-                        handler.handleCommand(new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION),
-                                OnOffType.ON);
+                        handler.handleCommand(new ChannelUID(bridge.getUID(), CHANNEL_VACATION), OnOffType.ON);
                     } else {
                         finished.countDown();
                     }
@@ -278,8 +346,7 @@ class ControllerHandlerTest {
                 assertNull(body.getValue().startTime);
                 assertNull(body.getValue().endTime);
                 verify(session, times(3)).world(any());
-                verify(callback, atLeastOnce()).stateUpdated(
-                        new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION),
+                verify(callback, atLeastOnce()).stateUpdated(new ChannelUID(bridge.getUID(), CHANNEL_VACATION),
                         reject ? OnOffType.OFF : OnOffType.ON);
             } finally {
                 handler.dispose();
@@ -296,7 +363,7 @@ class ControllerHandlerTest {
         var client = mock(CloudClient.class);
         var session = mock(CloudClient.Session.class);
         when(client.open(any())).thenReturn(session);
-        var now = java.time.Instant.parse("2026-10-17T12:00:00Z");
+        var now = Instant.parse("2026-10-17T12:00:00Z");
         var offset = java.time.ZoneOffset.ofHours(2);
         var controllerNow = now.minusSeconds(1500).atZone(offset);
         var start = now.plusSeconds(86400);
@@ -309,13 +376,12 @@ class ControllerHandlerTest {
         doAnswer(call -> {
             ModeRequestDTO body = call.getArgument(0);
             snapshot.set(new WorldState(Map.of(), null, null, null, null, controllerNow,
-                    new WorldState.Mode(ModeState.PLANNED,
-                            java.util.Objects.requireNonNull(body.startTime).toInstant(offset),
-                            java.util.Objects.requireNonNull(body.endTime).toInstant(offset), offset),
+                    new WorldState.Mode(ModeState.PLANNED, Objects.requireNonNull(body.startTime).toInstant(offset),
+                            Objects.requireNonNull(body.endTime).toInstant(offset), offset),
                     null, null, null));
             return null;
         }).when(session).vacation(any());
-        var handler = new ControllerHandler(bridge, store, java.time.Clock.fixed(now, java.time.ZoneOffset.UTC),
+        var handler = new ControllerHandler(bridge, store, Clock.fixed(now, ZoneOffset.UTC),
                 () -> java.time.ZoneId.of("Europe/Copenhagen")) {
             @Override
             CloudClient connect(Identity credentials, Operation operation) {
@@ -326,14 +392,13 @@ class ControllerHandlerTest {
         var queued = new AtomicBoolean();
         var finished = new CountDownLatch(1);
         doAnswer(call -> {
-            org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+            ThingStatusInfo status = call.getArgument(1);
             if (status.getStatus() == ThingStatus.ONLINE) {
                 if (queued.compareAndSet(false, true)) {
-                    handler.handleCommand(new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION_END),
-                            new org.openhab.core.library.types.DateTimeType(laterEnd));
-                    handler.handleCommand(
-                            new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION_START),
-                            new org.openhab.core.library.types.DateTimeType(end));
+                    handler.handleCommand(new ChannelUID(bridge.getUID(), CHANNEL_VACATION_END),
+                            new DateTimeType(laterEnd));
+                    handler.handleCommand(new ChannelUID(bridge.getUID(), CHANNEL_VACATION_START),
+                            new DateTimeType(end));
                 } else {
                     finished.countDown();
                 }
@@ -347,15 +412,14 @@ class ControllerHandlerTest {
             var bodies = ArgumentCaptor.forClass(ModeRequestDTO.class);
             verify(session, times(2)).vacation(bodies.capture());
             assertEquals(start.minusSeconds(1500),
-                    java.util.Objects.requireNonNull(bodies.getAllValues().get(0).startTime).toInstant(offset));
+                    Objects.requireNonNull(bodies.getAllValues().get(0).startTime).toInstant(offset));
             assertEquals(end.minusSeconds(1500),
-                    java.util.Objects.requireNonNull(bodies.getAllValues().get(1).startTime).toInstant(offset));
+                    Objects.requireNonNull(bodies.getAllValues().get(1).startTime).toInstant(offset));
             assertEquals(laterEnd.minusSeconds(1500),
-                    java.util.Objects.requireNonNull(bodies.getAllValues().get(1).endTime).toInstant(offset));
+                    Objects.requireNonNull(bodies.getAllValues().get(1).endTime).toInstant(offset));
             verify(session, times(4)).world(eq(java.time.ZoneId.of("Europe/Copenhagen")));
-            verify(callback, atLeastOnce()).stateUpdated(
-                    new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_VACATION_END),
-                    new org.openhab.core.library.types.DateTimeType(laterEnd));
+            verify(callback, atLeastOnce()).stateUpdated(new ChannelUID(bridge.getUID(), CHANNEL_VACATION_END),
+                    new DateTimeType(laterEnd));
         } finally {
             handler.dispose();
         }
@@ -363,7 +427,7 @@ class ControllerHandlerTest {
 
     @Test
     void clockWarningUsesInstantThresholdAndResetsOnInitialize() throws Exception {
-        var now = java.time.Instant.parse("2026-10-16T12:00:00Z");
+        var now = Instant.parse("2026-10-16T12:00:00Z");
         for (long seconds : new long[] { -301, -300, 0, 300, 301 }) {
             var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "clock").build();
             var identity = Identity.generate();
@@ -372,14 +436,13 @@ class ControllerHandlerTest {
             var client = mock(CloudClient.class);
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
-            var time = now.plusSeconds(seconds).atZone(java.time.ZoneOffset.ofHours(2));
+            var time = now.plusSeconds(seconds).atZone(ZoneOffset.ofHours(2));
             when(session.world(any()))
                     .thenReturn(new WorldState(Map.of(), null, null, null, null, time, null, null, null, null));
             var logger = mock(org.slf4j.Logger.class);
             try (var factory = mockStatic(org.slf4j.LoggerFactory.class, CALLS_REAL_METHODS)) {
                 factory.when(() -> org.slf4j.LoggerFactory.getLogger(ControllerHandler.class)).thenReturn(logger);
-                var handler = new ControllerHandler(bridge, store,
-                        java.time.Clock.fixed(now, java.time.ZoneOffset.UTC)) {
+                var handler = new ControllerHandler(bridge, store, Clock.fixed(now, ZoneOffset.UTC)) {
                     @Override
                     CloudClient connect(Identity credentials, Operation operation) {
                         return client;
@@ -390,9 +453,9 @@ class ControllerHandlerTest {
                 try {
                     for (int lifecycle = 1; lifecycle <= 2; lifecycle++) {
                         var finished = new CountDownLatch(1);
-                        var reports = new java.util.concurrent.atomic.AtomicInteger();
+                        var reports = new AtomicInteger();
                         doAnswer(call -> {
-                            org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                            ThingStatusInfo status = call.getArgument(1);
                             if (status.getStatus() == ThingStatus.ONLINE) {
                                 if (reports.incrementAndGet() == 1) {
                                     // Queue another snapshot in the same lifecycle to verify warning suppression.
@@ -419,7 +482,7 @@ class ControllerHandlerTest {
     @Test
     void pauseCommandsUseConfirmedReadbackIncludingRejectionAndCancellation() throws Exception {
         for (int failure : new int[] { 0, 400, -1 }) {
-            var now = java.time.Instant.parse("2026-10-17T12:00:00Z");
+            var now = Instant.parse("2026-10-17T12:00:00Z");
             var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "pause-test").build();
             var identity = Identity.generate();
             var store = mock(PairingStore.class);
@@ -427,8 +490,8 @@ class ControllerHandlerTest {
             var client = mock(CloudClient.class);
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
-            var initialClock = now.plusSeconds(1500).atZone(java.time.ZoneOffset.UTC);
-            var correctedClock = now.minusSeconds(600).atZone(java.time.ZoneOffset.UTC);
+            var initialClock = now.plusSeconds(1500).atZone(ZoneOffset.UTC);
+            var correctedClock = now.minusSeconds(600).atZone(ZoneOffset.UTC);
             var inactive = new WorldState(Map.of(), null, null, null, null, correctedClock, null,
                     new WorldState.Mode(ModeState.INACTIVE, null, null, null), null, null);
             var snapshot = new AtomicReference<>(
@@ -439,9 +502,9 @@ class ControllerHandlerTest {
                 if (body.state == ModeState.INACTIVE) {
                     snapshot.set(inactive);
                 } else if (failure == -1) {
-                    throw new java.io.IOException("Connection closed");
+                    throw new IOException("Connection closed");
                 } else if (failure == 400) {
-                    throw new CloudClient.ControllerResponseException(400);
+                    throw new ControllerResponseException(400);
                 } else {
                     // Simulate a controller adjusting the requested five minutes to one hour.
                     snapshot.set(new WorldState(Map.of(), null, null, null, null, correctedClock, null,
@@ -456,12 +519,12 @@ class ControllerHandlerTest {
                 }
             };
             var callback = mock(ThingHandlerCallback.class);
-            var reports = new java.util.concurrent.atomic.AtomicInteger();
+            var reports = new AtomicInteger();
             var finished = new CountDownLatch(1);
-            var pause = new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_PAUSE);
-            var until = new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_PAUSE_UNTIL);
+            var pause = new ChannelUID(bridge.getUID(), CHANNEL_PAUSE);
+            var until = new ChannelUID(bridge.getUID(), CHANNEL_PAUSE_UNTIL);
             doAnswer(call -> {
-                org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                ThingStatusInfo status = call.getArgument(1);
                 if (status.getStatus() == ThingStatus.OFFLINE && failure == -1) {
                     // Queue independent work to recover without replaying the failed Pause request.
                     handler.livingZoneCommand(CHANNEL_MANUAL, OnOffType.OFF);
@@ -472,8 +535,7 @@ class ControllerHandlerTest {
                             // Simulate the controller clock being corrected between polls.
                             snapshot.set(inactive);
                             handler.handleCommand(pause, OnOffType.ON);
-                            handler.handleCommand(until,
-                                    new org.openhab.core.library.types.DateTimeType(now.plusSeconds(300)));
+                            handler.handleCommand(until, new DateTimeType(now.plusSeconds(300)));
                         }
                         case 2 -> handler.handleCommand(pause, OnOffType.OFF);
                         default -> finished.countDown();
@@ -487,19 +549,17 @@ class ControllerHandlerTest {
                 assertTrue(finished.await(10, TimeUnit.SECONDS));
                 var bodies = ArgumentCaptor.forClass(ModeRequestDTO.class);
                 verify(session, times(2)).pause(bodies.capture());
-                assertEquals(now.minusSeconds(300), java.util.Objects
-                        .requireNonNull(bodies.getAllValues().get(0).endTime).toInstant(java.time.ZoneOffset.UTC));
+                assertEquals(now.minusSeconds(300), Objects.requireNonNull(bodies.getAllValues().get(0).endTime)
+                        .toInstant(java.time.ZoneOffset.UTC));
                 assertEquals(ModeState.INACTIVE, bodies.getAllValues().get(1).state);
-                verify(callback, never()).stateUpdated(until,
-                        new org.openhab.core.library.types.DateTimeType(now.plusSeconds(300)));
+                verify(callback, never()).stateUpdated(until, new DateTimeType(now.plusSeconds(300)));
                 if (failure == 0) {
-                    verify(callback, atLeastOnce()).stateUpdated(until,
-                            new org.openhab.core.library.types.DateTimeType(now.plusSeconds(3600)));
+                    verify(callback, atLeastOnce()).stateUpdated(until, new DateTimeType(now.plusSeconds(3600)));
                 }
                 verify(callback, atLeastOnce()).stateUpdated(pause, OnOffType.OFF);
-                verify(callback, atLeastOnce()).stateUpdated(until, org.openhab.core.types.UnDefType.UNDEF);
+                verify(callback, atLeastOnce()).stateUpdated(until, UnDefType.UNDEF);
                 if (failure == -1) {
-                    verify(callback, atLeastOnce()).stateUpdated(pause, org.openhab.core.types.UnDefType.UNDEF);
+                    verify(callback, atLeastOnce()).stateUpdated(pause, UnDefType.UNDEF);
                 }
                 verify(session, never()).vacation(any());
             } finally {
@@ -527,11 +587,11 @@ class ControllerHandlerTest {
                     "modes":[{"type":"AtHome","state":"Inactive"}]}
                     """).getAsJsonObject();
             when(session.world(any())).thenAnswer(call -> WorldState.parse(json));
-            var writes = new java.util.concurrent.atomic.AtomicInteger();
+            var writes = new AtomicInteger();
             doAnswer(call -> {
                 if (writes.getAndIncrement() == 0) {
                     if (failure == 400) {
-                        throw new CloudClient.ControllerResponseException(400);
+                        throw new ControllerResponseException(400);
                     } else if (failure == -1) {
                         throw new java.io.IOException("Connection closed");
                     }
@@ -547,20 +607,19 @@ class ControllerHandlerTest {
                 }
             };
             var callback = mock(ThingHandlerCallback.class);
-            var reports = new java.util.concurrent.atomic.AtomicInteger();
+            var reports = new AtomicInteger();
             var finished = new CountDownLatch(1);
-            var channel = new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_HOME);
-            var currentStateChannel = new org.openhab.core.thing.ChannelUID(bridge.getUID(), CHANNEL_CURRENT_STATE);
+            var channel = new ChannelUID(bridge.getUID(), CHANNEL_HOME);
+            var currentStateChannel = new ChannelUID(bridge.getUID(), CHANNEL_CURRENT_STATE);
             doAnswer(call -> {
-                org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                ThingStatusInfo status = call.getArgument(1);
                 if (status.getStatus() == ThingStatus.OFFLINE && failure == -1) {
                     handler.livingZoneCommand(CHANNEL_MANUAL, OnOffType.OFF);
                 }
                 if (status.getStatus() == ThingStatus.ONLINE) {
                     switch (reports.incrementAndGet()) {
                         case 1 -> {
-                            verify(callback).stateUpdated(currentStateChannel,
-                                    new org.openhab.core.library.types.StringType("AtHome"));
+                            verify(callback).stateUpdated(currentStateChannel, new StringType("AtHome"));
                             verify(callback).stateUpdated(channel, OnOffType.OFF);
                             handler.selectHome(0, OnOffType.ON);
                             verify(session, never()).home(any());
@@ -582,18 +641,17 @@ class ControllerHandlerTest {
                 assertTrue(finished.await(10, TimeUnit.SECONDS));
                 var bodies = ArgumentCaptor.forClass(ModeRequestDTO.class);
                 verify(session, times(4)).home(bodies.capture());
-                assertEquals(java.util.List.of(0), bodies.getAllValues().get(0).rooms);
-                assertEquals(java.util.List.of(1, 2), bodies.getAllValues().get(1).rooms);
+                assertEquals(List.of(0), bodies.getAllValues().get(0).rooms);
+                assertEquals(List.of(1, 2), bodies.getAllValues().get(1).rooms);
                 assertEquals(ModeState.INACTIVE, bodies.getAllValues().get(2).state);
                 assertNull(bodies.getAllValues().get(2).rooms);
-                assertEquals(java.util.List.of(1, 2), bodies.getAllValues().get(3).rooms);
-                verify(callback, times(5)).stateUpdated(currentStateChannel,
-                        new org.openhab.core.library.types.StringType("AtHome"));
+                assertEquals(List.of(1, 2), bodies.getAllValues().get(3).rooms);
+                verify(callback, times(5)).stateUpdated(currentStateChannel, new StringType("AtHome"));
                 verify(callback, atLeastOnce()).stateUpdated(channel, OnOffType.ON);
                 verify(callback, atLeastOnce()).stateUpdated(channel, OnOffType.OFF);
                 if (failure == -1) {
-                    verify(callback, atLeastOnce()).stateUpdated(channel, org.openhab.core.types.UnDefType.UNDEF);
-                    verify(callback).stateUpdated(currentStateChannel, org.openhab.core.types.UnDefType.UNDEF);
+                    verify(callback, atLeastOnce()).stateUpdated(channel, UnDefType.UNDEF);
+                    verify(callback).stateUpdated(currentStateChannel, UnDefType.UNDEF);
                 }
                 verify(session, never()).pause(any());
                 verify(session, never()).vacation(any());
@@ -631,17 +689,16 @@ class ControllerHandlerTest {
             handler.setCallback(callback);
             try {
                 handler.initialize();
-                var capturedStatus = ArgumentCaptor.forClass(org.openhab.core.thing.ThingStatusInfo.class);
+                var capturedStatus = ArgumentCaptor.forClass(ThingStatusInfo.class);
                 verify(callback).statusUpdated(eq(bridge), capturedStatus.capture());
                 assertEquals(ThingStatus.OFFLINE, capturedStatus.getValue().getStatus());
-                assertEquals(org.openhab.core.thing.ThingStatusDetail.CONFIGURATION_ERROR,
-                        capturedStatus.getValue().getStatusDetail());
+                assertEquals(ThingStatusDetail.CONFIGURATION_ERROR, capturedStatus.getValue().getStatusDetail());
                 verifyNoInteractions(client);
                 handler.dispose();
                 handler.configureTimeZone(configured);
                 var online = new CountDownLatch(1);
                 doAnswer(call -> {
-                    org.openhab.core.thing.ThingStatusInfo status = call.getArgument(1);
+                    ThingStatusInfo status = call.getArgument(1);
                     if (status.getStatus() == ThingStatus.ONLINE) {
                         online.countDown();
                     }

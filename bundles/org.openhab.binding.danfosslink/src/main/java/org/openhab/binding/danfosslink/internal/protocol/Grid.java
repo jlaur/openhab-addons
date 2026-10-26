@@ -13,6 +13,7 @@
 package org.openhab.binding.danfosslink.internal.protocol;
 
 import java.io.Closeable;
+import java.io.EOFException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -20,6 +21,10 @@ import java.util.Map;
 
 import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.openhab.binding.danfosslink.internal.exception.CloudServerException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerConnectionTimeoutException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerUnavailableException;
+import org.openhab.binding.danfosslink.internal.exception.RelayConnectionClosedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -80,13 +85,14 @@ public final class Grid implements Closeable {
         }
     }
 
-    public Transport call(X509CertificateHolder controller) throws Exception {
+    public Transport call(X509CertificateHolder controller) throws IOException {
         String peerId = Identity.peerId(controller);
+        logger.trace("MDG configuring controller peer whitelist");
         request(20, 21, Wire.fields().text(2, peerId));
         return route(request(10, 11, Wire.fields().text(2, peerId).text(3, "cc_json")), Transport.pinned(controller));
     }
 
-    public X509CertificateHolder pair(String code) throws Exception {
+    public X509CertificateHolder pair(String code) throws IOException {
         if (!code.matches("[0-9]{9}")) {
             throw new IllegalArgumentException("The cloud pairing code must contain nine digits");
         }
@@ -127,9 +133,15 @@ public final class Grid implements Closeable {
     }
 
     private Transport route(Wire.Fields reply, Transport.Verifier verifier) throws IOException {
-        long result = reply.number(2);
-        if (result != 0) {
-            throw new IOException("MDG call failed with result " + result + (result == 1 ? " (peer unavailable)" : ""));
+        long resultCode = reply.number(2);
+        CallResult result = CallResult.fromCode(resultCode);
+        logger.trace("MDG call result {} ({})", result, resultCode);
+        switch (result) {
+            case OK -> {
+            }
+            case PEER_NOT_AVAILABLE -> throw new ControllerUnavailableException();
+            case SERVER_ERROR -> throw new CloudServerException();
+            default -> throw new IOException("MDG call failed with result " + result + " (" + resultCode + ")");
         }
         var routing = Wire.decodeFields(reply.bytes(3));
         var endpoints = routing.repeatedBytes(4);
@@ -152,13 +164,27 @@ public final class Grid implements Closeable {
                     .text(5, "tlsv1_2").build());
             stage = "waiting for relay to connect controller";
             for (int count = 0; count < 10; count++) {
-                var message = Wire.decode(peer.receive());
+                byte[] packet;
+                try {
+                    packet = peer.receive();
+                } catch (EOFException e) {
+                    throw new RelayConnectionClosedException(e);
+                }
+                var message = Wire.decode(packet);
+                logger.trace("MDG relay response type {}", message.type());
                 if (message.type() == 1) {
                     continue;
                 }
                 if (message.type() == 3) {
-                    logger.debug("MDG relay reported error {}", message.fields().number(1));
-                    throw new IOException("MDG relay error " + message.fields().number(1));
+                    long errorCode = message.fields().number(1);
+                    RelayError error = RelayError.fromCode(errorCode);
+                    logger.debug("MDG relay reported error {} ({})", error, errorCode);
+                    // A RoutingError is never permission to proceed, even if its code is NO_ERROR.
+                    throw switch (error) {
+                        case SERVER_ERROR -> new CloudServerException();
+                        case PEER_TIMEOUT -> new ControllerConnectionTimeoutException();
+                        default -> new IOException("MDG relay error " + error + " (" + errorCode + ")");
+                    };
                 }
                 if (message.type() != 2) {
                     throw new IOException("Unexpected relay response");
@@ -172,9 +198,13 @@ public final class Grid implements Closeable {
                 return peer;
             }
             throw new IOException("Relay did not connect the controller");
-        } catch (IOException | RuntimeException e) {
-            logger.debug("Controller session failed during {} ({})", stage, e.getClass().getSimpleName());
-            peer.close();
+        } catch (IOException e) {
+            logger.debug("Controller session failed during {}", stage, e);
+            try {
+                peer.close();
+            } catch (IOException closing) {
+                e.addSuppressed(closing);
+            }
             throw e;
         }
     }

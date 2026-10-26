@@ -1,0 +1,38 @@
+/*
+ * Copyright (c) 2010-2026 Contributors to the openHAB project
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+package org.openhab.binding.danfosslink.internal.exception;
+
+import java.io.IOException;
+
+import org.eclipse.jdt.annotation.NonNullByDefault;
+
+/**
+ * A controller rejection with its HTTP status code.
+ *
+ * @author Jacob Laursen - Initial contribution
+ */
+@NonNullByDefault
+public class ControllerResponseException extends IOException {
+    private static final long serialVersionUID = 1L;
+
+    private final int status;
+
+    public ControllerResponseException(int status) {
+        super("Controller returned HTTP status " + status);
+        this.status = status;
+    }
+
+    public int status() {
+        return status;
+    }
+}

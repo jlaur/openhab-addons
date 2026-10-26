@@ -32,6 +32,7 @@ import org.bouncycastle.asn1.teletrust.TeleTrusTNamedCurves;
 import org.bouncycastle.math.ec.ECPoint;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
+import org.openhab.binding.danfosslink.internal.exception.ControllerResponseException;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Pairing;
 import org.openhab.binding.danfosslink.internal.protocol.Wire;
@@ -86,13 +87,41 @@ class ProtocolTest {
                 """;
         assertTrue(CloudClient.response(response.getBytes(StandardCharsets.UTF_8), 1).getAsJsonObject()
                 .getAsJsonArray("allRooms").isEmpty());
-        var rejected = assertThrows(CloudClient.ControllerResponseException.class,
+        var rejected = assertThrows(ControllerResponseException.class,
                 () -> CloudClient.response(response.replace("200", "403").getBytes(StandardCharsets.UTF_8), 1));
         assertEquals(403, rejected.status());
         assertThrows(IOException.class, () -> CloudClient
                 .response(response.replace("\"id\":1", "\"id\":2").getBytes(StandardCharsets.UTF_8), 1));
         assertThrows(IOException.class, () -> CloudClient.response("{}".getBytes(StandardCharsets.UTF_8), 1));
         assertThrows(IOException.class, () -> CloudClient.response("not JSON".getBytes(StandardCharsets.UTF_8), 1));
+    }
+
+    @Test
+    void emptyWriteAcknowledgementsAreAccepted() throws Exception {
+        for (String content : new String[] { "null", "" }) {
+            String response = "{\"id\":1,\"data\":{\"type\":\"JsonWebResponse\",\"data\":{\"status\":200,\"content\":"
+                    + content + "}}}";
+            assertTrue(CloudClient.response(response.getBytes(StandardCharsets.UTF_8), 1).isJsonNull());
+        }
+    }
+
+    @Test
+    void malformedResponseShapesProduceIoExceptions() {
+        for (String response : new String[] { "null", "[]", "42", "{\"id\":1,\"data\":null}", "{\"id\":1,\"data\":[]}",
+                "{\"id\":1,\"data\":{\"type\":\"JsonWebResponse\",\"data\":null}}",
+                "{\"id\":1,\"data\":{\"type\":\"JsonWebResponse\",\"data\":[]}}" }) {
+            assertThrows(IOException.class, () -> CloudClient.response(response.getBytes(StandardCharsets.UTF_8), 1),
+                    response);
+        }
+        for (String field : new String[] { "id", "status" }) {
+            for (String invalid : new String[] { "null", "{}", "[]", "true", "\"invalid\"", "1.5", "4294967297" }) {
+                String response = "{\"id\":" + (field.equals("id") ? invalid : "1")
+                        + ",\"data\":{\"type\":\"JsonWebResponse\",\"data\":{\"status\":"
+                        + (field.equals("status") ? invalid : "200") + ",\"content\":null}}}";
+                assertThrows(IOException.class,
+                        () -> CloudClient.response(response.getBytes(StandardCharsets.UTF_8), 1), response);
+            }
+        }
     }
 
     @Test

@@ -38,6 +38,11 @@ import org.openhab.binding.danfosslink.internal.WorldState;
 import org.openhab.binding.danfosslink.internal.action.PairingActions;
 import org.openhab.binding.danfosslink.internal.config.ControllerConfiguration;
 import org.openhab.binding.danfosslink.internal.discovery.RoomDiscoveryService;
+import org.openhab.binding.danfosslink.internal.exception.CloudServerException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerConnectionTimeoutException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerResponseException;
+import org.openhab.binding.danfosslink.internal.exception.ControllerUnavailableException;
+import org.openhab.binding.danfosslink.internal.exception.RelayConnectionClosedException;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Operation;
@@ -393,7 +398,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         refresh();
     }
 
-    CloudClient connect(Identity identity, Operation operation) throws Exception {
+    CloudClient connect(Identity identity, Operation operation) throws IOException {
         return new CloudClient(identity, operation);
     }
 
@@ -445,7 +450,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                             } catch (IllegalArgumentException e) {
                                 logger.debug("Controller {} rejected vacation command: {}", getThing().getUID(),
                                         e.getMessage());
-                            } catch (CloudClient.ControllerResponseException e) {
+                            } catch (ControllerResponseException e) {
                                 logger.debug("Controller {} rejected vacation request with HTTP {}",
                                         getThing().getUID(), e.status());
                                 stage = "reading state after rejected vacation request";
@@ -464,7 +469,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                             } catch (IllegalArgumentException e) {
                                 logger.debug("Controller {} rejected pause command: {}", getThing().getUID(),
                                         e.getMessage());
-                            } catch (CloudClient.ControllerResponseException e) {
+                            } catch (ControllerResponseException e) {
                                 logger.debug("Controller {} rejected pause request with HTTP {}", getThing().getUID(),
                                         e.status());
                                 stage = "reading state after rejected pause request";
@@ -482,7 +487,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                             } catch (IllegalArgumentException e) {
                                 logger.debug("Controller {} rejected Home command after refresh: {}",
                                         getThing().getUID(), e.getMessage());
-                            } catch (CloudClient.ControllerResponseException e) {
+                            } catch (ControllerResponseException e) {
                                 logger.debug("Controller {} rejected Home request with HTTP {}", getThing().getUID(),
                                         e.status());
                                 stage = "reading state after rejected Home request";
@@ -512,7 +517,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                     }
                 }
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             synchronized (lifecycle) {
                 if (current(operation)) {
                     for (String channel : VACATION_CHANNELS) {
@@ -521,14 +526,16 @@ public class ControllerHandler extends BaseBridgeHandler {
                     publishPause(null);
                     updateState(CHANNEL_HOME, UnDefType.UNDEF);
                     updateState(CHANNEL_CURRENT_STATE, UnDefType.UNDEF);
-                    logger.debug("Controller {} operation failed during {} ({})", getThing().getUID(), stage,
-                            e.getClass().getSimpleName());
-                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                            pin == null
-                                    ? e instanceof CloudClient.ControllerResponseException rejection
-                                            ? "Controller returned HTTP " + rejection.status() + " while " + stage
-                                            : "Cloud communication failed while " + stage + "; will retry"
-                                    : "Pairing failed; obtain a fresh code and retry the pair action");
+                    logger.debug("Controller {} operation failed during {}", getThing().getUID(), stage, e);
+                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, pin == null ? switch (e) {
+                        case ControllerUnavailableException unavailable -> unavailable.getMessage() + "; will retry";
+                        case CloudServerException server -> server.getMessage() + "; will retry";
+                        case ControllerConnectionTimeoutException timeout -> timeout.getMessage() + "; will retry";
+                        case RelayConnectionClosedException closed -> closed.getMessage() + "; will retry";
+                        case ControllerResponseException rejection ->
+                            "Controller returned HTTP " + rejection.status() + " while " + stage;
+                        default -> "Cloud communication failed while " + stage + "; will retry";
+                    } : "Pairing failed; obtain a fresh code and retry the pair action");
                 }
             }
         } finally {

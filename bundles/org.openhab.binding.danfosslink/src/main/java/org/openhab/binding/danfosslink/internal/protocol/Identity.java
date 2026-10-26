@@ -17,6 +17,7 @@ import java.io.StringReader;
 import java.io.StringWriter;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -38,6 +39,7 @@ import org.bouncycastle.crypto.util.PrivateKeyFactory;
 import org.bouncycastle.crypto.util.PrivateKeyInfoFactory;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.bouncycastle.openssl.PEMParser;
+import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.util.io.pem.PemObject;
 import org.bouncycastle.util.io.pem.PemWriter;
@@ -59,24 +61,29 @@ public final class Identity {
         this.privateKey = privateKey;
     }
 
-    public static Identity generate() throws Exception {
-        var generator = KeyPairGenerator.getInstance("EC", PROVIDER);
-        generator.initialize(new ECGenParameterSpec("secp256r1"));
-        var pair = generator.generateKeyPair();
-        var subject = new X500Name("C=DK,O=Trifork,CN=localhost");
-        var now = Instant.now();
-        var extensions = new JcaX509ExtensionUtils();
-        var builder = new JcaX509v3CertificateBuilder(subject,
-                new BigInteger(159, new SecureRandom()).add(BigInteger.ONE), Date.from(now.minus(1, ChronoUnit.DAYS)),
-                Date.from(now.plus(7300, ChronoUnit.DAYS)), subject, pair.getPublic());
-        builder.addExtension(Extension.subjectKeyIdentifier, false,
-                extensions.createSubjectKeyIdentifier(pair.getPublic()));
-        builder.addExtension(Extension.authorityKeyIdentifier, false,
-                extensions.createAuthorityKeyIdentifier(pair.getPublic()));
-        builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
-        var certificate = builder
-                .build(new JcaContentSignerBuilder("SHA256withECDSA").setProvider(PROVIDER).build(pair.getPrivate()));
-        return new Identity(certificate, PrivateKeyFactory.createKey(pair.getPrivate().getEncoded()));
+    public static Identity generate() throws IOException {
+        try {
+            var generator = KeyPairGenerator.getInstance("EC", PROVIDER);
+            generator.initialize(new ECGenParameterSpec("secp256r1"));
+            var pair = generator.generateKeyPair();
+            var subject = new X500Name("C=DK,O=Trifork,CN=localhost");
+            var now = Instant.now();
+            var extensions = new JcaX509ExtensionUtils();
+            var builder = new JcaX509v3CertificateBuilder(subject,
+                    new BigInteger(159, new SecureRandom()).add(BigInteger.ONE),
+                    Date.from(now.minus(1, ChronoUnit.DAYS)), Date.from(now.plus(7300, ChronoUnit.DAYS)), subject,
+                    pair.getPublic());
+            builder.addExtension(Extension.subjectKeyIdentifier, false,
+                    extensions.createSubjectKeyIdentifier(pair.getPublic()));
+            builder.addExtension(Extension.authorityKeyIdentifier, false,
+                    extensions.createAuthorityKeyIdentifier(pair.getPublic()));
+            builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(false));
+            var certificate = builder.build(
+                    new JcaContentSignerBuilder("SHA256withECDSA").setProvider(PROVIDER).build(pair.getPrivate()));
+            return new Identity(certificate, PrivateKeyFactory.createKey(pair.getPrivate().getEncoded()));
+        } catch (GeneralSecurityException | OperatorCreationException e) {
+            throw new IOException("Cannot generate client identity", e);
+        }
     }
 
     public String encode() throws IOException {
@@ -94,10 +101,14 @@ public final class Identity {
         }
     }
 
-    public static String peerId(X509CertificateHolder certificate) throws Exception {
-        // MDG hashes the subjectPublicKey BIT STRING, not the certificate or complete SPKI.
-        return HexFormat.ofDelimiter(":").formatHex(MessageDigest.getInstance("SHA-1")
-                .digest(certificate.getSubjectPublicKeyInfo().getPublicKeyData().getBytes()));
+    public static String peerId(X509CertificateHolder certificate) throws IOException {
+        try {
+            // MDG hashes the subjectPublicKey BIT STRING, not the certificate or complete SPKI.
+            return HexFormat.ofDelimiter(":").formatHex(MessageDigest.getInstance("SHA-1")
+                    .digest(certificate.getSubjectPublicKeyInfo().getPublicKeyData().getBytes()));
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Cannot calculate controller peer ID", e);
+        }
     }
 
     public static byte[] publicKeyPem(X509CertificateHolder certificate) throws IOException {

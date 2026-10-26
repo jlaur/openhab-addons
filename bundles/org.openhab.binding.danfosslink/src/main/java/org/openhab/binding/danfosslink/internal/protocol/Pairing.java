@@ -17,6 +17,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -56,47 +57,51 @@ public final class Pairing {
     }
 
     public static void run(Exchange connection, byte[] password, byte[] serverPublicKey, byte[] clientPublicKey)
-            throws Exception {
-        connection.send(Wire.message(1).fixed32(1, 0xf09d8ca7).number(2, 1).number(3, 0).build());
-        var hello = receive(connection, 2);
-        if (hello.number(1) != 1 || hello.number(2) != 0) {
-            throw new IOException("Unsupported PACE version");
-        }
-        byte[] key = passwordKey(password, serverPublicKey, clientPublicKey, hello.bytes(3));
-        byte[] ciphertext = hello.bytes(5);
-        if (ciphertext.length != 64) {
-            throw new IOException("Unexpected PACE scalar length");
-        }
-        // LuaCrypto zero-pads the 16-byte Kpi for AES-256 and ignores the bignum IV
-        // argument.
-        var aes = Cipher.getInstance("AES/CBC/NoPadding");
-        aes.init(Cipher.DECRYPT_MODE, new SecretKeySpec(Arrays.copyOf(key, 32), "AES"),
-                new IvParameterSpec(new byte[16]));
-        BigInteger secret = new BigInteger(1, Arrays.copyOf(aes.doFinal(ciphertext), 40));
-        Arrays.fill(key, (byte) 0);
-        BigInteger first = scalar();
-        connection.send(Wire.message(3).bytes(1, CURVE.getG().multiply(first).getEncoded(false)).build());
-        ECPoint shared = point(receive(connection, 3).bytes(1)).multiply(first);
-        ECPoint generator = CURVE.getG().multiply(secret).add(shared);
-        if (generator.isInfinity()) {
-            throw new IOException("Invalid PACE generator");
-        }
-        BigInteger second = scalar();
-        ECPoint ours = generator.multiply(second);
-        connection.send(Wire.message(4).bytes(1, ours.getEncoded(false)).build());
-        ECPoint theirs = point(receive(connection, 4).bytes(1));
-        byte[] macKey = MessageDigest.getInstance("SHA-256").digest(theirs.multiply(second).getEncoded(false));
+            throws IOException {
         try {
-            connection.send(Wire.message(5).bytes(1, proof(macKey, theirs.getEncoded(false))).build());
-            byte[] received = receive(connection, 5).bytes(1);
-            if (!MessageDigest.isEqual(received, proof(macKey, ours.getEncoded(false)))) {
-                throw new IOException("PACE proof mismatch; obtain a fresh pairing code");
+            connection.send(Wire.message(1).fixed32(1, 0xf09d8ca7).number(2, 1).number(3, 0).build());
+            var hello = receive(connection, 2);
+            if (hello.number(1) != 1 || hello.number(2) != 0) {
+                throw new IOException("Unsupported PACE version");
             }
-        } finally {
-            Arrays.fill(macKey, (byte) 0);
+            byte[] key = passwordKey(password, serverPublicKey, clientPublicKey, hello.bytes(3));
+            byte[] ciphertext = hello.bytes(5);
+            if (ciphertext.length != 64) {
+                throw new IOException("Unexpected PACE scalar length");
+            }
+            // LuaCrypto zero-pads the 16-byte Kpi for AES-256 and ignores the bignum IV
+            // argument.
+            var aes = Cipher.getInstance("AES/CBC/NoPadding");
+            aes.init(Cipher.DECRYPT_MODE, new SecretKeySpec(Arrays.copyOf(key, 32), "AES"),
+                    new IvParameterSpec(new byte[16]));
+            BigInteger secret = new BigInteger(1, Arrays.copyOf(aes.doFinal(ciphertext), 40));
+            Arrays.fill(key, (byte) 0);
+            BigInteger first = scalar();
+            connection.send(Wire.message(3).bytes(1, CURVE.getG().multiply(first).getEncoded(false)).build());
+            ECPoint shared = point(receive(connection, 3).bytes(1)).multiply(first);
+            ECPoint generator = CURVE.getG().multiply(secret).add(shared);
+            if (generator.isInfinity()) {
+                throw new IOException("Invalid PACE generator");
+            }
+            BigInteger second = scalar();
+            ECPoint ours = generator.multiply(second);
+            connection.send(Wire.message(4).bytes(1, ours.getEncoded(false)).build());
+            ECPoint theirs = point(receive(connection, 4).bytes(1));
+            byte[] macKey = MessageDigest.getInstance("SHA-256").digest(theirs.multiply(second).getEncoded(false));
+            try {
+                connection.send(Wire.message(5).bytes(1, proof(macKey, theirs.getEncoded(false))).build());
+                byte[] received = receive(connection, 5).bytes(1);
+                if (!MessageDigest.isEqual(received, proof(macKey, ours.getEncoded(false)))) {
+                    throw new IOException("PACE proof mismatch; obtain a fresh pairing code");
+                }
+            } finally {
+                Arrays.fill(macKey, (byte) 0);
+            }
+            connection.send(Wire.message(6).text(1, DanfossLinkBindingConstants.APP_NAME).build());
+            receive(connection, 6).text(1);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("PACE cryptographic exchange failed", e);
         }
-        connection.send(Wire.message(6).text(1, DanfossLinkBindingConstants.APP_NAME).build());
-        receive(connection, 6).text(1);
     }
 
     public static byte[] passwordKey(byte[] password, byte[] server, byte[] client, byte[] salt) throws IOException {
@@ -115,10 +120,14 @@ public final class Pairing {
         return ((KeyParameter) kdf.generateDerivedParameters(128)).getKey();
     }
 
-    public static byte[] proof(byte[] key, byte[] point) throws Exception {
-        var mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(key, "HmacSHA256"));
-        return HexFormat.of().formatHex(mac.doFinal(point)).getBytes(StandardCharsets.US_ASCII);
+    public static byte[] proof(byte[] key, byte[] point) throws IOException {
+        try {
+            var mac = Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            return HexFormat.of().formatHex(mac.doFinal(point)).getBytes(StandardCharsets.US_ASCII);
+        } catch (GeneralSecurityException e) {
+            throw new IOException("Cannot calculate PACE proof", e);
+        }
     }
 
     private static BigInteger scalar() {
