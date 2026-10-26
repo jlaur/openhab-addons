@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,11 +41,13 @@ import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.GoogleToken;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.LaunchRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.LaunchResponse;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.NestToken;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.PathlightRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Protect;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Session;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Structure;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.SubscribeRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.SubscribeResponse;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Where;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
@@ -67,6 +70,7 @@ final class NativeClient {
     private final Map<String, Cursor> cursors = new LinkedHashMap<>();
     private final Map<String, Protect> devices = new LinkedHashMap<>();
     private final Map<String, Structure> structures = new LinkedHashMap<>();
+    private final Map<String, Map<String, String>> roomsByBucket = new LinkedHashMap<>();
     private final AtomicBoolean wakeRequested = new AtomicBoolean();
     private volatile @Nullable Request activePoll;
     private volatile boolean closed;
@@ -149,6 +153,34 @@ final class NativeClient {
 
     Map<String, Protect> devices() {
         return Map.copyOf(devices);
+    }
+
+    Map<String, String> rooms() {
+        Map<String, String> rooms = new LinkedHashMap<>();
+        var ambiguous = new HashSet<String>();
+        roomsByBucket.values().forEach(bucket -> bucket.forEach((id, name) -> {
+            String previous = rooms.put(id, name);
+            if (previous != null && !previous.equals(name)) {
+                ambiguous.add(id);
+            }
+        }));
+        ambiguous.forEach(rooms::remove);
+        return Map.copyOf(rooms);
+    }
+
+    void setPathlight(String id, NativePathlightMode mode) throws Failure, InterruptedException {
+        if (token.isEmpty() || System.currentTimeMillis() >= renewAt) {
+            refresh();
+        }
+        Protect protect = devices.get(id);
+        if (protect == null || !mode.supported(protect)) {
+            throw new Failure(FailureKind.PROTOCOL, "Pathlight mode is not supported for this Protect");
+        }
+        // ALWAYS_ON sets enable=false, continuous=true in the app; send both flags as a single update.
+        request(transport + "/v2/put/topaz." + encode(id), "POST", headers(),
+                GSON.toJson(
+                        new PathlightRequest(mode == NativePathlightMode.ON, mode == NativePathlightMode.ALWAYS_ON)),
+                false, 30000);
     }
 
     void refresh() throws Failure, InterruptedException {
@@ -368,6 +400,8 @@ final class NativeClient {
         Map<String, Cursor> nextCursors = snapshot ? new LinkedHashMap<>() : new LinkedHashMap<>(cursors);
         Map<String, Protect> nextDevices = snapshot ? new LinkedHashMap<>() : new LinkedHashMap<>(devices);
         Map<String, Structure> nextStructures = snapshot ? new LinkedHashMap<>() : new LinkedHashMap<>(structures);
+        Map<String, Map<String, String>> nextRooms = snapshot ? new LinkedHashMap<>()
+                : new LinkedHashMap<>(roomsByBucket);
         for (@Nullable
         Bucket bucket : buckets) {
             if (bucket == null || bucket.key == null) {
@@ -386,6 +420,13 @@ final class NativeClient {
                 if (id.isBlank()) {
                     throw protocol();
                 }
+                for (String field : List.of("night_light_enable", "night_light_continuous")) {
+                    var flag = bucket.value.get(field);
+                    if (flag != null && !flag.isJsonNull()
+                            && !(flag.isJsonPrimitive() && flag.getAsJsonPrimitive().isBoolean())) {
+                        throw protocol();
+                    }
+                }
                 nextDevices.put(id, merge(nextDevices.get(id), json(bucket.value.toString(), Protect.class)));
             } else if (bucket.key.startsWith("structure.")) {
                 String id = bucket.key.substring(10);
@@ -403,6 +444,23 @@ final class NativeClient {
                 structure.name = update.name != null ? update.name : old == null ? null : old.name;
                 structure.away = update.away != null ? update.away : old == null ? null : old.away;
                 nextStructures.put(id, structure);
+            } else if (bucket.key.startsWith("where.")) {
+                try {
+                    Where where = json(bucket.value.toString(), Where.class);
+                    if (where.wheres != null) {
+                        Map<String, String> rooms = new LinkedHashMap<>();
+                        for (var room : where.wheres) {
+                            if (room != null && room.id != null && !room.id.isBlank() && room.name != null
+                                    && !room.name.isBlank()) {
+                                rooms.put(room.id, room.name);
+                            }
+                        }
+                        nextRooms.put(bucket.key, Map.copyOf(rooms));
+                    }
+                } catch (Failure e) {
+                    // Room names are optional enrichment and must not interrupt Protect observations.
+                    nextRooms.remove(bucket.key);
+                }
             }
         }
         cursors.clear();
@@ -411,10 +469,18 @@ final class NativeClient {
         devices.putAll(nextDevices);
         structures.clear();
         structures.putAll(nextStructures);
+        roomsByBucket.clear();
+        roomsByBucket.putAll(nextRooms);
     }
 
     private static Protect merge(@Nullable Protect old, Protect update) {
         Protect p = new Protect();
+        p.whereId = update.whereId != null ? update.whereId : old == null ? null : old.whereId;
+        p.nightLightEnabled = update.nightLightEnabled != null ? update.nightLightEnabled
+                : old == null ? null : old.nightLightEnabled;
+        p.nightLightContinuous = update.nightLightContinuous != null ? update.nightLightContinuous
+                : old == null ? null : old.nightLightContinuous;
+        p.powerType = update.powerType != null ? update.powerType : old == null ? null : old.powerType;
         p.smoke = update.smoke != null ? update.smoke : old == null ? null : old.smoke;
         p.carbonMonoxide = update.carbonMonoxide != null ? update.carbonMonoxide
                 : old == null ? null : old.carbonMonoxide;

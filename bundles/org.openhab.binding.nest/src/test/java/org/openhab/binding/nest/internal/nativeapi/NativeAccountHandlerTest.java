@@ -26,6 +26,8 @@ import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.client.api.Request;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.openhab.core.io.net.http.HttpClientFactory;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
@@ -40,9 +42,10 @@ import org.openhab.core.thing.binding.builder.BridgeBuilder;
  */
 @NonNullByDefault
 class NativeAccountHandlerTest {
-    @Test
+    @ParameterizedTest
+    @ValueSource(booleans = { false, true })
     @Timeout(20)
-    void modeCommandWakesSubscriptionAndPublishesOnlyObservedState() throws Exception {
+    void modeCommandWakesSubscriptionAndPublishesOnlyObservedState(boolean pathlight) throws Exception {
         var bridge = BridgeBuilder.create(NativeThingHandlerFactory.ACCOUNT, "commands").build();
         var store = mock(NativeCredentialStore.class);
         var credentials = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
@@ -77,16 +80,20 @@ class NativeAccountHandlerTest {
                     polling.countDown();
                     assertTrue(aborted.await(10, TimeUnit.SECONDS));
                     throw new ExecutionException(cause.get());
-                } else if (url.endsWith("/v2/put/structure.home")) {
+                } else if (url.endsWith(pathlight ? "/v2/put/topaz.home" : "/v2/put/structure.home")) {
                     assertEquals(false, java.util.Objects.requireNonNull(handler.structures().get("home")).away);
+                    assertEquals(NativePathlightMode.OFF, NativePathlightMode
+                            .observed(java.util.Objects.requireNonNull(handler.devices().get("home"))));
                     writes.incrementAndGet();
                     body = "{}";
                 } else if (url.endsWith("/app_launch")) {
                     body = """
                             {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
                              "updated_buckets":[{"object_key":"structure.home","object_revision":1,
-                             "object_timestamp":10,"value":{"away":%s}}]}
-                            """.formatted(writes.get() > 0);
+                             "object_timestamp":10,"value":{"away":%s}},
+                             {"object_key":"topaz.home","object_revision":1,"object_timestamp":10,
+                             "value":{"night_light_enable":%s,"night_light_continuous":false,"wired_or_battery":0}}]}
+                            """.formatted(!pathlight && writes.get() > 0, pathlight && writes.get() > 0);
                 } else {
                     throw new AssertionError("Unexpected endpoint");
                 }
@@ -103,7 +110,9 @@ class NativeAccountHandlerTest {
             ThingStatusInfo status = invocation.getArgument(1);
             bridge.setStatusInfo(status);
             var structure = handler.structures().get("home");
-            if (structure != null && Boolean.TRUE.equals(structure.away)) {
+            var protect = handler.devices().get("home");
+            if (pathlight ? protect != null && NativePathlightMode.observed(protect) == NativePathlightMode.ON
+                    : structure != null && Boolean.TRUE.equals(structure.away)) {
                 observed.countDown();
             }
             return null;
@@ -113,13 +122,16 @@ class NativeAccountHandlerTest {
             handler.initialize();
             assertTrue(polling.await(10, TimeUnit.SECONDS));
             assertFalse(handler.setAway("unknown", true));
-            assertTrue(handler.setAway("home", true));
+            assertFalse(handler.setPathlight("unknown", NativePathlightMode.ON));
+            assertTrue(
+                    pathlight ? handler.setPathlight("home", NativePathlightMode.ON) : handler.setAway("home", true));
             assertTrue(observed.await(10, TimeUnit.SECONDS));
             assertEquals(1, writes.get());
         } finally {
             handler.dispose();
         }
         assertFalse(handler.setAway("home", false));
+        assertFalse(handler.setPathlight("home", NativePathlightMode.OFF));
     }
 
     @Test
