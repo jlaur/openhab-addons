@@ -1,6 +1,6 @@
 # Nest Binding
 
-The Nest binding integrates devices by [Nest](https://store.google.com/category/connected_home) using the [Smart Device Management](https://developers.google.com/nest/device-access/api) (SDM) API, and provides read-only Nest Protect support through the native Nest API.
+The Nest binding integrates devices by [Nest](https://store.google.com/category/connected_home) using the [Smart Device Management](https://developers.google.com/nest/device-access/api) (SDM) API, and provides Nest Protect observations, Pathlight settings, and home/away control through the native Nest API.
 
 To use the SDM API, you must first [register](https://developers.google.com/nest/device-access/registration) and pay a non-refundable US$5 registration fee.
 
@@ -29,7 +29,7 @@ For Protects, use the native account bridge below; no SDM project is needed.
 | Thing                 | Description                           | Thing Type       |
 | --------------------- | ------------------------------------- | ---------------- |
 | Nest Native Account   | Native API account bridge             | native_account   |
-| Nest Protect          | Read-only smoke and CO observations   | native_protect   |
+| Nest Protect          | Smoke/CO observations and Pathlight   | native_protect   |
 | Nest Home             | Home/away mode of a Nest home         | native_structure |
 
 To use the Nest SDM API, add an Account Thing using the UI and configure the required parameters.
@@ -39,7 +39,7 @@ After configuring an Account Thing, you can use it to discover the connected dev
 
 The native API is an undocumented cloud API used by the Nest app.
 This implementation supports Google accounts authenticated through a browser; it does not implement legacy Nest email/password login.
-Protect channels expose observations only and provide no commands to hush an alarm or initiate a test.
+Protects provide read-only alarm observations and a writable Pathlight mode; there are no commands to hush an alarm or initiate a test.
 Native structure Things support reading and setting a home's home/away mode.
 
 1. Add a **Nest Native Account** bridge. It initially waits for authentication.
@@ -49,6 +49,8 @@ Native structure Things support reading and setting a home's home/away mode.
    Both values are action inputs, not Thing configuration parameters.
 1. Once the bridge is ONLINE, scan for Nest Things and add the discovered Protects and homes from the Inbox.
    Discovery uses the account's latest successful snapshot.
+   Protect labels include their Nest room name when available, for example `Nest Protect - Hallway`; otherwise they use the device ID.
+   Room names do not affect Thing identifiers. A new scan refreshes Inbox labels, but does not rename Things already added to openHAB.
 
 Use openHAB's Thing action interface to submit the credentials once.
 The action is also exposed through the standard REST actions API: list the actions with `GET /rest/actions/{bridgeUID}`, then submit the two named inputs to the returned Authenticate action UID with `POST /rest/actions/{bridgeUID}/{actionUID}`.
@@ -83,7 +85,7 @@ Bridge nest:native_account:home "Nest Native Account" {
 | last-test-started   | DateTime    | Start of the latest manual sound check                   |
 | last-test-ended     | DateTime    | End of the latest manual sound check                     |
 
-All channels are read-only.
+These observation channels are read-only.
 Missing or unknown values are UNDEF; a missing connectivity field does not mean the detector is offline.
 A Thing being ONLINE means its account observation is available, unless the detector explicitly reports itself offline.
 A manual sound check is represented by its timestamps, not by mapping an alarm state to a test state.
@@ -92,7 +94,30 @@ Refresh commands interrupt long polling and request a new account snapshot.
 The binding rotates Google cookies at ten-minute intervals and renews tokens before their effective expiry.
 It retries temporary communication failures and rate limits; rejected Google credentials require the Authenticate action.
 Cloud observations may be delayed or unavailable and do not replace the detector's local alarm.
-The research probe verified renewal and a short restart; the Java binding still needs live runtime validation, including longer outages and multi-day operation.
+The research probe verified renewal and a short restart; longer outages and multi-day operation still need validation.
+
+### Pathlight Control
+
+The `native_protect` Thing also exposes a writable `pathlight-mode` String channel:
+
+| Command     | Behavior                                       |
+| ----------- | ---------------------------------------------- |
+| OFF         | Disable Pathlight                              |
+| ON          | Illuminate when motion is detected in darkness |
+| ALWAYS_ON   | Illuminate continuously while dark; wired only |
+
+This channel reports the configured behavior, not whether the light is currently illuminated.
+The binding writes the app's `night_light_enable` and `night_light_continuous` flags together and refreshes the account snapshot.
+It waits for Nest's reported configuration rather than predicting channel state.
+`ALWAYS_ON` is accepted only when the device's power type is explicitly reported as wired; loss of mains power does not change that device type.
+Missing mode data is UNDEF.
+
+Nest may take up to an hour to apply settings to a wired Protect, or up to a day for a battery Protect.
+Pressing the Protect button once requests an immediate settings update.
+See [Google's Pathlight documentation](https://support.google.com/googlehome/answer/9243107?hl=en).
+The cloud reporting the requested mode does not confirm that the detector has applied it yet.
+Brightness is not currently exposed.
+Pathlight writes are covered by simulated protocol tests and still need live device validation.
 
 ### Native Structure Channels
 
@@ -119,7 +144,7 @@ After a write, the binding requests a fresh snapshot; it does not predict the re
 Automatic presence detection or another client can subsequently change the mode again.
 
 The write request format is based on the [native API implementation in the Domoticz Nest plugin](https://github.com/FilipDem/Domoticz-NEST-plugin/blob/master/nest.py).
-Home/away writes still need live validation against Nest; automated tests use simulated responses.
+Home/away writes have been confirmed working in a live openHAB installation; automated tests use simulated responses.
 
 ## Account Configuration
 

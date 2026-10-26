@@ -29,7 +29,7 @@
 			<bridge-type-ref id="native_account"/>
 		</supported-bridge-type-refs>
 		<label>Nest Protect</label>
-		<description>Read-only smoke and carbon monoxide detector observations through the native Nest API</description>
+		<description>Smoke and carbon monoxide detector observations and Pathlight settings through the native Nest API</description>
 		<semantic-equipment-tag>SmokeDetector</semantic-equipment-tag>
 		<channels>
 			<channel id="smoke-status" typeId="native-smoke-status"/>
@@ -40,6 +40,7 @@
 			<channel id="replace-by" typeId="native-replace-by"/>
 			<channel id="last-test-started" typeId="native-last-test-started"/>
 			<channel id="last-test-ended" typeId="native-last-test-ended"/>
+			<channel id="pathlight-mode" typeId="native-pathlight-mode"/>
 		</channels>
 		<config-description>
 			<parameter name="deviceId" type="text" required="true">
@@ -48,6 +49,24 @@
 			</parameter>
 		</config-description>
 	</thing-type>
+	<channel-type id="native-pathlight-mode">
+		<item-type>String</item-type>
+		<label>Pathlight Mode</label>
+		<description>Configured night light behavior, not whether the light is currently illuminated. Always On requires a
+			wired Protect.</description>
+		<tags>
+			<tag>Control</tag>
+			<tag>Light</tag>
+		</tags>
+		<state readOnly="false">
+			<options>
+				<option value="OFF">Off</option>
+				<option value="ON">Motion Activated</option>
+				<option value="ALWAYS_ON">Always On When Dark (Wired Only)</option>
+			</options>
+		</state>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
 	<channel-type id="native-away">
 		<item-type>Switch</item-type>
 		<label>Away</label>

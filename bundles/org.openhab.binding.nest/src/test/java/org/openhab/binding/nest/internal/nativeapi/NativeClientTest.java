@@ -30,6 +30,8 @@ import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.http.HttpFields;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos;
 import org.openhab.core.types.UnDefType;
@@ -41,6 +43,162 @@ import org.openhab.core.types.UnDefType;
  */
 @NonNullByDefault
 class NativeClientTest {
+    @Test
+    void roomMetadataSurvivesPartialUpdatesAndTracksRenamesAndRemoval() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        var snapshot = Objects.requireNonNull(NativeClient.GSON.fromJson("""
+                {"updated_buckets":[
+                {"object_key":"topaz.device","object_revision":1,"object_timestamp":10,
+                 "value":{"where_id":"hall","smoke_status":0}},
+                {"object_key":"where.home","object_revision":1,"object_timestamp":10,
+                 "value":{"wheres":[{"where_id":"hall","name":"Hallway"},null,{"where_id":"blank","name":" "}]}}]}
+                """, NativeDtos.LaunchResponse.class));
+        client.accept(snapshot.buckets, true);
+        assertEquals("Hallway", client.rooms().get("hall"));
+        assertEquals(1, client.rooms().size());
+        assertEquals("hall", Objects.requireNonNull(client.devices().get("device")).whereId);
+        client.accept(
+                Objects.requireNonNull(NativeClient.GSON.fromJson(UPDATE, NativeDtos.SubscribeResponse.class)).objects,
+                false);
+        assertEquals("hall", Objects.requireNonNull(client.devices().get("device")).whereId);
+        assertEquals("Hallway", client.rooms().get("hall"));
+        var where = snapshot.buckets.get(1);
+        where.value = new com.google.gson.JsonObject();
+        client.accept(List.of(where), false);
+        assertEquals("Hallway", client.rooms().get("hall"));
+        where.value = NativeClient.GSON.fromJson("""
+                {"wheres":[{"where_id":"hall","name":"Landing"}]}
+                """, com.google.gson.JsonObject.class);
+        client.accept(List.of(where), false);
+        assertEquals("Landing", client.rooms().get("hall"));
+        where.value = NativeClient.GSON.fromJson("{\"wheres\":[]}", com.google.gson.JsonObject.class);
+        client.accept(List.of(where), false);
+        assertTrue(client.rooms().isEmpty());
+        where.value = NativeClient.GSON.fromJson("""
+                {"wheres":[{"where_id":"hall","name":"Hallway"}]}
+                """, com.google.gson.JsonObject.class);
+        client.accept(snapshot.buckets, true);
+        assertEquals("Hallway", client.rooms().get("hall"));
+        client.accept(List.of(), true);
+        assertTrue(client.rooms().isEmpty());
+    }
+
+    @Test
+    void malformedRoomMetadataDoesNotInterruptProtectObservations() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        var snapshot = Objects.requireNonNull(NativeClient.GSON.fromJson("""
+                {"updated_buckets":[
+                {"object_key":"topaz.device","object_revision":1,"object_timestamp":10,"value":{"smoke_status":3}},
+                {"object_key":"where.home","object_revision":1,"object_timestamp":10,"value":{"wheres":false}}]}
+                """, NativeDtos.LaunchResponse.class));
+        client.accept(snapshot.buckets, true);
+        assertEquals(3, Objects.requireNonNull(client.devices().get("device")).smoke);
+        assertTrue(client.rooms().isEmpty());
+    }
+
+    private static final String PATHLIGHT_SNAPSHOT = """
+            {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
+             "updated_buckets":[{"object_key":"topaz.device","object_revision":1,"object_timestamp":10,
+             "value":{"night_light_enable":false,"night_light_continuous":false,"wired_or_battery":0}}]}
+            """;
+
+    @ParameterizedTest
+    @CsvSource({ "OFF,false,false", "ON,true,false", "ALWAYS_ON,false,true" })
+    void pathlightWritesBothFlagsWithoutPredictingState(NativePathlightMode mode, boolean enabled, boolean continuous)
+            throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"session\"}"),
+                response(200, PATHLIGHT_SNAPSHOT), response(200, "{}"), response(503, "private failure"));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        client.refresh();
+        client.setPathlight("device", mode);
+        verify(http).newRequest("https://transport.nest.com/v2/put/topaz.device");
+        Request write = requests.getLast();
+        verify(write).method("POST");
+        verify(write).header("Authorization", "Basic session");
+        var content = ArgumentCaptor.forClass(ContentProvider.class);
+        verify(write).content(content.capture());
+        var body = new StringBuilder();
+        content.getValue().forEach(buffer -> body.append(java.nio.charset.StandardCharsets.UTF_8.decode(buffer)));
+        var dto = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(body.toString(), NativeDtos.PathlightRequest.class));
+        assertEquals(enabled, dto.enabled);
+        assertEquals(continuous, dto.continuous);
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+        assertThrows(NativeClient.Failure.class, () -> client.setPathlight("missing", mode));
+        assertEquals(5, requests.size());
+        assertThrows(NativeClient.Failure.class, () -> client.setPathlight("device", mode));
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+    }
+
+    @Test
+    void pathlightUpdatesMergeAndRejectInvalidFlagsAtomically() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        var snapshot = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(PATHLIGHT_SNAPSHOT, NativeDtos.LaunchResponse.class));
+        client.accept(snapshot.buckets, true);
+        var update = Objects.requireNonNull(NativeClient.GSON.fromJson("""
+                {"objects":[{"object_key":"topaz.device","object_revision":2,"object_timestamp":11,
+                "value":{"night_light_enable":true}}]}
+                """, NativeDtos.SubscribeResponse.class));
+        client.accept(update.objects, false);
+        var protect = Objects.requireNonNull(client.devices().get("device"));
+        assertEquals(NativePathlightMode.ON, NativePathlightMode.observed(protect));
+        assertEquals(0, protect.powerType);
+        update.objects.getFirst().value.addProperty("night_light_continuous", true);
+        client.accept(update.objects, false);
+        assertEquals(NativePathlightMode.ALWAYS_ON,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+        update.objects.getFirst().value.addProperty("night_light_enable", "invalid");
+        assertThrows(NativeClient.Failure.class, () -> client.accept(update.objects, false));
+        assertEquals(NativePathlightMode.ALWAYS_ON,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+        client.accept(snapshot.buckets, true);
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+    }
+
+    @Test
+    void continuousPathlightRequiresKnownWiredModelNotPresentLinePower() throws Exception {
+        var protect = new NativeDtos.Protect();
+        assertNull(NativePathlightMode.observed(protect));
+        protect.nightLightEnabled = true;
+        assertNull(NativePathlightMode.observed(protect));
+        assertFalse(NativePathlightMode.ALWAYS_ON.supported(protect));
+        assertTrue(NativePathlightMode.ON.supported(protect));
+        assertTrue(NativePathlightMode.OFF.supported(protect));
+        protect.powerType = 1;
+        protect.linePower = true;
+        assertFalse(NativePathlightMode.ALWAYS_ON.supported(protect));
+        protect.powerType = 0;
+        protect.linePower = false;
+        assertTrue(NativePathlightMode.ALWAYS_ON.supported(protect));
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var client = new NativeClient(
+                transport(requests, response(200, "{\"access_token\":\"google\"}"), response(200, "{\"jwt\":\"nest\"}"),
+                        response(200, "{\"userid\":\"u\",\"access_token\":\"session\"}"),
+                        response(200, PATHLIGHT_SNAPSHOT.replace("\"wired_or_battery\":0", "\"wired_or_battery\":1"))),
+                state, ignored -> {
+                });
+        client.refresh();
+        assertThrows(NativeClient.Failure.class, () -> client.setPathlight("device", NativePathlightMode.ALWAYS_ON));
+        assertEquals(4, requests.size());
+    }
+
     private static final String STRUCTURE_SNAPSHOT = """
             {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
              "updated_buckets":[{"object_key":"structure.home","object_revision":1,"object_timestamp":10,

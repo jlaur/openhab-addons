@@ -41,7 +41,7 @@ import org.openhab.core.thing.binding.ThingHandlerService;
 import org.openhab.core.types.Command;
 
 /**
- * Owns a serialized account session, its credentials, Protect observations, and structure commands.
+ * Owns a serialized account session, its credentials, observations, and device and structure commands.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -53,11 +53,12 @@ public class NativeAccountHandler extends BaseBridgeHandler {
     private volatile @Nullable AccountRun accountRun;
     private volatile Map<String, Protect> devices = Map.of();
     private volatile Map<String, Structure> structures = Map.of();
+    private volatile Map<String, String> rooms = Map.of();
     private volatile boolean refreshRequested;
     private volatile CompletableFuture<@Nullable Void> stopped = CompletableFuture.completedFuture(null);
 
     private static final class AccountRun {
-        final Map<String, AwayCommand> commands = new ConcurrentHashMap<>();
+        final Map<String, PendingCommand> commands = new ConcurrentHashMap<>();
         final AtomicLong commandGeneration = new AtomicLong();
         volatile boolean acceptingCommands;
         volatile long session;
@@ -72,7 +73,12 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         }
     }
 
-    private record AwayCommand(long session, long connection, boolean away) {
+    @FunctionalInterface
+    private interface AccountCommand {
+        void execute(NativeClient api) throws NativeClient.Failure, InterruptedException;
+    }
+
+    private record PendingCommand(long session, long connection, AccountCommand command) {
     }
 
     NativeAccountHandler(Bridge bridge, HttpClientFactory httpFactory, NativeCredentialStore store) {
@@ -157,6 +163,7 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         }
         devices = Map.of();
         structures = Map.of();
+        rooms = Map.of();
         context.acceptingCommands = false;
         updateStatus(ThingStatus.UNKNOWN);
         try {
@@ -200,13 +207,13 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         try {
             boolean wrote = false;
             for (var entry : context.commands.entrySet()) {
-                AwayCommand command = entry.getValue();
+                PendingCommand command = entry.getValue();
                 if (context.commands.remove(entry.getKey(), command) && command.session() == session
                         && command.connection() == context.commandGeneration.get()) {
                     if (!current(session)) {
                         return;
                     }
-                    api.setAway(entry.getKey(), command.away());
+                    command.command().execute(api);
                     wrote = true;
                 }
             }
@@ -221,6 +228,7 @@ public class NativeAccountHandler extends BaseBridgeHandler {
             }
             devices = api.devices();
             structures = api.structures();
+            rooms = api.rooms();
             context.acceptingCommands = true;
             updateStatus(ThingStatus.ONLINE);
             for (var thing : getThing().getThings()) {
@@ -288,7 +296,20 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         return structures;
     }
 
+    Map<String, String> rooms() {
+        return rooms;
+    }
+
     boolean setAway(String id, boolean away) {
+        return structures.containsKey(id) && enqueue("structure." + id, api -> api.setAway(id, away));
+    }
+
+    boolean setPathlight(String id, NativePathlightMode mode) {
+        Protect protect = devices.get(id);
+        return protect != null && mode.supported(protect) && enqueue("topaz." + id, api -> api.setPathlight(id, mode));
+    }
+
+    private boolean enqueue(String key, AccountCommand command) {
         long session = generation.get();
         AccountRun context = accountRun;
         if (context == null) {
@@ -296,15 +317,15 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         }
         long connection = context.commandGeneration.get();
         if (!context.acceptingCommands || context.session != session || !current(session)
-                || getThing().getStatus() != ThingStatus.ONLINE || !structures.containsKey(id)) {
+                || getThing().getStatus() != ThingStatus.ONLINE) {
             return false;
         }
         NativeClient api = context.client;
         if (api == null) {
             return false;
         }
-        // Bound pending commands to one per known structure; the latest requested mode wins.
-        context.commands.put(id, new AwayCommand(session, connection, away));
+        // Bound pending commands to one per known bucket; the latest requested mode wins.
+        context.commands.put(key, new PendingCommand(session, connection, command));
         api.wakePoll();
         return true;
     }
@@ -344,6 +365,7 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         accountRun = null;
         devices = Map.of();
         structures = Map.of();
+        rooms = Map.of();
         if (context != null) {
             context.commands.clear();
             ScheduledFuture<?> scheduled = context.scheduled;

@@ -135,6 +135,16 @@ public final class NativeDtos {
         public Boolean away;
     }
 
+    public static class Where {
+        public List<Room> wheres;
+    }
+
+    public static class Room {
+        @SerializedName("where_id")
+        public String id;
+        public String name;
+    }
+
     public static class AwayRequest {
         public boolean away;
         @SerializedName("away_timestamp")
@@ -148,7 +158,27 @@ public final class NativeDtos {
         }
     }
 
+    public static class PathlightRequest {
+        @SerializedName("night_light_enable")
+        public boolean enabled;
+        @SerializedName("night_light_continuous")
+        public boolean continuous;
+
+        public PathlightRequest(boolean enabled, boolean continuous) {
+            this.enabled = enabled;
+            this.continuous = continuous;
+        }
+    }
+
     public static class Protect {
+        @SerializedName("where_id")
+        public String whereId;
+        @SerializedName("night_light_enable")
+        public Boolean nightLightEnabled;
+        @SerializedName("night_light_continuous")
+        public Boolean nightLightContinuous;
+        @SerializedName("wired_or_battery")
+        public Integer powerType;
         @SerializedName("smoke_status")
         public Integer smoke;
         @SerializedName("co_status")

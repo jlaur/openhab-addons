@@ -43,12 +43,15 @@ public class NativeDiscoveryService extends AbstractThingHandlerDiscoveryService
             return;
         }
         ThingUID bridge = thingHandler.getThing().getUID();
-        for (String id : thingHandler.devices().keySet()) {
+        var rooms = thingHandler.rooms();
+        thingHandler.devices().forEach((id, protect) -> {
             String uid = UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8)).toString();
+            String roomId = protect.whereId;
+            String room = roomId == null ? null : rooms.get(roomId);
             thingDiscovered(DiscoveryResultBuilder.create(new ThingUID(NativeThingHandlerFactory.PROTECT, bridge, uid))
-                    .withBridge(bridge).withLabel("Nest Protect " + id).withProperty("deviceId", id)
-                    .withRepresentationProperty("deviceId").build());
-        }
+                    .withBridge(bridge).withLabel(room == null ? "Nest Protect " + id : "Nest Protect - " + room)
+                    .withProperty("deviceId", id).withRepresentationProperty("deviceId").build());
+        });
         thingHandler.structures().forEach((id, structure) -> {
             String uid = UUID.nameUUIDFromBytes(id.getBytes(StandardCharsets.UTF_8)).toString();
             String name = structure.name;

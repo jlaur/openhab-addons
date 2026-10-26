@@ -66,12 +66,27 @@ public class NativeProtectHandler extends BaseThingHandler {
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
+        if (disposed) {
+            return;
+        }
         if (command == RefreshType.REFRESH) {
             Bridge bridge = getBridge();
             if (bridge != null && bridge.getHandler() instanceof NativeAccountHandler account) {
                 account.requestRefresh();
             }
             refreshFromBridge();
+        } else if ("pathlight-mode".equals(channelUID.getId()) && command instanceof StringType value) {
+            NativePathlightMode mode;
+            try {
+                mode = NativePathlightMode.valueOf(value.toString());
+            } catch (IllegalArgumentException e) {
+                return;
+            }
+            Bridge bridge = getBridge();
+            if (bridge != null && bridge.getHandler() instanceof NativeAccountHandler account
+                    && !account.setPathlight(deviceId, mode)) {
+                refreshFromBridge();
+            }
         }
     }
 
@@ -102,6 +117,8 @@ public class NativeProtectHandler extends BaseThingHandler {
         updateState("replace-by", date(p.replaceBy));
         updateState("last-test-started", date(p.testStarted));
         updateState("last-test-ended", date(p.testEnded));
+        NativePathlightMode mode = NativePathlightMode.observed(p);
+        updateState("pathlight-mode", mode == null ? UnDefType.UNDEF : new StringType(mode.name()));
         if (Boolean.FALSE.equals(p.online)) {
             updateStatus(ThingStatusDetail.COMMUNICATION_ERROR, "Protect reports offline");
         } else {
