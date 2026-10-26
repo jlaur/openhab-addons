@@ -17,6 +17,7 @@ import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNull;
 
+import com.google.gson.JsonObject;
 import com.google.gson.annotations.SerializedName;
 
 /**
@@ -125,7 +126,26 @@ public final class NativeDtos {
         public Long revision;
         @SerializedName("object_timestamp")
         public Long timestamp;
-        public Protect value;
+        // Bucket values have different schemas; the client selects the DTO using the object_key prefix.
+        public JsonObject value;
+    }
+
+    public static class Structure {
+        public String name;
+        public Boolean away;
+    }
+
+    public static class AwayRequest {
+        public boolean away;
+        @SerializedName("away_timestamp")
+        public long timestamp;
+        @SerializedName("away_setter")
+        public int setter = 0;
+
+        public AwayRequest(boolean away, long timestamp) {
+            this.away = away;
+            this.timestamp = timestamp;
+        }
     }
 
     public static class Protect {

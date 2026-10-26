@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -28,6 +29,7 @@ import org.eclipse.jetty.client.HttpClient;
 import org.eclipse.jetty.util.HttpCookieStore;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Credentials;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Protect;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Structure;
 import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.io.net.http.HttpClientFactory;
 import org.openhab.core.thing.Bridge;
@@ -39,7 +41,7 @@ import org.openhab.core.thing.binding.ThingHandlerService;
 import org.openhab.core.types.Command;
 
 /**
- * Owns a serialized account session, its credentials, and read-only Protect observations.
+ * Owns a serialized account session, its credentials, Protect observations, and structure commands.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -50,10 +52,15 @@ public class NativeAccountHandler extends BaseBridgeHandler {
     private final AtomicLong generation = new AtomicLong();
     private volatile @Nullable AccountRun accountRun;
     private volatile Map<String, Protect> devices = Map.of();
+    private volatile Map<String, Structure> structures = Map.of();
     private volatile boolean refreshRequested;
     private volatile CompletableFuture<@Nullable Void> stopped = CompletableFuture.completedFuture(null);
 
     private static final class AccountRun {
+        final Map<String, AwayCommand> commands = new ConcurrentHashMap<>();
+        final AtomicLong commandGeneration = new AtomicLong();
+        volatile boolean acceptingCommands;
+        volatile long session;
         final ScheduledExecutorService executor;
         volatile @Nullable NativeClient client;
         volatile @Nullable ScheduledFuture<?> scheduled;
@@ -63,6 +70,9 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         AccountRun(ScheduledExecutorService executor) {
             this.executor = executor;
         }
+    }
+
+    private record AwayCommand(long session, long connection, boolean away) {
     }
 
     NativeAccountHandler(Bridge bridge, HttpClientFactory httpFactory, NativeCredentialStore store) {
@@ -119,6 +129,7 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         }
         long session = generation.incrementAndGet();
         ScheduledExecutorService executor = context.executor;
+        context.commands.clear();
         ScheduledFuture<?> scheduled = context.scheduled;
         if (scheduled != null) {
             scheduled.cancel(false);
@@ -145,6 +156,8 @@ public class NativeAccountHandler extends BaseBridgeHandler {
             return;
         }
         devices = Map.of();
+        structures = Map.of();
+        context.acceptingCommands = false;
         updateStatus(ThingStatus.UNKNOWN);
         try {
             store.save(credentials);
@@ -159,6 +172,7 @@ public class NativeAccountHandler extends BaseBridgeHandler {
                 }
             });
             context.client = api;
+            context.session = session;
             if (!current(session)) {
                 api.cancel();
                 closeHttp(context);
@@ -184,7 +198,19 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         long delay = 1;
         boolean retrySnapshot = false;
         try {
-            if (snapshot || refreshRequested) {
+            boolean wrote = false;
+            for (var entry : context.commands.entrySet()) {
+                AwayCommand command = entry.getValue();
+                if (context.commands.remove(entry.getKey(), command) && command.session() == session
+                        && command.connection() == context.commandGeneration.get()) {
+                    if (!current(session)) {
+                        return;
+                    }
+                    api.setAway(entry.getKey(), command.away());
+                    wrote = true;
+                }
+            }
+            if (snapshot || refreshRequested || wrote) {
                 refreshRequested = false;
                 api.refresh();
             } else {
@@ -194,6 +220,8 @@ public class NativeAccountHandler extends BaseBridgeHandler {
                 return;
             }
             devices = api.devices();
+            structures = api.structures();
+            context.acceptingCommands = true;
             updateStatus(ThingStatus.ONLINE);
             for (var thing : getThing().getThings()) {
                 if (!current(session)) {
@@ -201,12 +229,18 @@ public class NativeAccountHandler extends BaseBridgeHandler {
                 }
                 if (thing.getHandler() instanceof NativeProtectHandler protect) {
                     protect.refreshFromBridge();
+                } else if (thing.getHandler() instanceof NativeStructureHandler structure) {
+                    structure.refreshFromBridge();
                 }
             }
         } catch (NativeClient.Failure e) {
             if (!current(session)) {
                 return;
             }
+            // Never replay a queued mode change after an outage: the user may have changed it elsewhere.
+            context.acceptingCommands = false;
+            context.commandGeneration.incrementAndGet();
+            context.commands.clear();
             if (e.kind == NativeClient.FailureKind.AUTHENTICATION) {
                 updateStatus(ThingStatusDetail.CONFIGURATION_ERROR, e.getMessage());
                 return;
@@ -219,6 +253,9 @@ public class NativeAccountHandler extends BaseBridgeHandler {
             Thread.currentThread().interrupt();
             return;
         } catch (RuntimeException e) {
+            context.acceptingCommands = false;
+            context.commandGeneration.incrementAndGet();
+            context.commands.clear();
             if (current(session)) {
                 updateStatus(ThingStatusDetail.COMMUNICATION_ERROR,
                         "Could not process or persist account state; use the authenticate action to retry");
@@ -247,8 +284,38 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         return devices;
     }
 
+    Map<String, Structure> structures() {
+        return structures;
+    }
+
+    boolean setAway(String id, boolean away) {
+        long session = generation.get();
+        AccountRun context = accountRun;
+        if (context == null) {
+            return false;
+        }
+        long connection = context.commandGeneration.get();
+        if (!context.acceptingCommands || context.session != session || !current(session)
+                || getThing().getStatus() != ThingStatus.ONLINE || !structures.containsKey(id)) {
+            return false;
+        }
+        NativeClient api = context.client;
+        if (api == null) {
+            return false;
+        }
+        // Bound pending commands to one per known structure; the latest requested mode wins.
+        context.commands.put(id, new AwayCommand(session, connection, away));
+        api.wakePoll();
+        return true;
+    }
+
     void requestRefresh() {
         refreshRequested = true;
+        AccountRun context = accountRun;
+        NativeClient api = context == null ? null : context.client;
+        if (api != null) {
+            api.wakePoll();
+        }
     }
 
     @Override
@@ -276,7 +343,9 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         AccountRun context = accountRun;
         accountRun = null;
         devices = Map.of();
+        structures = Map.of();
         if (context != null) {
+            context.commands.clear();
             ScheduledFuture<?> scheduled = context.scheduled;
             if (scheduled != null) {
                 scheduled.cancel(false);

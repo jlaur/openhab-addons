@@ -30,6 +30,7 @@ For Protects, use the native account bridge below; no SDM project is needed.
 | --------------------- | ------------------------------------- | ---------------- |
 | Nest Native Account   | Native API account bridge             | native_account   |
 | Nest Protect          | Read-only smoke and CO observations   | native_protect   |
+| Nest Home             | Home/away mode of a Nest home         | native_structure |
 
 To use the Nest SDM API, add an Account Thing using the UI and configure the required parameters.
 After configuring an Account Thing, you can use it to discover the connected devices, which are then added to the Inbox.
@@ -38,14 +39,15 @@ After configuring an Account Thing, you can use it to discover the connected dev
 
 The native API is an undocumented cloud API used by the Nest app.
 This implementation supports Google accounts authenticated through a browser; it does not implement legacy Nest email/password login.
-It exposes observations only and provides no commands to hush an alarm or initiate a test.
+Protect channels expose observations only and provide no commands to hush an alarm or initiate a test.
+Native structure Things support reading and setting a home's home/away mode.
 
 1. Add a **Nest Native Account** bridge. It initially waits for authentication.
 1. Follow the [browser capture procedure](docs/native-authentication.md#initial-browser-capture) to obtain the complete Google issueToken request URL and the Cookie request-header value from a successful Google RotateCookies request.
 1. Invoke the bridge's **Authenticate** Thing action with `issueTokenUrl` and `cookieHeader`.
    Its boolean result indicates whether the request was accepted; watch the bridge status for the authentication result.
    Both values are action inputs, not Thing configuration parameters.
-1. Once the bridge is ONLINE, scan for Nest Things and add the discovered Protects from the Inbox.
+1. Once the bridge is ONLINE, scan for Nest Things and add the discovered Protects and homes from the Inbox.
    Discovery uses the account's latest successful snapshot.
 
 Use openHAB's Thing action interface to submit the credentials once.
@@ -85,12 +87,39 @@ All channels are read-only.
 Missing or unknown values are UNDEF; a missing connectivity field does not mean the detector is offline.
 A Thing being ONLINE means its account observation is available, unless the detector explicitly reports itself offline.
 A manual sound check is represented by its timestamps, not by mapping an alarm state to a test state.
-Refresh commands request a new account snapshot after the current request completes, which can take up to two minutes during long polling.
+Refresh commands interrupt long polling and request a new account snapshot.
 
 The binding rotates Google cookies at ten-minute intervals and renews tokens before their effective expiry.
 It retries temporary communication failures and rate limits; rejected Google credentials require the Authenticate action.
 Cloud observations may be delayed or unavailable and do not replace the detector's local alarm.
 The research probe verified renewal and a short restart; the Java binding still needs live runtime validation, including longer outages and multi-day operation.
+
+### Native Structure Channels
+
+A `native_structure` Thing represents one Nest home under the `native_account` bridge.
+Discovery uses the home's name when available and its stable `structureId` as the identifier.
+Manual configuration requires that identifier without the `structure.` prefix:
+
+```java
+Bridge nest:native_account:home "Nest Native Account" {
+    Thing native_structure house "Nest Home" [ structureId="REPLACE_WITH_DISCOVERED_ID" ]
+}
+```
+
+| Channel ID | Item Type | Description                                  |
+| ---------- | --------- | -------------------------------------------- |
+| away       | Switch    | ON = Away, OFF = Home; readable and writable |
+
+Changing this channel can affect other Nest devices and home/away automations in the same home.
+The channel follows Nest's reported state, including changes made in the app; missing state is UNDEF.
+Commands interrupt long polling and are serialized with account requests.
+Pending commands for the same home are replaced by the latest command.
+Commands are rejected while the bridge is offline and are not replayed after communication failures.
+After a write, the binding requests a fresh snapshot; it does not predict the resulting channel state.
+Automatic presence detection or another client can subsequently change the mode again.
+
+The write request format is based on the [native API implementation in the Domoticz Nest plugin](https://github.com/FilipDem/Domoticz-NEST-plugin/blob/master/nest.py).
+Home/away writes still need live validation against Nest; automated tests use simulated responses.
 
 ## Account Configuration
 

@@ -28,7 +28,7 @@ import org.osgi.service.component.annotations.Component;
 import org.osgi.service.component.annotations.Reference;
 
 /**
- * Creates handlers for native accounts and Protects independently of the SDM implementation.
+ * Creates handlers for native accounts, Protects, and structures independently of the SDM implementation.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -37,6 +37,7 @@ import org.osgi.service.component.annotations.Reference;
 public class NativeThingHandlerFactory extends BaseThingHandlerFactory {
     static final ThingTypeUID ACCOUNT = new ThingTypeUID("nest", "native_account");
     static final ThingTypeUID PROTECT = new ThingTypeUID("nest", "native_protect");
+    static final ThingTypeUID STRUCTURE = new ThingTypeUID("nest", "native_structure");
     private final HttpClientFactory httpFactory;
     private final StorageService storage;
     private final StorageCipher cipher;
@@ -51,7 +52,7 @@ public class NativeThingHandlerFactory extends BaseThingHandlerFactory {
 
     @Override
     public boolean supportsThingType(ThingTypeUID type) {
-        return ACCOUNT.equals(type) || PROTECT.equals(type);
+        return ACCOUNT.equals(type) || PROTECT.equals(type) || STRUCTURE.equals(type);
     }
 
     @Override
@@ -59,6 +60,9 @@ public class NativeThingHandlerFactory extends BaseThingHandlerFactory {
         if (ACCOUNT.equals(thing.getThingTypeUID()) && thing instanceof Bridge bridge) {
             return new NativeAccountHandler(bridge, httpFactory, new NativeCredentialStore(
                     storage.getStorage("nest.native.accounts"), cipher, thing.getUID().toString()));
+        }
+        if (STRUCTURE.equals(thing.getThingTypeUID())) {
+            return new NativeStructureHandler(thing);
         }
         return PROTECT.equals(thing.getThingTypeUID()) ? new NativeProtectHandler(thing) : null;
     }

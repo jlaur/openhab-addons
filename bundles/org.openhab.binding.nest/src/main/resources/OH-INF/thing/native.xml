@@ -8,6 +8,22 @@
 		<description>A Google account accessing Nest Protect through the native Nest API. Authenticate using the Thing action.</description>
 		<semantic-equipment-tag>WebService</semantic-equipment-tag>
 	</bridge-type>
+	<thing-type id="native_structure">
+		<supported-bridge-type-refs>
+			<bridge-type-ref id="native_account"/>
+		</supported-bridge-type-refs>
+		<label>Nest Home</label>
+		<description>Home/away mode of a home through the native Nest API</description>
+		<channels>
+			<channel id="away" typeId="native-away"/>
+		</channels>
+		<config-description>
+			<parameter name="structureId" type="text" required="true">
+				<label>Structure ID</label>
+				<description>Structure bucket identifier, without the structure. prefix</description>
+			</parameter>
+		</config-description>
+	</thing-type>
 	<thing-type id="native_protect">
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="native_account"/>
@@ -32,6 +48,17 @@
 			</parameter>
 		</config-description>
 	</thing-type>
+	<channel-type id="native-away">
+		<item-type>Switch</item-type>
+		<label>Away</label>
+		<description>ON sets Away; OFF sets Home. Changes can affect other Nest devices and home/away automations.</description>
+		<tags>
+			<tag>Control</tag>
+			<tag>Presence</tag>
+		</tags>
+		<state readOnly="false"/>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
 	<channel-type id="native-smoke-status">
 		<item-type>String</item-type>
 		<label>Smoke Status</label>
