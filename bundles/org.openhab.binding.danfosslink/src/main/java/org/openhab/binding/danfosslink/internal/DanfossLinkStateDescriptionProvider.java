@@ -42,7 +42,7 @@ import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
 
 /**
- * Supplies the controller's room-specific temperature limits to setpoint controls.
+ * Supplies the controller's temperature limits to setpoint controls.
  *
  * @author Jacob Laursen - Initial contribution
  */
@@ -61,28 +61,35 @@ public class DanfossLinkStateDescriptionProvider extends BaseDynamicStateDescrip
 
     public void update(ThingUID thing, @Nullable BigDecimal minimum, @Nullable BigDecimal maximum,
             @Nullable Unit<Temperature> unit) {
+        for (String channel : new String[] { CHANNEL_SETPOINT, CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT,
+                CHANNEL_MANUAL_SETPOINT }) {
+            update(new ChannelUID(thing, channel), minimum, maximum, unit);
+        }
+    }
+
+    public void update(ChannelUID channelUid, @Nullable BigDecimal minimum, @Nullable BigDecimal maximum,
+            @Nullable Unit<Temperature> unit) {
         StateDescriptionFragment stateDescription = null;
         if (minimum != null && maximum != null && unit != null && minimum.compareTo(maximum) <= 0) {
             // State-description bounds have no unit of their own; keep the display pattern in the same scale.
             stateDescription = StateDescriptionFragmentBuilder.create().withMinimum(minimum.stripTrailingZeros())
                     .withMaximum(maximum.stripTrailingZeros()).withPattern("%.1f " + unit).build();
         }
-        for (String channelId : new String[] { CHANNEL_SETPOINT, CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT,
-                CHANNEL_MANUAL_SETPOINT }) {
-            var channelUid = new ChannelUID(thing, channelId);
-            var previous = stateDescription == null ? descriptionFragments.remove(channelUid)
-                    : descriptionFragments.put(channelUid, stateDescription);
-            if (!Objects.equals(previous, stateDescription)) {
-                postEvent(ThingEventFactory.createChannelDescriptionChangedEvent(channelUid,
-                        itemChannelLinkRegistry.getLinkedItemNames(channelUid),
-                        stateDescription == null ? StateDescriptionFragmentBuilder.create().build() : stateDescription,
-                        previous));
-            }
+        var previous = stateDescription == null ? descriptionFragments.remove(channelUid)
+                : descriptionFragments.put(channelUid, stateDescription);
+        if (!Objects.equals(previous, stateDescription)) {
+            postEvent(ThingEventFactory.createChannelDescriptionChangedEvent(channelUid,
+                    itemChannelLinkRegistry.getLinkedItemNames(channelUid),
+                    stateDescription == null ? StateDescriptionFragmentBuilder.create().build() : stateDescription,
+                    previous));
         }
     }
 
     public void remove(ThingUID thing) {
-        update(thing, null, null, null);
+        for (ChannelUID channel : descriptionFragments.keySet().stream()
+                .filter(channel -> channel.getThingUID().equals(thing)).toList()) {
+            update(channel, null, null, null);
+        }
     }
 
     @Override

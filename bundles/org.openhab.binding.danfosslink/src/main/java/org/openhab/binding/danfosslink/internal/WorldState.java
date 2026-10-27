@@ -39,6 +39,8 @@ import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
 import org.openhab.binding.danfosslink.internal.protocol.dto.RoomDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.SystemInfoDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.SystemStatusDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.TemperatureSettingDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.TemperatureSettingsDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.WorldDTO;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
@@ -60,7 +62,12 @@ import com.google.gson.JsonObject;
 @NonNullByDefault
 public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String brandingType,
         @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
-        @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home, @Nullable String currentState) {
+        @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home, @Nullable String currentState,
+        @Nullable TemperatureSetting vacationTemperature) {
+
+    public record TemperatureSetting(@Nullable BigDecimal setpoint, @Nullable BigDecimal minimum,
+            @Nullable BigDecimal maximum) {
+    }
 
     public record Mode(ModeState state, @Nullable Instant start, @Nullable Instant end, @Nullable ZoneId localZone) {
     }
@@ -123,10 +130,14 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
                     currentState = null;
                 }
             }
+            var vacationTemperature = settings == null ? null : settings.vacationTemperature;
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : info.brandingType,
                     info == null ? null : info.serialNo, info == null ? null : info.version,
                     info == null ? null : info.systemTime, mode(world, ModeType.VACATION, zone),
-                    activeMode(world, ModeType.PAUSE, zone), activeMode(world, ModeType.AT_HOME, zone), currentState);
+                    activeMode(world, ModeType.PAUSE, zone), activeMode(world, ModeType.AT_HOME, zone), currentState,
+                    vacationTemperature == null ? null
+                            : new TemperatureSetting(vacationTemperature.setpoint, vacationTemperature.minSetpoint,
+                                    vacationTemperature.maxSetpoint));
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
@@ -247,13 +258,32 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
     }
 
     BigDecimal command(int roomId, Command command) {
-        Unit<Temperature> scale = unit;
         Room room = rooms.get(roomId);
-        if (scale == null || room == null || room.minimum == null || room.maximum == null) {
-            throw new IllegalArgumentException("Temperature scale or room limits unavailable");
+        return temperatureCommand(command, room == null ? null : room.minimum(), room == null ? null : room.maximum());
+    }
+
+    public Patch vacationTemperaturePatch(Command command) {
+        TemperatureSetting setting = vacationTemperature;
+        var temperature = new TemperatureSettingDTO();
+        temperature.setpoint = temperatureCommand(command, setting == null ? null : setting.minimum(),
+                setting == null ? null : setting.maximum());
+        var body = new TemperatureSettingsDTO();
+        body.vacationTemperature = temperature;
+        return new Patch("/api/settings/temperature", GSON.toJsonTree(body).getAsJsonObject());
+    }
+
+    public State vacationTemperatureState() {
+        TemperatureSetting setting = vacationTemperature;
+        BigDecimal value = setting == null ? null : setting.setpoint();
+        Unit<Temperature> scale = unit;
+        return value == null || scale == null ? UnDefType.UNDEF : new QuantityType<>(value, scale);
+    }
+
+    private BigDecimal temperatureCommand(Command command, @Nullable BigDecimal minimum, @Nullable BigDecimal maximum) {
+        Unit<Temperature> scale = unit;
+        if (scale == null || minimum == null || maximum == null) {
+            throw new IllegalArgumentException("Temperature scale or limits unavailable");
         }
-        BigDecimal minimum = Objects.requireNonNull(room.minimum);
-        BigDecimal maximum = Objects.requireNonNull(room.maximum);
         BigDecimal value;
         if (command instanceof QuantityType<?> quantity) {
             var converted = quantity.toUnit(scale);
@@ -268,7 +298,7 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             throw new IllegalArgumentException("Unsupported setpoint command");
         }
         if (value.compareTo(minimum) < 0 || value.compareTo(maximum) > 0) {
-            throw new IllegalArgumentException("Setpoint outside room limits");
+            throw new IllegalArgumentException("Setpoint outside controller limits");
         }
         return value;
     }

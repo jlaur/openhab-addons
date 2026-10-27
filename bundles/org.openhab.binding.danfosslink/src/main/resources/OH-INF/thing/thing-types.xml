@@ -15,6 +15,7 @@
 			<channel id="pause" typeId="pause"/>
 			<channel id="pause-until" typeId="pause-until"/>
 			<channel id="vacation" typeId="vacation"/>
+			<channel id="vacation-temperature" typeId="vacation-temperature"/>
 			<channel id="vacation-state" typeId="vacation-state"/>
 			<channel id="vacation-start" typeId="vacation-start"/>
 			<channel id="vacation-end" typeId="vacation-end"/>

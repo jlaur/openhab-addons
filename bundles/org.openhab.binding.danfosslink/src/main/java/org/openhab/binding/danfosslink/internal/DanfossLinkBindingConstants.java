@@ -36,6 +36,7 @@ public final class DanfossLinkBindingConstants {
     public static final String CHANNEL_PAUSE = "pause";
     public static final String CHANNEL_PAUSE_UNTIL = "pause-until";
 
+    public static final String CHANNEL_VACATION_TEMPERATURE = "vacation-temperature";
     public static final String CHANNEL_VACATION = "vacation";
     public static final String CHANNEL_VACATION_STATE = "vacation-state";
     public static final String CHANNEL_VACATION_START = "vacation-start";

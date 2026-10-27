@@ -58,25 +58,26 @@ The binding does not set or correct the controller's clock.
 
 ## Channels
 
-| Thing | Channel | Item Type | Access | Description |
-| --- | --- | --- | --- | --- |
-| controller | current-state | String | Read | Controller-reported overall state, such as AtHome, Away or Asleep |
-| controller | home | Switch | Read/Write | ON applies the staged selection; OFF cancels Home |
-| room, living-zone | home-selected | Switch | Read/Write | Stage inclusion in the next Home activation |
-| controller | pause | Switch | Read/Write | ON starts or restarts a one-hour pause; OFF cancels Pause |
-| controller | pause-until | DateTime | Read/Write | Start or adjust Pause until a future deadline |
-| controller | vacation | Switch | Read/Write | ON enables vacation; OFF cancels vacation and clears staged dates |
-| controller | vacation-state | String | Read | Inactive, Planned, or Active |
-| controller | vacation-start | DateTime | Read/Write | Staged or controller-reported vacation start |
-| controller | vacation-end | DateTime | Read/Write | Staged or controller-reported vacation end |
-| room | temperature | Number:Temperature | Read | Measured room temperature |
-| room | setpoint | Number:Temperature | Read/Write | Current target temperature; temporary override during scheduled operation |
-| room | home-setpoint | Number:Temperature | Read/Write | Persistent temperature for Home periods |
-| room | away-setpoint | Number:Temperature | Read/Write | Persistent temperature for Away/Sleeping periods |
-| room | manual-setpoint | Number:Temperature | Read/Write | Persistent temperature for manual operation |
-| room | manual | Switch | Read/Write | ON selects manual operation; OFF resumes the schedule |
-| room | regulation-state | String | Read | Controller's regulation state |
-| living-zone | manual | Switch | Read/Write | ON selects manual operation for the Living zone; OFF resumes its schedule |
+| Thing             | Channel              | Item Type          | Access     | Description                                                               |
+| ---               | ---                  | ---                | ---        | ---                                                                       |
+| controller        | current-state        | String             | Read       | Controller-reported overall state, such as AtHome, Away or Asleep         |
+| controller        | home                 | Switch             | Read/Write | ON applies the staged selection; OFF cancels Home                         |
+| room, living-zone | home-selected        | Switch             | Read/Write | Stage inclusion in the next Home activation                               |
+| controller        | pause                | Switch             | Read/Write | ON starts or restarts a one-hour pause; OFF cancels Pause                 |
+| controller        | pause-until          | DateTime           | Read/Write | Start or adjust Pause until a future deadline                             |
+| controller        | vacation             | Switch             | Read/Write | ON enables vacation; OFF cancels vacation and clears staged dates         |
+| controller        | vacation-temperature | Number:Temperature | Read/Write | Persistent temperature used during Vacation                               |
+| controller        | vacation-state       | String             | Read       | Inactive, Planned, or Active                                              |
+| controller        | vacation-start       | DateTime           | Read/Write | Staged or controller-reported vacation start                              |
+| controller        | vacation-end         | DateTime           | Read/Write | Staged or controller-reported vacation end                                |
+| room              | temperature          | Number:Temperature | Read       | Measured room temperature                                                 |
+| room              | setpoint             | Number:Temperature | Read/Write | Current target temperature; temporary override during scheduled operation |
+| room              | home-setpoint        | Number:Temperature | Read/Write | Persistent temperature for Home periods                                   |
+| room              | away-setpoint        | Number:Temperature | Read/Write | Persistent temperature for Away/Sleeping periods                          |
+| room              | manual-setpoint      | Number:Temperature | Read/Write | Persistent temperature for manual operation                               |
+| room              | manual               | Switch             | Read/Write | ON selects manual operation; OFF resumes the schedule                     |
+| room              | regulation-state     | String             | Read       | Controller's regulation state                                             |
+| living-zone       | manual               | Switch             | Read/Write | ON selects manual operation for the Living zone; OFF resumes its schedule |
 
 Temperature states use the controller's reported temperature scale.
 The observed protocol value is `Celcius`.
@@ -180,6 +181,12 @@ TRACE logging includes the outgoing Pause request for comparison with readback.
 ### Vacation
 
 Vacation controls are on the controller Bridge and affect the whole system.
+The `vacation-temperature` channel reads and changes the persistent Vacation temperature without activating or cancelling Vacation.
+It uses the controller's temperature scale and exposes the reported minimum and maximum as dynamic channel limits.
+Commands with units are converted to that scale; unitless commands use the controller's scale.
+Commands outside those limits, with incompatible units, or without known limits or scale are rejected.
+The setting is read back after a write; missing values or an unknown scale produce `UNDEF`.
+
 The `vacation` switch is ON for both Planned and Active vacations, and OFF for Inactive.
 Use `vacation-state` to distinguish those states.
 Missing or unknown vacation data produces `UNDEF`.

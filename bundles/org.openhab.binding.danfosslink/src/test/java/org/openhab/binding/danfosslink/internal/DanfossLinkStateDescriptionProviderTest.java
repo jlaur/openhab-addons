@@ -98,4 +98,24 @@ class DanfossLinkStateDescriptionProviderTest {
         provider.update(room, BigDecimal.TEN, BigDecimal.ONE, SIUnits.CELSIUS);
         assertNull(provider.getStateDescription(channel, null, null));
     }
+
+    @Test
+    void controllerVacationLimitsAreIndependentAndRemovedWhenUnavailable() {
+        var provider = new DanfossLinkStateDescriptionProvider(mock(EventPublisher.class),
+                mock(ItemChannelLinkRegistry.class));
+        var controller = new ThingUID(THING_TYPE_CONTROLLER, "test");
+        var room = new ThingUID(THING_TYPE_ROOM, "test");
+        var channel = ChannelBuilder
+                .create(new ChannelUID(controller, CHANNEL_VACATION_TEMPERATURE), "Number:Temperature").build();
+        provider.update(room, new BigDecimal("6"), new BigDecimal("28"), SIUnits.CELSIUS);
+        provider.update(channel.getUID(), new BigDecimal("5"), new BigDecimal("35"), SIUnits.CELSIUS);
+        var state = Objects.requireNonNull(provider.getStateDescription(channel, null, null));
+        assertEquals(new BigDecimal("5"), state.getMinimum());
+        assertEquals(new BigDecimal("35"), state.getMaximum());
+        provider.remove(controller);
+        assertNull(provider.getStateDescription(channel, null, null));
+        assertNotNull(provider.getStateDescription(
+                ChannelBuilder.create(new ChannelUID(room, CHANNEL_SETPOINT), "Number:Temperature").build(), null,
+                null));
+    }
 }

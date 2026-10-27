@@ -67,7 +67,7 @@ public class DanfossLinkHandlerFactory extends BaseThingHandlerFactory {
     protected @Nullable ThingHandler createHandler(Thing thing) {
         if (DanfossLinkBindingConstants.THING_TYPE_CONTROLLER.equals(thing.getThingTypeUID())
                 && thing instanceof Bridge bridge) {
-            return new ControllerHandler(bridge, store, timeZoneProvider);
+            return new ControllerHandler(bridge, store, descriptions, timeZoneProvider);
         }
         if (DanfossLinkBindingConstants.THING_TYPE_LIVING_ZONE.equals(thing.getThingTypeUID())) {
             return new LivingZoneHandler(thing);
