@@ -36,6 +36,7 @@ import org.openhab.binding.danfosslink.internal.exception.ControllerResponseExce
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Pairing;
 import org.openhab.binding.danfosslink.internal.protocol.Wire;
+import org.openhab.binding.danfosslink.internal.protocol.dto.JsonWebResponseDTO;
 
 /**
  * Protocol boundaries and PACE exchange with an independently implemented
@@ -106,6 +107,25 @@ class ProtocolTest {
     }
 
     @Test
+    void responseContentRetainsEveryJsonShapeAndDistinguishesAbsence() throws Exception {
+        String prefix = "{\"id\":1,\"data\":{\"type\":\"JsonWebResponse\",\"data\":{\"status\":200";
+        for (String content : new String[] { "{}", "[]", "\"text\"", "42", "true", "null" }) {
+            var response = (prefix + ",\"content\":" + content + "}}}").getBytes(StandardCharsets.UTF_8);
+            assertEquals(com.google.gson.JsonParser.parseString(content), CloudClient.response(response, 1));
+        }
+        assertThrows(IOException.class,
+                () -> CloudClient.response((prefix + "}}}").getBytes(StandardCharsets.UTF_8), 1));
+    }
+
+    @Test
+    void responseAcceptsNumericStringsUsingGsonIntegerMapping() throws Exception {
+        String response = """
+                {"id":"1","data":{"type":"JsonWebResponse","data":{"status":"200","content":null}}}
+                """;
+        assertTrue(CloudClient.response(response.getBytes(StandardCharsets.UTF_8), 1).isJsonNull());
+    }
+
+    @Test
     void malformedResponseShapesProduceIoExceptions() {
         for (String response : new String[] { "null", "[]", "42", "{\"id\":1,\"data\":null}", "{\"id\":1,\"data\":[]}",
                 "{\"id\":1,\"data\":{\"type\":\"JsonWebResponse\",\"data\":null}}",
@@ -115,9 +135,9 @@ class ProtocolTest {
         }
         for (String field : new String[] { "id", "status" }) {
             for (String invalid : new String[] { "null", "{}", "[]", "true", "\"invalid\"", "1.5", "4294967297" }) {
-                String response = "{\"id\":" + (field.equals("id") ? invalid : "1")
+                String response = "{\"id\":" + ("id".equals(field) ? invalid : "1")
                         + ",\"data\":{\"type\":\"JsonWebResponse\",\"data\":{\"status\":"
-                        + (field.equals("status") ? invalid : "200") + ",\"content\":null}}}";
+                        + ("status".equals(field) ? invalid : "200") + ",\"content\":null}}}";
                 assertThrows(IOException.class,
                         () -> CloudClient.response(response.getBytes(StandardCharsets.UTF_8), 1), response);
             }
@@ -196,22 +216,63 @@ class ProtocolTest {
                 {"statusDescription":"Bad Request","headers":["Authorization: secret"],
                 "content":{"message":"Invalid room zone","privateKey":"secret", "allRooms":[{"name":"Private"}]}}
                 """).getAsJsonObject();
-        String details = CloudClient.errorDetails(response);
+        String details = CloudClient.errorDetails(
+                java.util.Objects.requireNonNull(ProtocolJson.GSON.fromJson(response, JsonWebResponseDTO.class)));
         var parsed = com.google.gson.JsonParser.parseString(details).getAsJsonObject();
         assertEquals("Invalid room zone", parsed.get("message").getAsString());
         assertFalse(details.contains("secret"));
         assertFalse(details.contains("Private"));
         response.add("content", com.google.gson.JsonParser.parseString("""
-                {"errorMessages":["Invalid room zone", {"privateKey":"secret"}, null, 42], "allRooms":[]}
+                {"errorMessages":["Invalid room zone", null], "allRooms":[]}
                 """));
-        details = CloudClient.errorDetails(response);
+        details = CloudClient.errorDetails(
+                java.util.Objects.requireNonNull(ProtocolJson.GSON.fromJson(response, JsonWebResponseDTO.class)));
         assertTrue(details.contains("\"errorMessages\":[\"Invalid room zone\"]"));
         assertFalse(details.contains("secret"));
         assertFalse(details.contains("allRooms"));
         response.addProperty("content", "Bad request\nDetails");
-        assertTrue(CloudClient.errorDetails(response).contains("Bad request\\nDetails"));
-        assertFalse(CloudClient.errorDetails(response).contains("\n"));
+        assertTrue(CloudClient
+                .errorDetails(java.util.Objects
+                        .requireNonNull(ProtocolJson.GSON.fromJson(response, JsonWebResponseDTO.class)))
+                .contains("Bad request\\nDetails"));
+        assertFalse(CloudClient
+                .errorDetails(java.util.Objects
+                        .requireNonNull(ProtocolJson.GSON.fromJson(response, JsonWebResponseDTO.class)))
+                .contains("\n"));
         response.addProperty("content", "x".repeat(20000));
-        assertEquals(2048 + " [truncated]".length(), CloudClient.errorDetails(response).length());
+        assertEquals(2048 + " [truncated]".length(),
+                CloudClient
+                        .errorDetails(java.util.Objects
+                                .requireNonNull(ProtocolJson.GSON.fromJson(response, JsonWebResponseDTO.class)))
+                        .length());
+    }
+
+    @Test
+    void malformedErrorDetailsDoNotMaskRejection() {
+        for (String content : new String[] { "null", "[]", "{\"errorMessages\":{}}",
+                "{\"errorMessages\":[\"Invalid\",{}]}", "{\"message\":{\"privateKey\":\"secret\"}}" }) {
+            String json = "{\"statusDescription\":\"Bad Request\",\"status\":400,\"content\":" + content + "}";
+            var response = java.util.Objects.requireNonNull(ProtocolJson.GSON.fromJson(json, JsonWebResponseDTO.class));
+            assertEquals("{\"statusDescription\":\"Bad Request\"}", CloudClient.errorDetails(response));
+            String envelope = "{\"id\":1,\"data\":{\"type\":\"JsonWebResponse\",\"data\":" + json + "}}";
+            assertThrows(ControllerResponseException.class,
+                    () -> CloudClient.response(envelope.getBytes(StandardCharsets.UTF_8), 1));
+        }
+    }
+
+    @Test
+    void errorDetailsLimitMessagesAndIncludeKnownFields() {
+        String json = """
+                {"content":{"error":"Invalid","errorCode":42,"message":"Message","detail":"Detail","title":"Title",
+                "errorMessages":["1","2","3","4","5","6","7","8","9"]}}
+                """;
+        var response = java.util.Objects.requireNonNull(ProtocolJson.GSON.fromJson(json, JsonWebResponseDTO.class));
+        var details = com.google.gson.JsonParser.parseString(CloudClient.errorDetails(response)).getAsJsonObject();
+        assertEquals("42", details.get("errorCode").getAsString());
+        assertEquals("Invalid", details.get("error").getAsString());
+        assertEquals("Message", details.get("message").getAsString());
+        assertEquals("Detail", details.get("detail").getAsString());
+        assertEquals("Title", details.get("title").getAsString());
+        assertEquals(8, details.getAsJsonArray("errorMessages").size());
     }
 }

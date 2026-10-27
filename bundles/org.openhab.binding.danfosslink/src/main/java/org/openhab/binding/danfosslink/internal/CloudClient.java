@@ -28,16 +28,17 @@ import org.openhab.binding.danfosslink.internal.protocol.Grid;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Operation;
 import org.openhab.binding.danfosslink.internal.protocol.Transport;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ErrorResponseDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.JsonWebResponseDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ResponseEnvelopeDTO;
 import org.openhab.core.common.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
 
 /**
  * One short-lived cloud session; writes are never automatically replayed.
@@ -149,33 +150,27 @@ public final class CloudClient implements AutoCloseable {
         return GSON.toJsonTree(body).getAsJsonObject();
     }
 
-    static String errorDetails(JsonObject response) {
+    static String errorDetails(JsonWebResponseDTO response) {
         JsonObject details = new JsonObject();
-        JsonElement description = response.get("statusDescription");
+        JsonElement description = response.statusDescription;
         if (description != null && description.isJsonPrimitive()) {
             details.add("statusDescription", description);
         }
-        JsonElement content = response.get("content");
+        JsonElement content = response.content;
         if (content != null && content.isJsonObject()) {
-            JsonObject object = content.getAsJsonObject();
-            for (String name : new String[] { "error", "errorCode", "message", "detail", "title" }) {
-                JsonElement value = object.get(name);
-                if (value != null && value.isJsonPrimitive()) {
-                    details.add(name, value);
-                }
-            }
-            JsonElement messages = object.get("errorMessages");
-            if (messages != null && messages.isJsonArray()) {
-                JsonArray errors = new JsonArray();
-                for (JsonElement message : messages.getAsJsonArray()) {
-                    if (errors.size() == 8) {
-                        break;
+            try {
+                ErrorResponseDTO error = GSON.fromJson(content, ErrorResponseDTO.class);
+                if (error != null) {
+                    JsonObject fields = GSON.toJsonTree(error).getAsJsonObject();
+                    var messages = error.errorMessages;
+                    if (messages != null) {
+                        fields.add("errorMessages", GSON
+                                .toJsonTree(messages.stream().filter(java.util.Objects::nonNull).limit(8).toList()));
                     }
-                    if (message.isJsonPrimitive() && message.getAsJsonPrimitive().isString()) {
-                        errors.add(message);
-                    }
+                    fields.entrySet().forEach(entry -> details.add(entry.getKey(), entry.getValue()));
                 }
-                details.add("errorMessages", errors);
+            } catch (JsonParseException e) {
+                // Malformed diagnostics must not mask the controller's HTTP rejection.
             }
         } else if (content != null && content.isJsonPrimitive()) {
             details.add("content", content);
@@ -193,20 +188,23 @@ public final class CloudClient implements AutoCloseable {
             // The controller's cc_json encoder emits an omitted value on empty write responses.
             // This exact firmware defect also requires normalization in the official app.
             json = json.replace("\"content\":}}", "\"content\":null}}");
-            JsonObject envelope = object(JsonParser.parseString(json), "envelope");
-            int responseId = integer(envelope.get("id"), "ID");
-            if (responseId != id) {
-                logger.debug("Controller response ID {} does not match request {}", responseId, id);
+            ResponseEnvelopeDTO envelope = GSON.fromJson(json, ResponseEnvelopeDTO.class);
+            if (envelope == null || envelope.id == null) {
+                throw new IOException("Missing controller response ID");
+            }
+            if (envelope.id != id) {
+                logger.debug("Controller response ID {} does not match request {}", envelope.id, id);
                 throw new IOException("Mismatched controller response ID");
             }
-            JsonObject data = object(envelope.get("data"), "data");
-            JsonElement type = data.get("type");
-            if (type == null || !type.isJsonPrimitive() || !type.getAsJsonPrimitive().isString()
-                    || !"JsonWebResponse".equals(type.getAsString())) {
+            var message = envelope.data;
+            if (message == null || !"JsonWebResponse".equals(message.type)) {
                 throw new IOException("Missing or unexpected controller response type");
             }
-            JsonObject response = object(data.get("data"), "response data");
-            int status = integer(response.get("status"), "status");
+            var response = message.data;
+            if (response == null || response.status == null) {
+                throw new IOException("Missing controller response status");
+            }
+            int status = response.status;
             logger.trace("Controller response {}: HTTP {}", id, status);
             if (status < 200 || status >= 300) {
                 logger.debug("Controller rejected request {} with HTTP {}", id, status);
@@ -215,7 +213,7 @@ public final class CloudClient implements AutoCloseable {
                 }
                 throw new ControllerResponseException(status);
             }
-            JsonElement content = response.get("content");
+            JsonElement content = response.content;
             if (content == null) {
                 throw new IOException("Missing controller response content");
             }
@@ -233,16 +231,5 @@ public final class CloudClient implements AutoCloseable {
             throw new IOException("Missing or invalid controller response " + field);
         }
         return value.getAsJsonObject();
-    }
-
-    private static int integer(@Nullable JsonElement value, String field) throws IOException {
-        if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isNumber()) {
-            throw new IOException("Missing or invalid controller response " + field);
-        }
-        try {
-            return value.getAsBigDecimal().intValueExact();
-        } catch (ArithmeticException | NumberFormatException e) {
-            throw new IOException("Invalid controller response " + field, e);
-        }
     }
 }
