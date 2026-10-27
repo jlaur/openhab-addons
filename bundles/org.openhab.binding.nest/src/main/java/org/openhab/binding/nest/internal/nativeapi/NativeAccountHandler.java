@@ -306,7 +306,18 @@ public class NativeAccountHandler extends BaseBridgeHandler {
 
     boolean setPathlight(String id, NativePathlightMode mode) {
         Protect protect = devices.get(id);
-        return protect != null && mode.supported(protect) && enqueue("topaz." + id, api -> api.setPathlight(id, mode));
+        return protect != null && mode.supported(protect)
+                && enqueue("topaz." + id + ".pathlight-mode", api -> api.setPathlight(id, mode));
+    }
+
+    boolean setPathlightBrightness(String id, NativePathlightBrightness brightness) {
+        return devices.containsKey(id)
+                && enqueue("topaz." + id + ".pathlight-brightness", api -> api.setPathlightBrightness(id, brightness));
+    }
+
+    boolean setNightlyPromise(String id, boolean enabled) {
+        return devices.containsKey(id)
+                && enqueue("topaz." + id + ".nightly-promise", api -> api.setNightlyPromise(id, enabled));
     }
 
     private boolean enqueue(String key, AccountCommand command) {
@@ -324,7 +335,7 @@ public class NativeAccountHandler extends BaseBridgeHandler {
         if (api == null) {
             return false;
         }
-        // Bound pending commands to one per known bucket; the latest requested mode wins.
+        // Bound pending commands to one per writable setting of each known bucket; the latest value wins.
         context.commands.put(key, new PendingCommand(session, connection, command));
         api.wakePoll();
         return true;

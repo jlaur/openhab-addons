@@ -75,6 +75,24 @@ public class NativeProtectHandler extends BaseThingHandler {
                 account.requestRefresh();
             }
             refreshFromBridge();
+        } else if ("nightly-promise".equals(channelUID.getId()) && command instanceof OnOffType value) {
+            Bridge bridge = getBridge();
+            if (bridge != null && bridge.getHandler() instanceof NativeAccountHandler account
+                    && !account.setNightlyPromise(deviceId, value == OnOffType.ON)) {
+                refreshFromBridge();
+            }
+        } else if ("pathlight-brightness".equals(channelUID.getId()) && command instanceof StringType value) {
+            NativePathlightBrightness brightness;
+            try {
+                brightness = NativePathlightBrightness.valueOf(value.toString());
+            } catch (IllegalArgumentException e) {
+                return;
+            }
+            Bridge bridge = getBridge();
+            if (bridge != null && bridge.getHandler() instanceof NativeAccountHandler account
+                    && !account.setPathlightBrightness(deviceId, brightness)) {
+                refreshFromBridge();
+            }
         } else if ("pathlight-mode".equals(channelUID.getId()) && command instanceof StringType value) {
             NativePathlightMode mode;
             try {
@@ -114,9 +132,12 @@ public class NativeProtectHandler extends BaseThingHandler {
         updateState("battery-health", battery(p.battery));
         updateState("line-power", bool(p.linePower));
         updateState("online", bool(p.online));
+        updateState("nightly-promise", bool(p.nightlyPromiseEnabled));
         updateState("replace-by", date(p.replaceBy));
         updateState("last-test-started", date(p.testStarted));
         updateState("last-test-ended", date(p.testEnded));
+        NativePathlightBrightness brightness = NativePathlightBrightness.observed(p.nightLightBrightness);
+        updateState("pathlight-brightness", brightness == null ? UnDefType.UNDEF : new StringType(brightness.name()));
         NativePathlightMode mode = NativePathlightMode.observed(p);
         updateState("pathlight-mode", mode == null ? UnDefType.UNDEF : new StringType(mode.name()));
         if (Boolean.FALSE.equals(p.online)) {

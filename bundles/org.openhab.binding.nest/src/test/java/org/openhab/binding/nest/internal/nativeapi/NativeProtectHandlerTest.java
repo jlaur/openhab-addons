@@ -81,8 +81,47 @@ class NativeProtectHandlerTest {
         protect.nightLightContinuous = true;
         handler.refreshFromBridge();
         verify(callback).stateUpdated(channel, new StringType("ALWAYS_ON"));
+        var brightness = new ChannelUID(thing.getUID(), "pathlight-brightness");
+        clearInvocations(callback);
+        handler.refreshFromBridge();
+        verify(callback).stateUpdated(brightness, UnDefType.UNDEF);
+        for (var level : NativePathlightBrightness.values()) {
+            when(account.setPathlightBrightness("id", level)).thenReturn(true);
+            clearInvocations(callback);
+            handler.handleCommand(brightness, new StringType(level.name()));
+            verify(account).setPathlightBrightness("id", level);
+            verify(callback, never()).stateUpdated(any(), any());
+            protect.nightLightBrightness = level.value;
+            handler.refreshFromBridge();
+            verify(callback).stateUpdated(brightness, new StringType(level.name()));
+        }
+        handler.handleCommand(brightness, new StringType("invalid"));
+        handler.handleCommand(brightness, OnOffType.ON);
+        verify(account, times(3)).setPathlightBrightness(anyString(), any());
+        var nightlyPromise = new ChannelUID(thing.getUID(), "nightly-promise");
+        clearInvocations(callback);
+        handler.refreshFromBridge();
+        verify(callback).stateUpdated(nightlyPromise, UnDefType.UNDEF);
+        for (var command : OnOffType.values()) {
+            boolean enabled = command == OnOffType.ON;
+            when(account.setNightlyPromise("id", enabled)).thenReturn(true);
+            clearInvocations(callback);
+            handler.handleCommand(nightlyPromise, command);
+            verify(account).setNightlyPromise("id", enabled);
+            verify(callback, never()).stateUpdated(any(), any());
+            protect.nightlyPromiseEnabled = enabled;
+            handler.refreshFromBridge();
+            verify(callback).stateUpdated(nightlyPromise, command);
+        }
+        handler.handleCommand(nightlyPromise, new StringType("ON"));
+        verify(account, times(2)).setNightlyPromise(anyString(), anyBoolean());
+        clearInvocations(account);
+        handler.handleCommand(nightlyPromise, RefreshType.REFRESH);
+        verify(account).requestRefresh();
+        verify(account, never()).setNightlyPromise(anyString(), anyBoolean());
         handler.dispose();
         clearInvocations(callback, account);
+        handler.handleCommand(nightlyPromise, OnOffType.ON);
         handler.handleCommand(channel, new StringType("OFF"));
         handler.handleCommand(channel, RefreshType.REFRESH);
         handler.refreshFromBridge();

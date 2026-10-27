@@ -100,11 +100,112 @@ class NativeClientTest {
         assertTrue(client.rooms().isEmpty());
     }
 
+    @Test
+    void brightnessObservationsPreservePartialStateAndUnknownValues() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        var snapshot = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(PATHLIGHT_SNAPSHOT, NativeDtos.LaunchResponse.class));
+        var bucket = snapshot.buckets.getFirst();
+        for (int value : new int[] { 1, 2, 3, 0, 99 }) {
+            bucket.value = NativeClient.GSON.fromJson("{\"night_light_brightness\":" + value + "}",
+                    com.google.gson.JsonObject.class);
+            client.accept(List.of(bucket), false);
+            assertEquals(value, Objects.requireNonNull(client.devices().get("device")).nightLightBrightness);
+            bucket.value = new com.google.gson.JsonObject();
+            client.accept(List.of(bucket), false);
+            assertEquals(value, Objects.requireNonNull(client.devices().get("device")).nightLightBrightness);
+        }
+        assertNull(NativePathlightBrightness.observed(null));
+        assertNull(NativePathlightBrightness.observed(0));
+        assertNull(NativePathlightBrightness.observed(99));
+        assertEquals(NativePathlightBrightness.LOW, NativePathlightBrightness.observed(1));
+        assertEquals(NativePathlightBrightness.MEDIUM, NativePathlightBrightness.observed(2));
+        assertEquals(NativePathlightBrightness.HIGH, NativePathlightBrightness.observed(3));
+        client.accept(List.of(bucket), true);
+        assertNull(Objects.requireNonNull(client.devices().get("device")).nightLightBrightness);
+    }
+
     private static final String PATHLIGHT_SNAPSHOT = """
             {"service_urls":{"urls":{"transport_url":"https://transport.nest.com"}},
              "updated_buckets":[{"object_key":"topaz.device","object_revision":1,"object_timestamp":10,
              "value":{"night_light_enable":false,"night_light_continuous":false,"wired_or_battery":0}}]}
             """;
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = { false, true })
+    void nightlyPromiseWritesOnlyEnableFlagWithoutPredictingState(boolean enabled) throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"session\"}"),
+                response(200, PATHLIGHT_SNAPSHOT), response(200, "{}"), response(503, "private failure"));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        client.refresh();
+        client.setNightlyPromise("device", enabled);
+        verify(http).newRequest("https://transport.nest.com/v2/put/topaz.device");
+        Request write = requests.getLast();
+        verify(write).method("POST");
+        verify(write).header("Authorization", "Basic session");
+        var content = ArgumentCaptor.forClass(ContentProvider.class);
+        verify(write).content(content.capture());
+        var body = new StringBuilder();
+        content.getValue().forEach(buffer -> body.append(java.nio.charset.StandardCharsets.UTF_8.decode(buffer)));
+        var dto = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(body.toString(), NativeDtos.NightlyPromiseRequest.class));
+        assertEquals(enabled, dto.enabled);
+        var json = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(body.toString(), com.google.gson.JsonObject.class));
+        assertEquals(java.util.Set.of("ntp_green_led_enable"), json.keySet());
+        assertNull(Objects.requireNonNull(client.devices().get("device")).nightlyPromiseEnabled);
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+        assertThrows(NativeClient.Failure.class, () -> client.setNightlyPromise("missing", enabled));
+        assertEquals(5, requests.size());
+        assertThrows(NativeClient.Failure.class, () -> client.setNightlyPromise("device", enabled));
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+    }
+
+    @ParameterizedTest
+    @CsvSource({ "LOW,1", "MEDIUM,2", "HIGH,3" })
+    void brightnessWritesBothLightsWithoutPredictingState(NativePathlightBrightness brightness, int expected)
+            throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"session\"}"),
+                response(200, PATHLIGHT_SNAPSHOT), response(200, "{}"), response(503, "private failure"));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        client.refresh();
+        client.setPathlightBrightness("device", brightness);
+        verify(http).newRequest("https://transport.nest.com/v2/put/topaz.device");
+        Request write = requests.getLast();
+        verify(write).method("POST");
+        verify(write).header("Authorization", "Basic session");
+        var content = ArgumentCaptor.forClass(ContentProvider.class);
+        verify(write).content(content.capture());
+        var body = new StringBuilder();
+        content.getValue().forEach(buffer -> body.append(java.nio.charset.StandardCharsets.UTF_8.decode(buffer)));
+        var dto = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(body.toString(), NativeDtos.BrightnessRequest.class));
+        assertEquals(expected, dto.pathlight);
+        assertEquals(expected, dto.nightlyPromise);
+        assertFalse(body.toString().contains("night_light_enable"));
+        assertNull(Objects.requireNonNull(client.devices().get("device")).nightLightBrightness);
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+        assertThrows(NativeClient.Failure.class, () -> client.setPathlightBrightness("missing", brightness));
+        assertEquals(5, requests.size());
+        assertThrows(NativeClient.Failure.class, () -> client.setPathlightBrightness("device", brightness));
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+    }
 
     @ParameterizedTest
     @CsvSource({ "OFF,false,false", "ON,true,false", "ALWAYS_ON,false,true" })
@@ -139,6 +240,36 @@ class NativeClientTest {
         assertThrows(NativeClient.Failure.class, () -> client.setPathlight("device", mode));
         assertEquals(NativePathlightMode.OFF,
                 NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+    }
+
+    @Test
+    void nightlyPromiseUpdatesMergeAndRejectInvalidFlagsAtomically() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        var snapshot = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(PATHLIGHT_SNAPSHOT, NativeDtos.LaunchResponse.class));
+        var bucket = snapshot.buckets.getFirst();
+        client.accept(snapshot.buckets, true);
+        assertNull(Objects.requireNonNull(client.devices().get("device")).nightlyPromiseEnabled);
+        for (boolean enabled : new boolean[] { true, false }) {
+            bucket.value = new com.google.gson.JsonObject();
+            bucket.value.addProperty("ntp_green_led_enable", enabled);
+            client.accept(List.of(bucket), false);
+            assertEquals(enabled, Objects.requireNonNull(client.devices().get("device")).nightlyPromiseEnabled);
+            bucket.value = new com.google.gson.JsonObject();
+            client.accept(List.of(bucket), false);
+            assertEquals(enabled, Objects.requireNonNull(client.devices().get("device")).nightlyPromiseEnabled);
+        }
+        bucket.value.addProperty("ntp_green_led_enable", "invalid");
+        assertThrows(NativeClient.Failure.class, () -> client.accept(List.of(bucket), false));
+        assertEquals(false, Objects.requireNonNull(client.devices().get("device")).nightlyPromiseEnabled);
+        bucket.value.addProperty("ntp_green_led_enable", true);
+        client.accept(List.of(bucket), true);
+        assertEquals(true, Objects.requireNonNull(client.devices().get("device")).nightlyPromiseEnabled);
+        bucket.value = new com.google.gson.JsonObject();
+        client.accept(List.of(bucket), true);
+        assertNull(Objects.requireNonNull(client.devices().get("device")).nightlyPromiseEnabled);
     }
 
     @Test

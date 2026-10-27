@@ -55,6 +55,7 @@ class NativeAccountHandlerTest {
         var http = mock(HttpClient.class);
         when(factory.createHttpClient("nest-native")).thenReturn(http);
         var polling = new CountDownLatch(1);
+        var queued = new CountDownLatch(1);
         var observed = new CountDownLatch(1);
         var writes = new AtomicInteger();
         var handler = new NativeAccountHandler(bridge, factory, store);
@@ -79,6 +80,7 @@ class NativeAccountHandlerTest {
                 } else if (url.endsWith("/v6/subscribe")) {
                     polling.countDown();
                     assertTrue(aborted.await(10, TimeUnit.SECONDS));
+                    assertTrue(queued.await(10, TimeUnit.SECONDS));
                     throw new ExecutionException(cause.get());
                 } else if (url.endsWith(pathlight ? "/v2/put/topaz.home" : "/v2/put/structure.home")) {
                     assertEquals(false, java.util.Objects.requireNonNull(handler.structures().get("home")).away);
@@ -125,13 +127,24 @@ class NativeAccountHandlerTest {
             assertFalse(handler.setPathlight("unknown", NativePathlightMode.ON));
             assertTrue(
                     pathlight ? handler.setPathlight("home", NativePathlightMode.ON) : handler.setAway("home", true));
+            assertFalse(handler.setPathlightBrightness("unknown", NativePathlightBrightness.HIGH));
+            assertFalse(handler.setNightlyPromise("unknown", true));
+            if (pathlight) {
+                assertTrue(handler.setNightlyPromise("home", false));
+                assertTrue(handler.setNightlyPromise("home", true));
+                assertTrue(handler.setPathlightBrightness("home", NativePathlightBrightness.LOW));
+                assertTrue(handler.setPathlightBrightness("home", NativePathlightBrightness.HIGH));
+            }
+            queued.countDown();
             assertTrue(observed.await(10, TimeUnit.SECONDS));
-            assertEquals(1, writes.get());
+            assertEquals(pathlight ? 3 : 1, writes.get());
         } finally {
             handler.dispose();
         }
+        assertFalse(handler.setNightlyPromise("home", true));
         assertFalse(handler.setAway("home", false));
         assertFalse(handler.setPathlight("home", NativePathlightMode.OFF));
+        assertFalse(handler.setPathlightBrightness("home", NativePathlightBrightness.LOW));
     }
 
     @Test

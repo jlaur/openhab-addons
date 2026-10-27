@@ -34,6 +34,7 @@ import org.eclipse.jetty.client.api.ContentResponse;
 import org.eclipse.jetty.client.api.Request;
 import org.eclipse.jetty.client.util.StringContentProvider;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.AwayRequest;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.BrightnessRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Bucket;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Credentials;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Cursor;
@@ -41,6 +42,7 @@ import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.GoogleToken;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.LaunchRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.LaunchResponse;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.NestToken;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.NightlyPromiseRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.PathlightRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Protect;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Session;
@@ -181,6 +183,29 @@ final class NativeClient {
                 GSON.toJson(
                         new PathlightRequest(mode == NativePathlightMode.ON, mode == NativePathlightMode.ALWAYS_ON)),
                 false, 30000);
+    }
+
+    void setPathlightBrightness(String id, NativePathlightBrightness brightness) throws Failure, InterruptedException {
+        if (token.isEmpty() || System.currentTimeMillis() >= renewAt) {
+            refresh();
+        }
+        if (!devices.containsKey(id)) {
+            throw new Failure(FailureKind.PROTOCOL, "Protect not present in the account snapshot");
+        }
+        // The app changes Pathlight and Nightly Promise brightness together.
+        request(transport + "/v2/put/topaz." + encode(id), "POST", headers(),
+                GSON.toJson(new BrightnessRequest(brightness.value)), false, 30000);
+    }
+
+    void setNightlyPromise(String id, boolean enabled) throws Failure, InterruptedException {
+        if (token.isEmpty() || System.currentTimeMillis() >= renewAt) {
+            refresh();
+        }
+        if (!devices.containsKey(id)) {
+            throw new Failure(FailureKind.PROTOCOL, "Protect not present in the account snapshot");
+        }
+        request(transport + "/v2/put/topaz." + encode(id), "POST", headers(),
+                GSON.toJson(new NightlyPromiseRequest(enabled)), false, 30000);
     }
 
     void refresh() throws Failure, InterruptedException {
@@ -420,7 +445,7 @@ final class NativeClient {
                 if (id.isBlank()) {
                     throw protocol();
                 }
-                for (String field : List.of("night_light_enable", "night_light_continuous")) {
+                for (String field : List.of("night_light_enable", "night_light_continuous", "ntp_green_led_enable")) {
                     var flag = bucket.value.get(field);
                     if (flag != null && !flag.isJsonNull()
                             && !(flag.isJsonPrimitive() && flag.getAsJsonPrimitive().isBoolean())) {
@@ -475,6 +500,10 @@ final class NativeClient {
 
     private static Protect merge(@Nullable Protect old, Protect update) {
         Protect p = new Protect();
+        p.nightlyPromiseEnabled = update.nightlyPromiseEnabled != null ? update.nightlyPromiseEnabled
+                : old == null ? null : old.nightlyPromiseEnabled;
+        p.nightLightBrightness = update.nightLightBrightness != null ? update.nightLightBrightness
+                : old == null ? null : old.nightLightBrightness;
         p.whereId = update.whereId != null ? update.whereId : old == null ? null : old.whereId;
         p.nightLightEnabled = update.nightLightEnabled != null ? update.nightLightEnabled
                 : old == null ? null : old.nightLightEnabled;
