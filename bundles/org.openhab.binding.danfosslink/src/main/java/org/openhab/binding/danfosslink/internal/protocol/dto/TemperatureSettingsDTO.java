@@ -21,4 +21,5 @@ import org.eclipse.jdt.annotation.Nullable;
  */
 public class TemperatureSettingsDTO {
     public @Nullable String temperatureScale;
+    public @Nullable TemperatureSettingDTO vacationTemperature;
 }

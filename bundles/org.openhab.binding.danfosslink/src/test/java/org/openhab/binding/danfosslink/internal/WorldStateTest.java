@@ -496,4 +496,54 @@ class WorldStateTest {
         assertEquals(java.time.Instant.parse("0001-01-01T00:00:00Z"), mode.endTimeUtc);
         assertEquals(json, gson.toJsonTree(mode));
     }
+
+    @Test
+    void vacationTemperatureUsesSettingsLimitsAndSerializesOnlyTheSetpoint() throws Exception {
+        var json = world();
+        var settings = json.getAsJsonObject("temperatureSettings");
+        settings.add("vacationTemperature", JsonParser.parseString("""
+                {"setpoint":15,"minSetpoint":5,"maxSetpoint":35}
+                """));
+        var state = WorldState.parse(json);
+        assertEquals(new QuantityType<>("15 °C"), state.vacationTemperatureState());
+        for (String command : new String[] { "41 °F", "95 °F" }) {
+            var patch = state.vacationTemperaturePatch(new QuantityType<>(command));
+            assertEquals("/api/settings/temperature", patch.uri());
+            assertEquals(JsonParser.parseString(command.startsWith("41") ? "{\"vacationTemperature\":{\"setpoint\":5}}"
+                    : "{\"vacationTemperature\":{\"setpoint\":35}}"), patch.body());
+        }
+        assertThrows(IllegalArgumentException.class, () -> state.vacationTemperaturePatch(new DecimalType(4)));
+        assertThrows(IllegalArgumentException.class, () -> state.vacationTemperaturePatch(new DecimalType(36)));
+        assertThrows(IllegalArgumentException.class, () -> state.vacationTemperaturePatch(new QuantityType<>("15 W")));
+        assertThrows(IllegalArgumentException.class,
+                () -> state.vacationTemperaturePatch(org.openhab.core.library.types.OnOffType.ON));
+        settings.addProperty("temperatureScale", "Fahrenheit");
+        settings.add("vacationTemperature", JsonParser.parseString("""
+                {"setpoint":59,"minSetpoint":41,"maxSetpoint":95}
+                """));
+        var fahrenheit = WorldState.parse(json);
+        assertEquals(new QuantityType<>("59 °F"), fahrenheit.vacationTemperatureState());
+        assertEquals(JsonParser.parseString("{\"vacationTemperature\":{\"setpoint\":59}}"),
+                fahrenheit.vacationTemperaturePatch(new QuantityType<>("15 °C")).body());
+    }
+
+    @Test
+    void vacationTemperatureRequiresKnownScaleAndLimitsForCommands() throws Exception {
+        var json = world();
+        var settings = json.getAsJsonObject("temperatureSettings");
+        for (String value : new String[] { "null", "{}", "{\"setpoint\":15}", "{\"minSetpoint\":5}",
+                "{\"maxSetpoint\":35}", "{\"minSetpoint\":35,\"maxSetpoint\":5}" }) {
+            settings.add("vacationTemperature", JsonParser.parseString(value));
+            var state = WorldState.parse(json);
+            assertThrows(IllegalArgumentException.class, () -> state.vacationTemperaturePatch(new DecimalType(15)));
+        }
+        settings.remove("vacationTemperature");
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).vacationTemperatureState());
+        settings.add("vacationTemperature",
+                JsonParser.parseString("{\"setpoint\":15,\"minSetpoint\":5,\"maxSetpoint\":35}"));
+        settings.addProperty("temperatureScale", "Unknown");
+        var state = WorldState.parse(json);
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, state.vacationTemperatureState());
+        assertThrows(IllegalArgumentException.class, () -> state.vacationTemperaturePatch(new DecimalType(15)));
+    }
 }

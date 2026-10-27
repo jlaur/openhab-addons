@@ -124,6 +124,19 @@
 		<autoUpdatePolicy>veto</autoUpdatePolicy>
 	</channel-type>
 
+	<channel-type id="vacation-temperature">
+		<item-type>Number:Temperature</item-type>
+		<label>Vacation Temperature</label>
+		<description>Persistent temperature used during Vacation</description>
+		<category>Temperature</category>
+		<tags>
+			<tag>Setpoint</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state pattern="%.1f %unit%"/>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
+
 	<channel-type id="vacation">
 		<item-type>Switch</item-type>
 		<label>Vacation</label>

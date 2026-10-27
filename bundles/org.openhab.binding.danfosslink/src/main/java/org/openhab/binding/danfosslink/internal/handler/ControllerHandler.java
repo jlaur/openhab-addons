@@ -33,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.CloudClient;
+import org.openhab.binding.danfosslink.internal.DanfossLinkStateDescriptionProvider;
 import org.openhab.binding.danfosslink.internal.PairingStore;
 import org.openhab.binding.danfosslink.internal.WorldState;
 import org.openhab.binding.danfosslink.internal.action.PairingActions;
@@ -80,6 +81,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     private final Logger logger = LoggerFactory.getLogger(ControllerHandler.class);
     private final ExecutorService worker = ThreadPoolManager.getPool("binding-danfosslink");
     private final PairingStore store;
+    private final DanfossLinkStateDescriptionProvider descriptions;
     private final Clock clock;
     private final TimeZoneProvider timeZoneProvider;
     private volatile TimeZoneProvider controllerTimeZoneProvider;
@@ -87,6 +89,9 @@ public class ControllerHandler extends BaseBridgeHandler {
 
     private record CommandTarget(@Nullable Integer roomId, String channel) {
         WorldState.Patch patch(WorldState snapshot, Command command) {
+            if (roomId == null && CHANNEL_VACATION_TEMPERATURE.equals(channel)) {
+                return snapshot.vacationTemperaturePatch(command);
+            }
             Integer id = roomId;
             return id == null ? WorldState.livingZonePatch(channel, command) : snapshot.patch(id, channel, command);
         }
@@ -107,23 +112,27 @@ public class ControllerHandler extends BaseBridgeHandler {
     private @Nullable WorldState world;
     private @Nullable RoomDiscoveryService discovery;
 
-    public ControllerHandler(Bridge bridge, PairingStore store, TimeZoneProvider timeZoneProvider) {
-        this(bridge, store, Clock.systemUTC(), timeZoneProvider);
+    public ControllerHandler(Bridge bridge, PairingStore store, DanfossLinkStateDescriptionProvider descriptions,
+            TimeZoneProvider timeZoneProvider) {
+        this(bridge, store, descriptions, Clock.systemUTC(), timeZoneProvider);
     }
 
-    ControllerHandler(Bridge bridge, PairingStore store) {
-        this(bridge, store, Clock.systemUTC());
+    ControllerHandler(Bridge bridge, PairingStore store, DanfossLinkStateDescriptionProvider descriptions) {
+        this(bridge, store, descriptions, Clock.systemUTC());
     }
 
-    ControllerHandler(Bridge bridge, PairingStore store, Clock clock) {
-        this(bridge, store, clock, clock::getZone);
+    ControllerHandler(Bridge bridge, PairingStore store, DanfossLinkStateDescriptionProvider descriptions,
+            Clock clock) {
+        this(bridge, store, descriptions, clock, clock::getZone);
     }
 
-    ControllerHandler(Bridge bridge, PairingStore store, Clock clock, TimeZoneProvider timeZoneProvider) {
+    ControllerHandler(Bridge bridge, PairingStore store, DanfossLinkStateDescriptionProvider descriptions, Clock clock,
+            TimeZoneProvider timeZoneProvider) {
         super(bridge);
         this.timeZoneProvider = timeZoneProvider;
         this.controllerTimeZoneProvider = timeZoneProvider;
         this.store = store;
+        this.descriptions = descriptions;
         this.clock = clock;
     }
 
@@ -176,6 +185,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             homeCommand = null;
             homeSelection = new HomeSelection();
             world = null;
+            descriptions.remove(getThing().getUID());
         }
         if (closing != null) {
             closing.close();
@@ -186,6 +196,8 @@ public class ControllerHandler extends BaseBridgeHandler {
     public void handleCommand(ChannelUID channelUID, Command command) {
         if (command == RefreshType.REFRESH) {
             refresh();
+        } else if (CHANNEL_VACATION_TEMPERATURE.equals(channelUID.getId())) {
+            queueCommand(new CommandTarget(null, CHANNEL_VACATION_TEMPERATURE), command);
         } else if (CHANNEL_HOME.equals(channelUID.getId())) {
             synchronized (lifecycle) {
                 WorldState snapshot = world;
@@ -506,7 +518,8 @@ public class ControllerHandler extends BaseBridgeHandler {
                                 session.apply(patch);
                                 refreshRequired = true;
                             } catch (IllegalArgumentException e) {
-                                logger.debug("Ignoring command after updated room configuration: {}", e.getMessage());
+                                logger.debug("Ignoring command after updated controller configuration: {}",
+                                        e.getMessage());
                             }
                         }
                         if (refreshRequired) {
@@ -526,6 +539,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                     publishPause(null);
                     updateState(CHANNEL_HOME, UnDefType.UNDEF);
                     updateState(CHANNEL_CURRENT_STATE, UnDefType.UNDEF);
+                    updateState(CHANNEL_VACATION_TEMPERATURE, UnDefType.UNDEF);
                     logger.debug("Controller {} operation failed during {}", getThing().getUID(), stage, e);
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, pin == null ? switch (e) {
                         case ControllerUnavailableException unavailable -> unavailable.getMessage() + "; will retry";
@@ -562,7 +576,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
         var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
                 raw.systemTime(), time.toOpenHab(raw.vacation()), time.toOpenHab(raw.pause()),
-                time.toOpenHab(raw.home()), raw.currentState());
+                time.toOpenHab(raw.home()), raw.currentState(), raw.vacationTemperature());
         return new Snapshot(state, time);
     }
 
@@ -577,6 +591,11 @@ public class ControllerHandler extends BaseBridgeHandler {
                 return;
             }
             world = snapshot;
+            var temperature = snapshot.vacationTemperature();
+            descriptions.update(new ChannelUID(getThing().getUID(), CHANNEL_VACATION_TEMPERATURE),
+                    temperature == null ? null : temperature.minimum(),
+                    temperature == null ? null : temperature.maximum(), snapshot.unit());
+            updateState(CHANNEL_VACATION_TEMPERATURE, snapshot.vacationTemperatureState());
             String currentState = snapshot.currentState();
             updateState(CHANNEL_CURRENT_STATE, currentState == null ? UnDefType.UNDEF : new StringType(currentState));
             updateState(CHANNEL_HOME, HomeSelection.reported(snapshot.home()));
