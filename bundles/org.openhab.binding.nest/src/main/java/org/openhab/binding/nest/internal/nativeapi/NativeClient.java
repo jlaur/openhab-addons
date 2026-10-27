@@ -39,6 +39,7 @@ import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Bucket;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Credentials;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.Cursor;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.GoogleToken;
+import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.HomeAwayInputRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.LaunchRequest;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.LaunchResponse;
 import org.openhab.binding.nest.internal.nativeapi.dto.NativeDtos.NestToken;
@@ -195,6 +196,17 @@ final class NativeClient {
         // The app changes Pathlight and Nightly Promise brightness together.
         request(transport + "/v2/put/topaz." + encode(id), "POST", headers(),
                 GSON.toJson(new BrightnessRequest(brightness.value)), false, 30000);
+    }
+
+    void setHomeAwayInput(String id, boolean enabled) throws Failure, InterruptedException {
+        if (token.isEmpty() || System.currentTimeMillis() >= renewAt) {
+            refresh();
+        }
+        if (!devices.containsKey(id)) {
+            throw new Failure(FailureKind.PROTOCOL, "Protect not present in the account snapshot");
+        }
+        request(transport + "/v2/put/topaz." + encode(id), "POST", headers(),
+                GSON.toJson(new HomeAwayInputRequest(enabled)), false, 30000);
     }
 
     void setNightlyPromise(String id, boolean enabled) throws Failure, InterruptedException {
@@ -445,7 +457,8 @@ final class NativeClient {
                 if (id.isBlank()) {
                     throw protocol();
                 }
-                for (String field : List.of("night_light_enable", "night_light_continuous", "ntp_green_led_enable")) {
+                for (String field : List.of("night_light_enable", "night_light_continuous", "ntp_green_led_enable",
+                        "home_away_input")) {
                     var flag = bucket.value.get(field);
                     if (flag != null && !flag.isJsonNull()
                             && !(flag.isJsonPrimitive() && flag.getAsJsonPrimitive().isBoolean())) {
@@ -500,6 +513,7 @@ final class NativeClient {
 
     private static Protect merge(@Nullable Protect old, Protect update) {
         Protect p = new Protect();
+        p.homeAwayInput = update.homeAwayInput != null ? update.homeAwayInput : old == null ? null : old.homeAwayInput;
         p.nightlyPromiseEnabled = update.nightlyPromiseEnabled != null ? update.nightlyPromiseEnabled
                 : old == null ? null : old.nightlyPromiseEnabled;
         p.nightLightBrightness = update.nightLightBrightness != null ? update.nightLightBrightness

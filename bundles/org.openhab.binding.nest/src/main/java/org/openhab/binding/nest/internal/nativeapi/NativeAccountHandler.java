@@ -315,6 +315,11 @@ public class NativeAccountHandler extends BaseBridgeHandler {
                 && enqueue("topaz." + id + ".pathlight-brightness", api -> api.setPathlightBrightness(id, brightness));
     }
 
+    boolean setHomeAwayInput(String id, boolean enabled) {
+        return devices.containsKey(id)
+                && enqueue("topaz." + id + ".home-away-input", api -> api.setHomeAwayInput(id, enabled));
+    }
+
     boolean setNightlyPromise(String id, boolean enabled) {
         return devices.containsKey(id)
                 && enqueue("topaz." + id + ".nightly-promise", api -> api.setNightlyPromise(id, enabled));
