@@ -133,6 +133,16 @@ See [Google's Self Test documentation](https://support.google.com/googlehome/ans
 As with Pathlight, cloud confirmation does not prove the detector has applied the setting yet.
 Nightly Promise writes still need live device validation.
 
+### Home/Away Assist Participation
+
+The writable `home-away-input` Switch channel controls whether this Protect contributes activity information to Nest Home/Away Assist.
+Use `ON` to enable participation or `OFF` to disable it.
+This setting does not report motion or directly change the home's Home/Away mode.
+The channel follows Nest's reported configuration; missing values are `UNDEF`.
+Disabling participation can be useful when a wired Protect detects pets and prevents the home from switching to Away.
+See [Google's Home/Away Assist settings](https://support.google.com/googlehome/answer/9261489?hl=en).
+Cloud confirmation does not prove that the detector has applied the setting yet; writes still need live device validation.
+
 ### Native Structure Channels
 
 A `native_structure` Thing represents one Nest home under the `native_account` bridge.

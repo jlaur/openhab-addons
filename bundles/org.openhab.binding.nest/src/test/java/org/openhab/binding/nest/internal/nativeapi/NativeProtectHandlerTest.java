@@ -98,6 +98,27 @@ class NativeProtectHandlerTest {
         handler.handleCommand(brightness, new StringType("invalid"));
         handler.handleCommand(brightness, OnOffType.ON);
         verify(account, times(3)).setPathlightBrightness(anyString(), any());
+        var homeAwayInput = new ChannelUID(thing.getUID(), "home-away-input");
+        clearInvocations(callback);
+        handler.refreshFromBridge();
+        verify(callback).stateUpdated(homeAwayInput, UnDefType.UNDEF);
+        for (var command : OnOffType.values()) {
+            boolean enabled = command == OnOffType.ON;
+            when(account.setHomeAwayInput("id", enabled)).thenReturn(true);
+            clearInvocations(callback);
+            handler.handleCommand(homeAwayInput, command);
+            verify(account).setHomeAwayInput("id", enabled);
+            verify(callback, never()).stateUpdated(any(), any());
+            protect.homeAwayInput = enabled;
+            handler.refreshFromBridge();
+            verify(callback).stateUpdated(homeAwayInput, command);
+        }
+        handler.handleCommand(homeAwayInput, new StringType("ON"));
+        verify(account, times(2)).setHomeAwayInput(anyString(), anyBoolean());
+        clearInvocations(account);
+        handler.handleCommand(homeAwayInput, RefreshType.REFRESH);
+        verify(account).requestRefresh();
+        verify(account, never()).setHomeAwayInput(anyString(), anyBoolean());
         var nightlyPromise = new ChannelUID(thing.getUID(), "nightly-promise");
         clearInvocations(callback);
         handler.refreshFromBridge();
@@ -122,6 +143,7 @@ class NativeProtectHandlerTest {
         handler.dispose();
         clearInvocations(callback, account);
         handler.handleCommand(nightlyPromise, OnOffType.ON);
+        handler.handleCommand(homeAwayInput, OnOffType.ON);
         handler.handleCommand(channel, new StringType("OFF"));
         handler.handleCommand(channel, RefreshType.REFRESH);
         handler.refreshFromBridge();

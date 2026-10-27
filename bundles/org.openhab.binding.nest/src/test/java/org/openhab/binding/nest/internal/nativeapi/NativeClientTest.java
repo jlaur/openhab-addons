@@ -135,6 +135,43 @@ class NativeClientTest {
 
     @ParameterizedTest
     @org.junit.jupiter.params.provider.ValueSource(booleans = { false, true })
+    void homeAwayInputWritesOnlyEnableFlagWithoutPredictingState(boolean enabled) throws Exception {
+        var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
+        state.lastRotation = System.currentTimeMillis();
+        var requests = new ArrayList<Request>();
+        var http = transport(requests, response(200, "{\"access_token\":\"google\"}"),
+                response(200, "{\"jwt\":\"nest\"}"), response(200, "{\"userid\":\"u\",\"access_token\":\"session\"}"),
+                response(200, PATHLIGHT_SNAPSHOT), response(200, "{}"), response(503, "private failure"));
+        var client = new NativeClient(http, state, ignored -> {
+        });
+        client.refresh();
+        client.setHomeAwayInput("device", enabled);
+        verify(http).newRequest("https://transport.nest.com/v2/put/topaz.device");
+        Request write = requests.getLast();
+        verify(write).method("POST");
+        verify(write).header("Authorization", "Basic session");
+        var content = ArgumentCaptor.forClass(ContentProvider.class);
+        verify(write).content(content.capture());
+        var body = new StringBuilder();
+        content.getValue().forEach(buffer -> body.append(java.nio.charset.StandardCharsets.UTF_8.decode(buffer)));
+        var dto = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(body.toString(), NativeDtos.HomeAwayInputRequest.class));
+        assertEquals(enabled, dto.enabled);
+        var json = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(body.toString(), com.google.gson.JsonObject.class));
+        assertEquals(java.util.Set.of("home_away_input"), json.keySet());
+        assertNull(Objects.requireNonNull(client.devices().get("device")).homeAwayInput);
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+        assertThrows(NativeClient.Failure.class, () -> client.setHomeAwayInput("missing", enabled));
+        assertEquals(5, requests.size());
+        assertThrows(NativeClient.Failure.class, () -> client.setHomeAwayInput("device", enabled));
+        assertEquals(NativePathlightMode.OFF,
+                NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(booleans = { false, true })
     void nightlyPromiseWritesOnlyEnableFlagWithoutPredictingState(boolean enabled) throws Exception {
         var state = NativeCookies.capture(NativeCookiesTest.URL, "SID=s");
         state.lastRotation = System.currentTimeMillis();
@@ -240,6 +277,36 @@ class NativeClientTest {
         assertThrows(NativeClient.Failure.class, () -> client.setPathlight("device", mode));
         assertEquals(NativePathlightMode.OFF,
                 NativePathlightMode.observed(Objects.requireNonNull(client.devices().get("device"))));
+    }
+
+    @Test
+    void homeAwayInputUpdatesMergeAndRejectInvalidFlagsAtomically() throws Exception {
+        var client = new NativeClient(mock(HttpClient.class), NativeCookies.capture(NativeCookiesTest.URL, "SID=s"),
+                ignored -> {
+                });
+        var snapshot = Objects
+                .requireNonNull(NativeClient.GSON.fromJson(PATHLIGHT_SNAPSHOT, NativeDtos.LaunchResponse.class));
+        var bucket = snapshot.buckets.getFirst();
+        client.accept(snapshot.buckets, true);
+        assertNull(Objects.requireNonNull(client.devices().get("device")).homeAwayInput);
+        for (boolean enabled : new boolean[] { true, false }) {
+            bucket.value = new com.google.gson.JsonObject();
+            bucket.value.addProperty("home_away_input", enabled);
+            client.accept(List.of(bucket), false);
+            assertEquals(enabled, Objects.requireNonNull(client.devices().get("device")).homeAwayInput);
+            bucket.value = new com.google.gson.JsonObject();
+            client.accept(List.of(bucket), false);
+            assertEquals(enabled, Objects.requireNonNull(client.devices().get("device")).homeAwayInput);
+        }
+        bucket.value.addProperty("home_away_input", "invalid");
+        assertThrows(NativeClient.Failure.class, () -> client.accept(List.of(bucket), false));
+        assertEquals(false, Objects.requireNonNull(client.devices().get("device")).homeAwayInput);
+        bucket.value.addProperty("home_away_input", true);
+        client.accept(List.of(bucket), true);
+        assertEquals(true, Objects.requireNonNull(client.devices().get("device")).homeAwayInput);
+        bucket.value = new com.google.gson.JsonObject();
+        client.accept(List.of(bucket), true);
+        assertNull(Objects.requireNonNull(client.devices().get("device")).homeAwayInput);
     }
 
     @Test

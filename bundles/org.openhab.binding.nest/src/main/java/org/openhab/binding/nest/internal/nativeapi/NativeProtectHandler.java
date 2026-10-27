@@ -75,6 +75,12 @@ public class NativeProtectHandler extends BaseThingHandler {
                 account.requestRefresh();
             }
             refreshFromBridge();
+        } else if ("home-away-input".equals(channelUID.getId()) && command instanceof OnOffType value) {
+            Bridge bridge = getBridge();
+            if (bridge != null && bridge.getHandler() instanceof NativeAccountHandler account
+                    && !account.setHomeAwayInput(deviceId, value == OnOffType.ON)) {
+                refreshFromBridge();
+            }
         } else if ("nightly-promise".equals(channelUID.getId()) && command instanceof OnOffType value) {
             Bridge bridge = getBridge();
             if (bridge != null && bridge.getHandler() instanceof NativeAccountHandler account
@@ -133,6 +139,7 @@ public class NativeProtectHandler extends BaseThingHandler {
         updateState("line-power", bool(p.linePower));
         updateState("online", bool(p.online));
         updateState("nightly-promise", bool(p.nightlyPromiseEnabled));
+        updateState("home-away-input", bool(p.homeAwayInput));
         updateState("replace-by", date(p.replaceBy));
         updateState("last-test-started", date(p.testStarted));
         updateState("last-test-ended", date(p.testEnded));

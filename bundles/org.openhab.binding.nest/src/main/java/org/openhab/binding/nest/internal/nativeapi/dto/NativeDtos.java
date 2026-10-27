@@ -182,6 +182,15 @@ public final class NativeDtos {
         }
     }
 
+    public static class HomeAwayInputRequest {
+        @SerializedName("home_away_input")
+        public boolean enabled;
+
+        public HomeAwayInputRequest(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
     public static class NightlyPromiseRequest {
         @SerializedName("ntp_green_led_enable")
         public boolean enabled;
@@ -192,6 +201,8 @@ public final class NativeDtos {
     }
 
     public static class Protect {
+        @SerializedName("home_away_input")
+        public Boolean homeAwayInput;
         @SerializedName("ntp_green_led_enable")
         public Boolean nightlyPromiseEnabled;
         @SerializedName("night_light_brightness")

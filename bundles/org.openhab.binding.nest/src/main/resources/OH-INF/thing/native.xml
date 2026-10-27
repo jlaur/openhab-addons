@@ -43,6 +43,7 @@
 			<channel id="pathlight-mode" typeId="native-pathlight-mode"/>
 			<channel id="pathlight-brightness" typeId="native-pathlight-brightness"/>
 			<channel id="nightly-promise" typeId="native-nightly-promise"/>
+			<channel id="home-away-input" typeId="native-home-away-input"/>
 		</channels>
 		<config-description>
 			<parameter name="deviceId" type="text" required="true">
@@ -51,6 +52,18 @@
 			</parameter>
 		</config-description>
 	</thing-type>
+	<channel-type id="native-home-away-input">
+		<item-type>Switch</item-type>
+		<label>Home/Away Assist Participation</label>
+		<description>Allow this Protect to contribute activity information to Nest Home/Away Assist. This is a setting,
+			not a
+			motion detection state.</description>
+		<tags>
+			<tag>Control</tag>
+		</tags>
+		<state readOnly="false"/>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
+	</channel-type>
 	<channel-type id="native-nightly-promise">
 		<item-type>Switch</item-type>
 		<label>Nightly Promise</label>

@@ -129,7 +129,10 @@ class NativeAccountHandlerTest {
                     pathlight ? handler.setPathlight("home", NativePathlightMode.ON) : handler.setAway("home", true));
             assertFalse(handler.setPathlightBrightness("unknown", NativePathlightBrightness.HIGH));
             assertFalse(handler.setNightlyPromise("unknown", true));
+            assertFalse(handler.setHomeAwayInput("unknown", true));
             if (pathlight) {
+                assertTrue(handler.setHomeAwayInput("home", false));
+                assertTrue(handler.setHomeAwayInput("home", true));
                 assertTrue(handler.setNightlyPromise("home", false));
                 assertTrue(handler.setNightlyPromise("home", true));
                 assertTrue(handler.setPathlightBrightness("home", NativePathlightBrightness.LOW));
@@ -137,11 +140,12 @@ class NativeAccountHandlerTest {
             }
             queued.countDown();
             assertTrue(observed.await(10, TimeUnit.SECONDS));
-            assertEquals(pathlight ? 3 : 1, writes.get());
+            assertEquals(pathlight ? 4 : 1, writes.get());
         } finally {
             handler.dispose();
         }
         assertFalse(handler.setNightlyPromise("home", true));
+        assertFalse(handler.setHomeAwayInput("home", true));
         assertFalse(handler.setAway("home", false));
         assertFalse(handler.setPathlight("home", NativePathlightMode.OFF));
         assertFalse(handler.setPathlightBrightness("home", NativePathlightBrightness.LOW));
