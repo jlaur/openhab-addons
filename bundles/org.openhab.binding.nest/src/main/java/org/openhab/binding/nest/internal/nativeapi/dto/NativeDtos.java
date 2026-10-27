@@ -170,7 +170,32 @@ public final class NativeDtos {
         }
     }
 
+    public static class BrightnessRequest {
+        @SerializedName("night_light_brightness")
+        public int pathlight;
+        @SerializedName("ntp_green_led_brightness")
+        public int nightlyPromise;
+
+        public BrightnessRequest(int brightness) {
+            pathlight = brightness;
+            nightlyPromise = brightness;
+        }
+    }
+
+    public static class NightlyPromiseRequest {
+        @SerializedName("ntp_green_led_enable")
+        public boolean enabled;
+
+        public NightlyPromiseRequest(boolean enabled) {
+            this.enabled = enabled;
+        }
+    }
+
     public static class Protect {
+        @SerializedName("ntp_green_led_enable")
+        public Boolean nightlyPromiseEnabled;
+        @SerializedName("night_light_brightness")
+        public Integer nightLightBrightness;
         @SerializedName("where_id")
         public String whereId;
         @SerializedName("night_light_enable")

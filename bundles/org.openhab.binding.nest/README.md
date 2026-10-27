@@ -39,7 +39,7 @@ After configuring an Account Thing, you can use it to discover the connected dev
 
 The native API is an undocumented cloud API used by the Nest app.
 This implementation supports Google accounts authenticated through a browser; it does not implement legacy Nest email/password login.
-Protects provide read-only alarm observations and a writable Pathlight mode; there are no commands to hush an alarm or initiate a test.
+Protects provide read-only alarm observations and writable Pathlight mode, brightness, and Nightly Promise settings; there are no commands to hush an alarm or initiate a test.
 Native structure Things support reading and setting a home's home/away mode.
 
 1. Add a **Nest Native Account** bridge. It initially waits for authentication.
@@ -116,8 +116,22 @@ Nest may take up to an hour to apply settings to a wired Protect, or up to a day
 Pressing the Protect button once requests an immediate settings update.
 See [Google's Pathlight documentation](https://support.google.com/googlehome/answer/9243107?hl=en).
 The cloud reporting the requested mode does not confirm that the detector has applied it yet.
-Brightness is not currently exposed.
+The writable `pathlight-brightness` String channel accepts `LOW`, `MEDIUM`, and `HIGH`.
+Changing brightness also sets Nightly Promise brightness to the same level, matching the Nest app.
+It does not change Pathlight mode.
+The channel reports the observed Pathlight brightness; missing or unknown values are `UNDEF`.
 Pathlight writes are covered by simulated protocol tests and still need live device validation.
+
+### Nightly Promise
+
+The writable `nightly-promise` Switch channel enables (`ON`) or disables (`OFF`) the Nightly Promise status light shown when room lights are turned off.
+It reports the setting observed from Nest, not whether the light is currently illuminated; missing values are `UNDEF`.
+Changing this setting does not change Pathlight mode or brightness.
+Nightly Promise brightness follows the shared brightness setting described above.
+Disabling Nightly Promise does not disable the detector's self-tests.
+See [Google's Self Test documentation](https://support.google.com/googlehome/answer/9250492?hl=en).
+As with Pathlight, cloud confirmation does not prove the detector has applied the setting yet.
+Nightly Promise writes still need live device validation.
 
 ### Native Structure Channels
 
