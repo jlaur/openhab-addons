@@ -34,6 +34,10 @@ final class PendingCommands {
         if (command instanceof PendingCommand.Vacation vacation && vacation.request().command() == OnOffType.OFF) {
             commands.keySet().removeIf(key -> key.kind() == PendingCommand.Kind.VACATION);
         }
+        if (command instanceof PendingCommand.Schedule later
+                && commands.get(command.key()) instanceof PendingCommand.Schedule earlier) {
+            command = earlier.merge(later);
+        }
         // Replacements move to the end of their kind, preserving ordering between distinct date edits/channels.
         commands.remove(command.key());
         commands.put(command.key(), command);

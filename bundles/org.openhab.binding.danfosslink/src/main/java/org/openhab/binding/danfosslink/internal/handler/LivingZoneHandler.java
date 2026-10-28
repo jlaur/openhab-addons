@@ -88,6 +88,8 @@ public class LivingZoneHandler extends BaseThingHandler {
                 } else {
                     controller.refresh();
                 }
+            } else if (CHANNEL_SCHEDULE.equals(channel.getId())) {
+                controller.scheduleCommand(null, command);
             } else if (CHANNEL_HOME_SELECTED.equals(channel.getId())) {
                 controller.selectHome(null, command);
             } else if (CHANNEL_MANUAL.equals(channel.getId())) {

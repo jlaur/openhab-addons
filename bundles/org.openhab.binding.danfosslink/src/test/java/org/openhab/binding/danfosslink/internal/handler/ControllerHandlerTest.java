@@ -36,6 +36,7 @@ import org.mockito.ArgumentCaptor;
 import org.openhab.binding.danfosslink.internal.CloudClient;
 import org.openhab.binding.danfosslink.internal.DanfossLinkStateDescriptionProvider;
 import org.openhab.binding.danfosslink.internal.PairingStore;
+import org.openhab.binding.danfosslink.internal.ProtocolJson;
 import org.openhab.binding.danfosslink.internal.WorldState;
 import org.openhab.binding.danfosslink.internal.exception.CloudServerException;
 import org.openhab.binding.danfosslink.internal.exception.ControllerConnectionTimeoutException;
@@ -47,15 +48,19 @@ import org.openhab.binding.danfosslink.internal.protocol.Operation;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
+import org.openhab.binding.danfosslink.internal.protocol.dto.RoomDetailsDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.WeeklyScheduleDTO;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.thing.ChannelUID;
+import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.ThingStatusInfo;
 import org.openhab.core.thing.binding.ThingHandlerCallback;
 import org.openhab.core.thing.binding.builder.BridgeBuilder;
+import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
 
 import com.google.gson.JsonParser;
@@ -234,15 +239,15 @@ class ControllerHandlerTest {
     void sharedScheduleReadIsDeduplicatedAndOptionalFailuresDoNotTakeBridgeOffline() throws Exception {
         for (boolean failure : new boolean[] { false, true }) {
             var bridge = spy(BridgeBuilder.create(THING_TYPE_CONTROLLER, "schedules").build());
-            var roomThing = mock(org.openhab.core.thing.Thing.class);
-            var zoneThing = mock(org.openhab.core.thing.Thing.class);
+            var roomThing = mock(Thing.class);
+            var zoneThing = mock(Thing.class);
             var room = mock(RoomHandler.class);
             var zone = mock(LivingZoneHandler.class);
             when(roomThing.getHandler()).thenReturn(room);
             when(zoneThing.getHandler()).thenReturn(zone);
             doReturn(List.of(roomThing, zoneThing)).when(bridge).getThings();
-            var roomState = new AtomicReference<org.openhab.core.types.State>();
-            var zoneState = new AtomicReference<org.openhab.core.types.State>();
+            var roomState = new AtomicReference<State>();
+            var zoneState = new AtomicReference<State>();
             when(room.scheduleRequest(any(), any())).thenReturn(new ScheduleDisplay.Request(2, roomState::set));
             when(zone.scheduleRequest(any(), any())).thenReturn(new ScheduleDisplay.Request(2, zoneState::set));
             var identity = Identity.generate();
@@ -257,9 +262,8 @@ class ControllerHandlerTest {
             if (failure) {
                 when(session.room(2)).thenThrow(new IOException("Schedule read failed"));
             } else {
-                var details = new org.openhab.binding.danfosslink.internal.protocol.dto.RoomDetailsDTO();
-                details.schedule = org.openhab.binding.danfosslink.internal.ProtocolJson.GSON.fromJson(schedule,
-                        org.openhab.binding.danfosslink.internal.protocol.dto.WeeklyScheduleDTO.class);
+                var details = new RoomDetailsDTO();
+                details.schedule = ProtocolJson.GSON.fromJson(schedule, WeeklyScheduleDTO.class);
                 when(session.room(2)).thenReturn(details);
             }
             var closed = new CountDownLatch(1);
@@ -286,6 +290,78 @@ class ControllerHandlerTest {
                         argThat(info -> info.getStatus() == ThingStatus.OFFLINE));
                 verify(room).publish(any());
                 verify(zone).publish(any());
+            } finally {
+                handler.dispose();
+            }
+        }
+    }
+
+    @Test
+    void scheduleWritesReadBackReportedStateAfterSuccessOrRejection() throws Exception {
+        for (boolean rejected : new boolean[] { false, true }) {
+            var bridge = spy(BridgeBuilder.create(THING_TYPE_CONTROLLER, "schedule-write").build());
+            var childThing = mock(Thing.class);
+            var room = mock(RoomHandler.class);
+            when(childThing.getHandler()).thenReturn(room);
+            doReturn(List.of(childThing)).when(bridge).getThings();
+            var attempted = new AtomicBoolean();
+            var reported = new AtomicReference<State>();
+            var readBack = new CountDownLatch(1);
+            when(room.scheduleRequest(any(), any())).thenReturn(new ScheduleDisplay.Request(1, state -> {
+                reported.set(state);
+                if (attempted.get()) {
+                    readBack.countDown();
+                }
+            }));
+            var identity = Identity.generate();
+            var store = mock(PairingStore.class);
+            when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+            var client = mock(CloudClient.class);
+            var session = mock(CloudClient.Session.class);
+            when(client.open(any())).thenReturn(session);
+            when(session.world(any())).thenReturn(WorldState
+                    .parse(JsonParser.parseString("{\"allRooms\":[{\"id\":1,\"zone\":\"None\"}]}").getAsJsonObject()));
+            String command = """
+                    {"monday":[{"state":"AtHome","startTimeFromMidnight":"00:00:00","endTimeFromMidnight":"1.00:00:00"}]}
+                    """;
+            when(session.room(1)).thenAnswer(call -> {
+                var details = new RoomDetailsDTO();
+                details.schedule = ProtocolJson.GSON
+                        .fromJson(attempted.get() && !rejected ? command : "{\"monday\":[]}", WeeklyScheduleDTO.class);
+                return details;
+            });
+            doAnswer(call -> {
+                attempted.set(true);
+                if (rejected) {
+                    throw new ControllerResponseException(400);
+                }
+                return null;
+            }).when(session).roomSchedule(eq(1), any());
+            var initiallyClosed = new CountDownLatch(1);
+            doAnswer(call -> {
+                initiallyClosed.countDown();
+                return null;
+            }).when(session).close();
+            var handler = new ControllerHandler(bridge, store, mock(DanfossLinkStateDescriptionProvider.class)) {
+                @Override
+                CloudClient connect(Identity credentials, Operation operation) {
+                    return client;
+                }
+            };
+            var callback = mock(ThingHandlerCallback.class);
+            handler.setCallback(callback);
+            try {
+                handler.initialize();
+                assertTrue(initiallyClosed.await(10, TimeUnit.SECONDS));
+                handler.scheduleCommand(1, new StringType(command));
+                assertTrue(readBack.await(10, TimeUnit.SECONDS));
+                verify(session, times(1)).roomSchedule(eq(1), any());
+                verify(room).invalidateSchedule(any(), eq(1));
+                verify(session, times(2)).room(1);
+                assertEquals(JsonParser.parseString(rejected ? "{\"monday\":[]}" : command),
+                        JsonParser.parseString(Objects.requireNonNull(reported.get()).toString()));
+                verify(callback, never()).statusUpdated(eq(bridge),
+                        argThat(info -> info.getStatus() == ThingStatus.OFFLINE));
             } finally {
                 handler.dispose();
             }

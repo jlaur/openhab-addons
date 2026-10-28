@@ -16,12 +16,15 @@ import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstan
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.CloudClient;
 import org.openhab.binding.danfosslink.internal.WorldState;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
+import org.openhab.binding.danfosslink.internal.protocol.HeatingSchedule;
 import org.openhab.core.types.Command;
 
 /**
@@ -36,7 +39,8 @@ sealed interface PendingCommand {
         VACATION,
         PAUSE,
         HOME,
-        PATCH
+        PATCH,
+        SCHEDULE
     }
 
     record Key(Kind kind, @Nullable Integer roomId, String channel) {
@@ -51,7 +55,7 @@ sealed interface PendingCommand {
     }
 
     default boolean recoverRejection() {
-        // Mode rejections have historically been read back; patch rejections take the Bridge offline.
+        // Mode and schedule rejections are read back; existing patch rejection behaviour is unchanged.
         return key().kind() != Kind.PATCH;
     }
 
@@ -82,6 +86,72 @@ sealed interface PendingCommand {
         public Prepared prepare(WorldState snapshot, Instant now, ControllerTime time) {
             var body = patch(snapshot);
             return new Prepared(body.uri(), session -> session.apply(body));
+        }
+    }
+
+    record Schedule(@Nullable Integer roomId, Set<Integer> memberOrigins, String json) implements PendingCommand {
+        public Schedule {
+            memberOrigins = Set.copyOf(memberOrigins);
+        }
+
+        static Schedule capture(@Nullable Integer origin, WorldState snapshot, String json) {
+            var parsed = HeatingSchedule.parse(json);
+            Integer target = origin;
+            Set<Integer> members = Set.of();
+            if (origin != null) {
+                var room = snapshot.rooms().get(origin);
+                if (room == null || (!"None".equals(room.zone()) && !"Living".equals(room.zone()))) {
+                    throw new IllegalArgumentException("Room membership unavailable");
+                }
+                if ("Living".equals(room.zone())) {
+                    target = null;
+                    members = Set.of(origin);
+                }
+            }
+            var command = new Schedule(target, members, HeatingSchedule.display(parsed));
+            command.validate(snapshot);
+            return command;
+        }
+
+        Schedule merge(Schedule later) {
+            var origins = new HashSet<>(memberOrigins);
+            origins.addAll(later.memberOrigins);
+            return new Schedule(roomId, origins, HeatingSchedule.merge(json, later.json));
+        }
+
+        private void validate(WorldState snapshot) {
+            Integer id = roomId;
+            if (id != null) {
+                var room = snapshot.rooms().get(id);
+                if (room == null || !"None".equals(room.zone())) {
+                    throw new IllegalArgumentException(
+                            "Independent room membership changed; submit the schedule again");
+                }
+            } else {
+                if (ScheduleDisplay.source(snapshot, null) == null) {
+                    throw new IllegalArgumentException("Living zone has no known members");
+                }
+                for (int origin : memberOrigins) {
+                    var room = snapshot.rooms().get(origin);
+                    if (room == null || !"Living".equals(room.zone())) {
+                        throw new IllegalArgumentException("Living-zone membership changed; submit the schedule again");
+                    }
+                }
+            }
+        }
+
+        @Override
+        public Key key() {
+            return new Key(Kind.SCHEDULE, roomId, CHANNEL_SCHEDULE);
+        }
+
+        @Override
+        public Prepared prepare(WorldState snapshot, Instant now, ControllerTime time) {
+            validate(snapshot);
+            var schedule = HeatingSchedule.parse(json);
+            Integer id = roomId;
+            return id == null ? new Prepared("/api/zones/living", session -> session.livingZoneSchedule(schedule))
+                    : new Prepared("/api/rooms/" + id, session -> session.roomSchedule(id, schedule));
         }
     }
 
