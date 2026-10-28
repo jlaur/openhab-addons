@@ -15,6 +15,7 @@ package org.openhab.binding.danfosslink.internal.handler;
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.Objects;
 
 import javax.measure.Unit;
@@ -54,6 +55,8 @@ public class RoomHandler extends BaseThingHandler {
     private final Logger logger = LoggerFactory.getLogger(RoomHandler.class);
     private final Object lifecycle = new Object();
     private final DanfossLinkStateDescriptionProvider stateDescriptionProvider;
+    private final ScheduleDisplay schedule = new ScheduleDisplay(lifecycle,
+            state -> updateState(CHANNEL_SCHEDULE, state));
     private boolean running;
     private int roomId;
 
@@ -77,6 +80,7 @@ public class RoomHandler extends BaseThingHandler {
         synchronized (lifecycle) {
             roomId = id;
             running = true;
+            schedule.start();
         }
 
         Bridge bridge = getBridge();
@@ -96,6 +100,7 @@ public class RoomHandler extends BaseThingHandler {
     public void dispose() {
         synchronized (lifecycle) {
             running = false;
+            schedule.stop();
             stateDescriptionProvider.remove(getThing().getUID());
         }
     }
@@ -121,7 +126,12 @@ public class RoomHandler extends BaseThingHandler {
             id = roomId;
         }
         if (command == RefreshType.REFRESH) {
-            controller.refresh();
+            if (CHANNEL_SCHEDULE.equals(channel.getId())) {
+                schedule.invalidate();
+                controller.refreshSchedules();
+            } else {
+                controller.refresh();
+            }
         } else {
             switch (channel.getId()) {
                 case CHANNEL_HOME_SELECTED -> controller.selectHome(id, command);
@@ -131,6 +141,36 @@ public class RoomHandler extends BaseThingHandler {
                 default -> {
                 }
             }
+        }
+    }
+
+    void invalidateSchedule() {
+        schedule.invalidate();
+    }
+
+    ScheduleDisplay.@Nullable Request scheduleRequest(WorldState snapshot, Instant now) {
+        synchronized (lifecycle) {
+            return schedule.request(ScheduleDisplay.source(snapshot, roomId), isLinked(CHANNEL_SCHEDULE), now);
+        }
+    }
+
+    @Override
+    public void channelLinked(ChannelUID channel) {
+        if (CHANNEL_SCHEDULE.equals(channel.getId())) {
+            schedule.invalidate();
+            var bridge = getBridge();
+            if (bridge != null && bridge.getHandler() instanceof ControllerHandler controller) {
+                controller.refreshSchedules();
+            }
+        } else {
+            super.channelLinked(channel);
+        }
+    }
+
+    @Override
+    public void channelUnlinked(ChannelUID channel) {
+        if (CHANNEL_SCHEDULE.equals(channel.getId())) {
+            schedule.invalidate();
         }
     }
 
@@ -149,6 +189,8 @@ public class RoomHandler extends BaseThingHandler {
                 updateState(CHANNEL_AWAY_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
+                schedule.invalidate();
+                updateState(CHANNEL_SCHEDULE, UnDefType.UNDEF);
             } else if (getThing().getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.UNKNOWN);
             }
@@ -179,11 +221,15 @@ public class RoomHandler extends BaseThingHandler {
                 updateState(CHANNEL_AWAY_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL_SETPOINT, UnDefType.UNDEF);
                 updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
+                schedule.invalidate();
+                updateState(CHANNEL_SCHEDULE, UnDefType.UNDEF);
                 return;
             }
             String zone = room.zone();
             String livingZone = "Living".equals(zone) ? "true" : "None".equals(zone) ? "false" : null;
             if (!Objects.equals(getThing().getProperties().get(PROPERTY_LIVING_ZONE), livingZone)) {
+                schedule.invalidate();
+                updateState(CHANNEL_SCHEDULE, UnDefType.UNDEF);
                 updateProperty(PROPERTY_LIVING_ZONE, livingZone);
             }
             stateDescriptionProvider.update(getThing().getUID(), room.minimum(), room.maximum(), snapshot.unit());

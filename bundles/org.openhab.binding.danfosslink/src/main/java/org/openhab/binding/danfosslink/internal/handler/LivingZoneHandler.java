@@ -14,7 +14,10 @@ package org.openhab.binding.danfosslink.internal.handler;
 
 import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstants.*;
 
+import java.time.Instant;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.WorldState;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
@@ -35,6 +38,8 @@ import org.openhab.core.types.UnDefType;
 @NonNullByDefault
 public class LivingZoneHandler extends BaseThingHandler {
     private final Object lifecycle = new Object();
+    private final ScheduleDisplay schedule = new ScheduleDisplay(lifecycle,
+            state -> updateState(CHANNEL_SCHEDULE, state));
     private boolean running;
 
     public LivingZoneHandler(Thing thing) {
@@ -50,6 +55,7 @@ public class LivingZoneHandler extends BaseThingHandler {
         }
         synchronized (lifecycle) {
             running = true;
+            schedule.start();
         }
         bridgeStatusChanged(bridge.getStatusInfo());
         if (bridge.getHandler() instanceof ControllerHandler controller) {
@@ -62,6 +68,7 @@ public class LivingZoneHandler extends BaseThingHandler {
     public void dispose() {
         synchronized (lifecycle) {
             running = false;
+            schedule.stop();
         }
     }
 
@@ -75,12 +82,47 @@ public class LivingZoneHandler extends BaseThingHandler {
         var bridge = getBridge();
         if (bridge != null && bridge.getHandler() instanceof ControllerHandler controller) {
             if (command == RefreshType.REFRESH) {
-                controller.refresh();
+                if (CHANNEL_SCHEDULE.equals(channel.getId())) {
+                    schedule.invalidate();
+                    controller.refreshSchedules();
+                } else {
+                    controller.refresh();
+                }
             } else if (CHANNEL_HOME_SELECTED.equals(channel.getId())) {
                 controller.selectHome(null, command);
             } else if (CHANNEL_MANUAL.equals(channel.getId())) {
                 controller.livingZoneCommand(channel.getId(), command);
             }
+        }
+    }
+
+    void invalidateSchedule() {
+        schedule.invalidate();
+    }
+
+    ScheduleDisplay.@Nullable Request scheduleRequest(WorldState snapshot, Instant now) {
+        synchronized (lifecycle) {
+            return schedule.request(ScheduleDisplay.source(snapshot, null), isLinked(CHANNEL_SCHEDULE), now);
+        }
+    }
+
+    @Override
+    public void channelLinked(ChannelUID channel) {
+        if (CHANNEL_SCHEDULE.equals(channel.getId())) {
+            schedule.invalidate();
+            var bridge = getBridge();
+            if (bridge != null && bridge.getHandler() instanceof ControllerHandler controller) {
+                controller.refreshSchedules();
+            }
+        } else {
+            super.channelLinked(channel);
+        }
+    }
+
+    @Override
+    public void channelUnlinked(ChannelUID channel) {
+        if (CHANNEL_SCHEDULE.equals(channel.getId())) {
+            schedule.invalidate();
         }
     }
 
@@ -92,6 +134,8 @@ public class LivingZoneHandler extends BaseThingHandler {
             }
             if (status.getStatus() != ThingStatus.ONLINE) {
                 updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
+                schedule.invalidate();
+                updateState(CHANNEL_SCHEDULE, UnDefType.UNDEF);
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
             } else if (getThing().getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.UNKNOWN);

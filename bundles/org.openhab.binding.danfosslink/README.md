@@ -65,6 +65,7 @@ The binding does not set or correct the controller's clock.
 | controller        | alarms               | String             | Read       | Unresolved alarms as JSON                                                 |
 | controller        | current-state        | String             | Read       | Controller-reported overall state, such as AtHome, Away or Asleep         |
 | controller        | home                 | Switch             | Read/Write | ON applies the staged selection; OFF cancels Home                         |
+| room, living-zone | schedule             | String             | Read       | Weekly heating schedule as JSON (advanced)                                |
 | room, living-zone | home-selected        | Switch             | Read/Write | Stage inclusion in the next Home activation                               |
 | controller        | pause                | Switch             | Read/Write | ON starts or restarts a one-hour pause; OFF cancels Pause                 |
 | controller        | pause-until          | DateTime           | Read/Write | Start or adjust Pause until a future deadline                             |
@@ -246,8 +247,39 @@ The Thing remains available when the zone is empty.
 
 The app's At Home override is a separate system-wide mode with its own selected-room list and timing.
 It is not the Living zone's manual/automatic setting and is not exposed by this Thing.
-Schedule editing is not yet exposed through channels or Thing actions.
-The protocol layer provides typed weekly schedule reads and writes in preparation for a future interface; these operations still need live controller validation.
+
+### Schedule Display
+
+The advanced `schedule` String channel on room and Living-zone Things reports the stored weekly heating schedule as JSON.
+Link it to a String Item to enable fetching.
+The binding reads it after normal heating updates, initially and then at the first controller poll after 15 minutes.
+Sending `REFRESH` to the linked channel requests a fresh read, including when another cloud operation is already running.
+After a failed read, the binding retries at the first normal poll after one minute.
+Schedule failures publish `UNDEF` without discarding successfully read heating data or taking the Bridge offline solely because a schedule read failed.
+
+Independent rooms read their own schedule.
+Living-zone Things and member rooms read through the lowest-ID Living-zone member in the current world response.
+Consumers using that same member share a single detailed room request within the poll.
+If no member exists, or a room's membership is unknown, its schedule is `UNDEF`.
+Reading the shared schedule through a member room still needs live controller verification.
+The detailed room response shape also needs verification; TRACE logging includes the response to `GET /api/rooms/{roomId}`.
+Users do not need to supply room IDs to fetch schedules.
+
+The channel uses the protocol's lowercase weekday names and period fields, for example:
+
+```json
+{"monday":[{"state":"Away","startTimeFromMidnight":"00:00:00","endTimeFromMidnight":"06:00:00"},{"state":"AtHome","startTimeFromMidnight":"06:00:00","endTimeFromMidnight":"22:00:00"},{"state":"Away","startTimeFromMidnight":"22:00:00","endTimeFromMidnight":"1.00:00:00"}]}
+```
+
+Times are recurring controller-local wall-clock times, without UTC conversion or clock-skew adjustment.
+`1.00:00:00` means midnight at the end of the day.
+Known states are `AtHome`, `Away` and `Asleep`.
+Reported gaps, empty days and omitted days are preserved; the binding does not fill missing data when displaying it.
+Missing schedules, unknown period states and malformed periods produce `UNDEF`.
+Manual, Home, Pause and Vacation overrides do not erase the stored schedule; the schedule channel does not indicate which override is currently effective.
+
+Schedule editing and a graphical schedule widget are not yet provided.
+The protocol layer provides typed weekly schedule writes in preparation for a future interface; writes still need live controller validation.
 
 ### Regulation State
 

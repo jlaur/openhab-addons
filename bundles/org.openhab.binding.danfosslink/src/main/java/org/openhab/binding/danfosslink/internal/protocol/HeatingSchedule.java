@@ -34,6 +34,12 @@ public final class HeatingSchedule {
     private HeatingSchedule() {
     }
 
+    /** Validates a reported schedule without filling gaps or inventing omitted days. */
+    public static String display(WeeklyScheduleDTO schedule) {
+        normalize(schedule);
+        return org.openhab.binding.danfosslink.internal.ProtocolJson.GSON.toJson(schedule);
+    }
+
     public static ScheduleRequestDTO room(int roomId, WeeklyScheduleDTO schedule) {
         if (roomId < 0) {
             throw new IllegalArgumentException("Negative room ID");
