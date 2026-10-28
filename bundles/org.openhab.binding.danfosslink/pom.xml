@@ -14,48 +14,30 @@
 
   <name>openHAB Add-ons :: Bundles :: Danfoss Link Binding</name>
 
-  <properties>
-    <!-- Keep the embedded cryptography implementation private to this binding. -->
-    <bnd.importpackage>!org.bouncycastle.*,*</bnd.importpackage>
-  </properties>
-
   <dependencies>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bctls-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcutil-jdk18on</artifactId>
       <version>${bouncycastle.version}</version>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <executions>
-          <execution>
-            <id>embed-dependencies</id>
-            <configuration>
-              <!-- Original dependency signatures do not authenticate the repackaged binding. -->
-              <excludes>**/module-info.class,META-INF/*.SF,META-INF/*.RSA,META-INF/*.DSA</excludes>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-    </plugins>
-  </build>
 </project>

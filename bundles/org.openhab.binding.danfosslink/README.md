@@ -346,7 +346,8 @@ No APK, external certificate file, Python installation, or Java security configu
 Cloud certificates are validated against this trust anchor and the MDG control service identity.
 Controller certificates are authenticated during PACE pairing and pinned for subsequent connections.
 
-Bouncy Castle is included for the legacy TLS and PACE protocols.
+Bouncy Castle is provided by shared OSGi bundles for the legacy TLS and PACE protocols.
+These dependencies are installed automatically when installing the binding feature.
 The controller uses an ECDSA certificate with explicit Brainpool P320r1 parameters, and the original TLS implementation uses a legacy supported-group identifier.
 Enabling `TLS_RSA_*` suites does not resolve these EC certificate and protocol compatibility issues.
 The binding keeps this compatibility handling local rather than changing global JVM security settings.
