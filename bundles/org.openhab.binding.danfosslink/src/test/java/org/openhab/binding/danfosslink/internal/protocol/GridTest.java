@@ -71,6 +71,28 @@ class GridTest {
         assertEquals(EOFException.class, failure(0, 0, true).getClass());
     }
 
+    @Test
+    void sessionTerminationReportsKnownAndUnknownReasons() throws Exception {
+        var identity = Identity.generate();
+        var control = mock(Transport.class);
+        try (var transports = mockStatic(Transport.class); var operation = new Operation()) {
+            transports.when(() -> Transport.connect(anyString(), eq(443), same(operation))).thenReturn(control);
+            for (var entry : java.util.Map.of(0L, "NO_ERROR", 1L, "INTERNAL_ERROR", 2L, "SYNTAX_ERROR", 3L, "DENIED",
+                    4L, "TEMPORARILY_DENIED", 5L, "PROTOCOL_ERROR", 6L, "TIMEOUT", 7L, "UNSUPPORTED_VERSION", 99L,
+                    "UNKNOWN", 4294967297L, "UNKNOWN").entrySet()) {
+                when(control.receive()).thenReturn(
+                        Wire.message(1).fixed32(1, 0xf09d8ca8).number(2, 1).number(3, 0).build(),
+                        Wire.message(2).number(1, entry.getKey()).build());
+                try (var grid = Grid.connect(identity, chain -> {
+                }, operation)) {
+                    var failure = assertThrows(IOException.class, grid::maintain);
+                    assertEquals("MDG ended the session, reason " + entry.getValue() + " (" + entry.getKey() + ")",
+                            failure.getMessage());
+                }
+            }
+        }
+    }
+
     private IOException failure(long result, int relayError, boolean tls) throws Exception {
         var identity = Identity.generate();
         var control = mock(Transport.class);
