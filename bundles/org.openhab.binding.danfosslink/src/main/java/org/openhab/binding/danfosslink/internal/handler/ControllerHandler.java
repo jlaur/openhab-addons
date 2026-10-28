@@ -23,7 +23,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -87,22 +87,8 @@ public class ControllerHandler extends BaseBridgeHandler {
     private volatile TimeZoneProvider controllerTimeZoneProvider;
     private final Object lifecycle = new Object();
 
-    private record CommandTarget(@Nullable Integer roomId, String channel) {
-        WorldState.Patch patch(WorldState snapshot, Command command) {
-            if (roomId == null && CHANNEL_VACATION_TEMPERATURE.equals(channel)) {
-                return snapshot.vacationTemperaturePatch(command);
-            }
-            Integer id = roomId;
-            return id == null ? WorldState.livingZonePatch(channel, command) : snapshot.patch(id, channel, command);
-        }
-    }
-
-    private final Map<CommandTarget, Command> commands = new LinkedHashMap<>();
-
-    private final Map<String, VacationState.Request> vacationCommands = new LinkedHashMap<>();
-    private PauseState.@Nullable Request pauseCommand;
+    private final PendingCommands pendingCommands = new PendingCommands();
     private HomeSelection homeSelection = new HomeSelection();
-    private HomeSelection.@Nullable Request homeCommand;
     private VacationState vacation = new VacationState();
 
     private boolean running;
@@ -178,11 +164,8 @@ public class ControllerHandler extends BaseBridgeHandler {
             }
             closing = active;
             active = null;
-            commands.clear();
-            vacationCommands.clear();
+            pendingCommands.clear();
             vacation = new VacationState();
-            pauseCommand = null;
-            homeCommand = null;
             homeSelection = new HomeSelection();
             world = null;
             descriptions.remove(getThing().getUID());
@@ -197,7 +180,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         if (command == RefreshType.REFRESH) {
             refresh();
         } else if (CHANNEL_VACATION_TEMPERATURE.equals(channelUID.getId())) {
-            queueCommand(new CommandTarget(null, CHANNEL_VACATION_TEMPERATURE), command);
+            queueCommand(new PendingCommand.Patch(null, CHANNEL_VACATION_TEMPERATURE, command));
         } else if (CHANNEL_HOME.equals(channelUID.getId())) {
             synchronized (lifecycle) {
                 WorldState snapshot = world;
@@ -208,7 +191,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                     try {
                         var request = homeSelection.request(onOff);
                         request.body(snapshot);
-                        homeCommand = request;
+                        pendingCommands.add(new PendingCommand.Home(request));
                     } catch (IllegalArgumentException e) {
                         logger.debug("Controller {} rejected Home command: {}", getThing().getUID(), e.getMessage());
                     }
@@ -217,7 +200,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                             command.getClass().getSimpleName());
                 }
                 updateState(CHANNEL_HOME, HomeSelection.reported(snapshot.home()));
-                if (homeCommand == null) {
+                if (!pendingCommands.contains(PendingCommand.Kind.HOME)) {
                     return;
                 }
             }
@@ -230,12 +213,13 @@ public class ControllerHandler extends BaseBridgeHandler {
                 }
                 try {
                     // Both channels address the same override; the latest pending command replaces earlier intent.
-                    pauseCommand = PauseState.command(channelUID.getId(), command, clock.instant());
+                    pendingCommands.add(
+                            new PendingCommand.Pause(PauseState.command(channelUID.getId(), command, clock.instant())));
                 } catch (IllegalArgumentException e) {
                     logger.debug("Controller {} rejected pause command: {}", getThing().getUID(), e.getMessage());
                 }
                 publishPause(snapshot.pause());
-                if (pauseCommand == null) {
+                if (!pendingCommands.contains(PendingCommand.Kind.PAUSE)) {
                     return;
                 }
             }
@@ -248,17 +232,13 @@ public class ControllerHandler extends BaseBridgeHandler {
                 try {
                     var request = vacation.command(channelUID.getId(), command, clock.instant());
                     if (request != null) {
-                        if (command == org.openhab.core.library.types.OnOffType.OFF) {
-                            vacationCommands.clear();
-                        }
-                        vacationCommands.remove(channelUID.getId());
-                        vacationCommands.put(channelUID.getId(), request);
+                        pendingCommands.add(new PendingCommand.Vacation(request));
                     }
                 } catch (IllegalArgumentException e) {
                     logger.debug("Controller {} rejected vacation command: {}", getThing().getUID(), e.getMessage());
                 }
                 publishVacation();
-                if (vacationCommands.isEmpty()) {
+                if (!pendingCommands.contains(PendingCommand.Kind.VACATION)) {
                     return;
                 }
             }
@@ -356,7 +336,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             Operation operation = new Operation();
             active = operation;
             updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Pairing in progress");
-            worker.execute(() -> run(operation, pin, Map.of(), Map.of(), null, null));
+            worker.execute(() -> run(operation, pin, List.of()));
         }
         return "Pairing started. Check the controller Thing status for the result.";
     }
@@ -368,44 +348,34 @@ public class ControllerHandler extends BaseBridgeHandler {
             }
             Operation operation = new Operation();
             active = operation;
-            Map<CommandTarget, Command> pending = new LinkedHashMap<>(commands);
-            commands.clear();
-            Map<String, VacationState.Request> pendingVacation = new LinkedHashMap<>(vacationCommands);
-            vacationCommands.clear();
-            PauseState.Request pendingPause = pauseCommand;
-            pauseCommand = null;
-            HomeSelection.Request pendingHome = homeCommand;
-            homeCommand = null;
-            worker.execute(() -> run(operation, null, pending, pendingVacation, pendingPause, pendingHome));
+            List<PendingCommand> pending = pendingCommands.drain();
+            worker.execute(() -> run(operation, null, pending));
         }
     }
 
     void roomCommand(int roomId, String channel, Command command) {
-        queueCommand(new CommandTarget(roomId, channel), command);
+        queueCommand(new PendingCommand.Patch(roomId, channel, command));
     }
 
     void livingZoneCommand(String channel, Command command) {
-        queueCommand(new CommandTarget(null, channel), command);
+        queueCommand(new PendingCommand.Patch(null, channel, command));
     }
 
-    private void queueCommand(CommandTarget target, Command command) {
+    private void queueCommand(PendingCommand.Patch command) {
         synchronized (lifecycle) {
             WorldState snapshot = world;
             if (!running || snapshot == null) {
-                logger.debug("Ignoring command for {}: running={}, controller snapshot available={}", target, running,
-                        snapshot != null);
+                logger.debug("Ignoring command for {}: running={}, controller snapshot available={}", command.key(),
+                        running, snapshot != null);
                 return;
             }
             try {
-                target.patch(snapshot, command);
+                command.patch(snapshot);
             } catch (IllegalArgumentException e) {
-                logger.debug("Ignoring invalid command for {}: {}", target, e.getMessage());
+                logger.debug("Ignoring invalid command for {}: {}", command.key(), e.getMessage());
                 return;
             }
-            // Coalesce each channel independently, keeping the order of the latest commands.
-            var key = target;
-            commands.remove(key);
-            commands.put(key, command);
+            pendingCommands.add(command);
         }
         refresh();
     }
@@ -414,9 +384,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         return new CloudClient(identity, operation);
     }
 
-    private void run(Operation operation, @Nullable String pin, Map<CommandTarget, Command> pending,
-            Map<String, VacationState.Request> pendingVacation, PauseState.@Nullable Request pendingPause,
-            HomeSelection.@Nullable Request pendingHome) {
+    private void run(Operation operation, @Nullable String pin, List<PendingCommand> pending) {
         boolean paired = false;
         String stage = "loading pairing";
         try (operation) {
@@ -450,76 +418,31 @@ public class ControllerHandler extends BaseBridgeHandler {
                     try (var session = client.open(controller)) {
                         stage = "reading controller state";
                         Snapshot snapshot = readWorld(session);
-                        for (var request : pendingVacation.values()) {
-                            operation.check();
-                            try {
-                                var mode = snapshot.state().vacation();
-                                var body = request.body(mode, clock.instant(), snapshot.time());
-                                stage = "writing /api/modes/vacation";
-                                session.vacation(body);
-                                stage = "reading back vacation";
-                                snapshot = readWorld(session);
-                            } catch (IllegalArgumentException e) {
-                                logger.debug("Controller {} rejected vacation command: {}", getThing().getUID(),
-                                        e.getMessage());
-                            } catch (ControllerResponseException e) {
-                                logger.debug("Controller {} rejected vacation request with HTTP {}",
-                                        getThing().getUID(), e.status());
-                                stage = "reading state after rejected vacation request";
-                                snapshot = readWorld(session);
-                            }
-                        }
-                        if (pendingPause != null) {
-                            operation.check();
-                            try {
-                                var mode = snapshot.state().pause();
-                                var body = pendingPause.body(mode, clock.instant(), snapshot.time());
-                                stage = "writing /api/modes/pause";
-                                session.pause(body);
-                                stage = "reading back pause";
-                                snapshot = readWorld(session);
-                            } catch (IllegalArgumentException e) {
-                                logger.debug("Controller {} rejected pause command: {}", getThing().getUID(),
-                                        e.getMessage());
-                            } catch (ControllerResponseException e) {
-                                logger.debug("Controller {} rejected pause request with HTTP {}", getThing().getUID(),
-                                        e.status());
-                                stage = "reading state after rejected pause request";
-                                snapshot = readWorld(session);
-                            }
-                        }
-                        if (pendingHome != null) {
-                            operation.check();
-                            try {
-                                var body = pendingHome.body(snapshot.state());
-                                stage = "writing /api/modes/athome";
-                                session.home(body);
-                                stage = "reading back Home";
-                                snapshot = readWorld(session);
-                            } catch (IllegalArgumentException e) {
-                                logger.debug("Controller {} rejected Home command after refresh: {}",
-                                        getThing().getUID(), e.getMessage());
-                            } catch (ControllerResponseException e) {
-                                logger.debug("Controller {} rejected Home request with HTTP {}", getThing().getUID(),
-                                        e.status());
-                                stage = "reading state after rejected Home request";
-                                snapshot = readWorld(session);
-                            }
-                        }
                         boolean refreshRequired = false;
-                        for (var entry : pending.entrySet()) {
+                        for (PendingCommand command : pending) {
                             operation.check();
                             try {
-                                var key = entry.getKey();
-                                var patch = key.patch(snapshot.state(), entry.getValue());
-                                stage = "writing " + patch.uri();
-                                logger.trace("Controller {} applying {} for {}", getThing().getUID(), entry.getValue(),
-                                        key);
-                                session.apply(patch);
-                                refreshRequired = true;
+                                var prepared = command.prepare(snapshot.state(), clock.instant(), snapshot.time());
+                                stage = "writing " + prepared.uri();
+                                logger.trace("Controller {} applying {}", getThing().getUID(), command);
+                                prepared.write().send(session);
+                                if (command.readBackImmediately()) {
+                                    stage = "reading back " + prepared.uri();
+                                    snapshot = readWorld(session);
+                                } else {
+                                    refreshRequired = true;
+                                }
                             } catch (IllegalArgumentException e) {
-                                logger.debug("Ignoring command after updated controller configuration: {}",
-                                        e.getMessage());
+                                logger.debug("Controller {} rejected command {} after refresh: {}", getThing().getUID(),
+                                        command.key(), e.getMessage());
+                            } catch (ControllerResponseException e) {
+                                if (!command.recoverRejection()) {
+                                    throw e;
+                                }
+                                logger.debug("Controller {} rejected request {} with HTTP {}", getThing().getUID(),
+                                        command.key(), e.status());
+                                stage = "reading state after rejected " + command.key().kind() + " request";
+                                snapshot = readWorld(session);
                             }
                         }
                         if (refreshRequired) {
@@ -555,8 +478,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         } finally {
             boolean again;
             synchronized (lifecycle) {
-                again = current(operation) && (paired || !commands.isEmpty() || !vacationCommands.isEmpty()
-                        || pauseCommand != null || homeCommand != null);
+                again = current(operation) && (paired || !pendingCommands.isEmpty());
                 if (operation.equals(active)) {
                     active = null;
                 }
