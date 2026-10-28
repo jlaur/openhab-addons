@@ -781,4 +781,64 @@ class ControllerHandlerTest {
         }
         verify(descriptions).remove(bridge.getUID());
     }
+
+    @Test
+    void mixedBatchPreservesModePriorityAndReadbackBoundaries() throws Exception {
+        var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "mixed").build();
+        var identity = Identity.generate();
+        var store = mock(PairingStore.class);
+        when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+        var client = mock(CloudClient.class);
+        var session = mock(CloudClient.Session.class);
+        when(client.open(any())).thenReturn(session);
+        when(session.world(any())).thenReturn(WorldState.parse(JsonParser.parseString("""
+                {"allRooms":[{"id":1,"zone":"None","minSetpoint":5,"maxSetpoint":35}],
+                "temperatureSettings":{"temperatureScale":"Celcius"},
+                "modes":[{"type":"Vacation","state":"Inactive"},{"type":"Pause","state":"Inactive"},
+                {"type":"AtHome","state":"Inactive"}]}
+                """).getAsJsonObject()));
+        var handler = new ControllerHandler(bridge, store, mock(DanfossLinkStateDescriptionProvider.class)) {
+            @Override
+            CloudClient connect(Identity credentials, Operation operation) {
+                return client;
+            }
+        };
+        var callback = mock(ThingHandlerCallback.class);
+        var queued = new AtomicBoolean();
+        var finished = new CountDownLatch(1);
+        doAnswer(call -> {
+            ThingStatusInfo status = call.getArgument(1);
+            if (status.getStatus() == ThingStatus.ONLINE) {
+                if (queued.compareAndSet(false, true)) {
+                    handler.roomCommand(1, CHANNEL_SETPOINT, new org.openhab.core.library.types.DecimalType(20));
+                    handler.handleCommand(new ChannelUID(bridge.getUID(), CHANNEL_HOME), OnOffType.OFF);
+                    handler.handleCommand(new ChannelUID(bridge.getUID(), CHANNEL_PAUSE), OnOffType.OFF);
+                    handler.handleCommand(new ChannelUID(bridge.getUID(), CHANNEL_VACATION), OnOffType.OFF);
+                    handler.roomCommand(1, CHANNEL_HOME_SETPOINT, new org.openhab.core.library.types.DecimalType(21));
+                } else {
+                    finished.countDown();
+                }
+            }
+            return null;
+        }).when(callback).statusUpdated(eq(bridge), any());
+        handler.setCallback(callback);
+        try {
+            handler.initialize();
+            assertTrue(finished.await(10, TimeUnit.SECONDS));
+            var order = inOrder(session);
+            order.verify(session).world(any());
+            order.verify(session).world(any());
+            order.verify(session).vacation(any());
+            order.verify(session).world(any());
+            order.verify(session).pause(any());
+            order.verify(session).world(any());
+            order.verify(session).home(any());
+            order.verify(session).world(any());
+            order.verify(session, times(2)).apply(any());
+            order.verify(session).world(any());
+            verify(session, times(6)).world(any());
+        } finally {
+            handler.dispose();
+        }
+    }
 }
