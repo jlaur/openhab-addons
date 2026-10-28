@@ -65,7 +65,7 @@ The binding does not set or correct the controller's clock.
 | controller        | alarms               | String             | Read       | Unresolved alarms as JSON                                                 |
 | controller        | current-state        | String             | Read       | Controller-reported overall state, such as AtHome, Away or Asleep         |
 | controller        | home                 | Switch             | Read/Write | ON applies the staged selection; OFF cancels Home                         |
-| room, living-zone | schedule             | String             | Read       | Weekly heating schedule as JSON (advanced)                                |
+| room, living-zone | schedule             | String             | Read/Write | Weekly heating schedule as JSON (advanced)                                |
 | room, living-zone | home-selected        | Switch             | Read/Write | Stage inclusion in the next Home activation                               |
 | controller        | pause                | Switch             | Read/Write | ON starts or restarts a one-hour pause; OFF cancels Pause                 |
 | controller        | pause-until          | DateTime           | Read/Write | Start or adjust Pause until a future deadline                             |
@@ -248,7 +248,7 @@ The Thing remains available when the zone is empty.
 The app's At Home override is a separate system-wide mode with its own selected-room list and timing.
 It is not the Living zone's manual/automatic setting and is not exposed by this Thing.
 
-### Schedule Display
+### Schedules
 
 The advanced `schedule` String channel on room and Living-zone Things reports the stored weekly heating schedule as JSON.
 Link it to a String Item to enable fetching.
@@ -261,8 +261,8 @@ Independent rooms read their own schedule.
 Living-zone Things and member rooms read through the lowest-ID Living-zone member in the current world response.
 Consumers using that same member share a single detailed room request within the poll.
 If no member exists, or a room's membership is unknown, its schedule is `UNDEF`.
-Reading the shared schedule through a member room still needs live controller verification.
-The detailed room response shape also needs verification; TRACE logging includes the response to `GET /api/rooms/{roomId}`.
+Detailed room and shared Living-zone schedule reads have been verified on a live controller.
+TRACE logging includes the response to `GET /api/rooms/{roomId}`.
 Users do not need to supply room IDs to fetch schedules.
 
 The channel uses the protocol's lowercase weekday names and period fields, for example:
@@ -278,8 +278,32 @@ Reported gaps, empty days and omitted days are preserved; the binding does not f
 Missing schedules, unknown period states and malformed periods produce `UNDEF`.
 Manual, Home, Pause and Vacation overrides do not erase the stored schedule; the schedule channel does not indicate which override is currently effective.
 
-Schedule editing and a graphical schedule widget are not yet provided.
-The protocol layer provides typed weekly schedule writes in preparation for a future interface; writes still need live controller validation.
+Send a JSON String command to `schedule` to replace the supplied weekdays.
+Omitted weekdays remain unchanged; an empty day array requests all-day Away.
+Within a supplied day, gaps are filled with Away and periods are sorted before sending.
+Unknown fields or states, null days, incomplete periods, overlaps, reversed intervals and times with non-zero seconds or fractional seconds are rejected before any write.
+Times must be whole minutes; use `1.00:00:00` for the end of the day.
+
+For example, this command requests Home from 15:00 to 18:30 on Monday, with Away for the rest of that day:
+
+```json
+{"monday":[{"state":"AtHome","startTimeFromMidnight":"15:00:00","endTimeFromMidnight":"18:30:00"}]}
+```
+
+**Editing a Living-zone member room changes the schedule of the entire Living zone.**
+Independent rooms use their own endpoint; member rooms and the Living-zone Thing use the shared zone endpoint.
+Pending edits to the same target merge by weekday, including edits made through different member Things; the latest edit to each weekday wins.
+Already-sent commands are not merged or replayed.
+Before sending, the binding checks fresh room membership; a queued edit is rejected if an originating room has changed membership or disappeared.
+Schedule writes do not change Manual/Schedule regulation, Home, Pause or Vacation modes, or temperature setpoints.
+
+The schedule channel vetoes autoupdate and publishes controller readback after a write, including after an HTTP rejection.
+Linked schedule channels affected by the write are refreshed without waiting for the 15-minute interval.
+If a write fails ambiguously, it is not automatically retried; the next successful refresh reports what the controller actually stored.
+
+Schedule writes, preservation of omitted weekdays and acceptance of `Asleep` in weekly writes still require live validation.
+For a first test, save the complete reported week, change a single weekday, check readback and the app/controller (including untouched days), then restore the saved schedule.
+A graphical schedule editor is not yet provided.
 
 ### Regulation State
 

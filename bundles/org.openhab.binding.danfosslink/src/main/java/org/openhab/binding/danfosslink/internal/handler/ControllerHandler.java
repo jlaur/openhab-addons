@@ -386,6 +386,41 @@ public class ControllerHandler extends BaseBridgeHandler {
         queueCommand(new PendingCommand.Patch(null, channel, command));
     }
 
+    void scheduleCommand(@Nullable Integer roomId, Command command) {
+        if (!(command instanceof StringType text)) {
+            logger.debug("Schedule requires a JSON String command");
+            return;
+        }
+        synchronized (lifecycle) {
+            WorldState snapshot = world;
+            if (!running || snapshot == null) {
+                return;
+            }
+            try {
+                pendingCommands.add(PendingCommand.Schedule.capture(roomId, snapshot, text.toString()));
+            } catch (IllegalArgumentException e) {
+                logger.debug("Controller {} rejected schedule command: {}", getThing().getUID(), e.getMessage());
+                return;
+            }
+        }
+        refresh();
+    }
+
+    private void invalidateSchedule(Operation operation, WorldState snapshot, @Nullable Integer target) {
+        synchronized (lifecycle) {
+            if (!current(operation)) {
+                return;
+            }
+            for (Thing child : getThing().getThings()) {
+                if (child.getHandler() instanceof RoomHandler room) {
+                    room.invalidateSchedule(snapshot, target);
+                } else if (target == null && child.getHandler() instanceof LivingZoneHandler zone) {
+                    zone.invalidateSchedule();
+                }
+            }
+        }
+    }
+
     private void queueCommand(PendingCommand.Patch command) {
         synchronized (lifecycle) {
             WorldState snapshot = world;
@@ -450,6 +485,9 @@ public class ControllerHandler extends BaseBridgeHandler {
                                 var prepared = command.prepare(snapshot.state(), clock.instant(), snapshot.time());
                                 stage = "writing " + prepared.uri();
                                 logger.trace("Controller {} applying {}", getThing().getUID(), command);
+                                if (command instanceof PendingCommand.Schedule schedule) {
+                                    invalidateSchedule(operation, snapshot.state(), schedule.roomId());
+                                }
                                 prepared.write().send(session);
                                 if (command.readBackImmediately()) {
                                     stage = "reading back " + prepared.uri();

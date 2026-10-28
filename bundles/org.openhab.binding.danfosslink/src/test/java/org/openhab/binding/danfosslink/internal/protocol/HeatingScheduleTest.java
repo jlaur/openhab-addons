@@ -52,6 +52,31 @@ class HeatingScheduleTest {
     }
 
     @Test
+    void liveRoomAndLivingZoneSchedulesRoundTrip() throws Exception {
+        for (String name : new String[] { "room", "living-zone" }) {
+            try (var stream = Objects.requireNonNull(getClass().getResourceAsStream("/schedules/" + name + ".json"))) {
+                String json = new String(stream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                assertEquals(JsonParser.parseString(json), GSON.toJsonTree(HeatingSchedule.parse(json)));
+                assertEquals(JsonParser.parseString(json),
+                        JsonParser.parseString(HeatingSchedule.display(schedule(json))));
+            }
+        }
+    }
+
+    @Test
+    void userEditsRejectUnknownFieldsNullDaysAndInvalidPeriods() {
+        for (String json : new String[] { "null", "[]", "{}", "{\"Monday\":[]}", "{\"monday\":null}",
+                "{\"monday\":[],\"typo\":[]}", "{\"monday\":[null]}", "{\"monday\":[{}]}",
+                "{\"monday\":[{\"state\":\"AtHome\",\"startTimeFromMidnight\":\"06:00:00\",\"endTime\":\"08:00:00\"}]}" }) {
+            assertThrows(IllegalArgumentException.class, () -> HeatingSchedule.parse(json), json);
+        }
+        var day = Objects.requireNonNull(HeatingSchedule.parse("{\"monday\":[]}").monday);
+        assertEquals(1, day.size());
+        assertEquals(org.openhab.binding.danfosslink.internal.protocol.dto.ScheduleState.AWAY,
+                Objects.requireNonNull(day.getFirst()).state);
+    }
+
+    @Test
     void localTimesRoundTripIncludingEndOfDayAndSleeping() {
         var json = JsonParser.parseString("""
                 {"state":"Asleep","startTimeFromMidnight":"00:00:00","endTimeFromMidnight":"1.00:00:00"}

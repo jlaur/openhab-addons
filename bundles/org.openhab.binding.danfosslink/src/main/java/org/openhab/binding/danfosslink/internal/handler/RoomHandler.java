@@ -134,12 +134,23 @@ public class RoomHandler extends BaseThingHandler {
             }
         } else {
             switch (channel.getId()) {
+                case CHANNEL_SCHEDULE -> controller.scheduleCommand(id, command);
                 case CHANNEL_HOME_SELECTED -> controller.selectHome(id, command);
                 case CHANNEL_SETPOINT, CHANNEL_HOME_SETPOINT, CHANNEL_AWAY_SETPOINT, CHANNEL_MANUAL_SETPOINT,
                         CHANNEL_MANUAL ->
                     controller.roomCommand(id, channel.getId(), command);
                 default -> {
                 }
+            }
+        }
+    }
+
+    void invalidateSchedule(WorldState snapshot, @Nullable Integer target) {
+        synchronized (lifecycle) {
+            var room = snapshot.rooms().get(roomId);
+            if ((target != null && target == roomId)
+                    || (target == null && room != null && "Living".equals(room.zone()))) {
+                schedule.invalidate();
             }
         }
     }

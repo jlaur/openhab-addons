@@ -12,10 +12,14 @@
  */
 package org.openhab.binding.danfosslink.internal.protocol;
 
+import static org.openhab.binding.danfosslink.internal.ProtocolJson.GSON;
+
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -24,6 +28,9 @@ import org.openhab.binding.danfosslink.internal.protocol.dto.ScheduleRequestDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ScheduleState;
 import org.openhab.binding.danfosslink.internal.protocol.dto.WeeklyScheduleDTO;
 
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
+
 /**
  * Prepares independent schedule patches, sorting periods and filling gaps with Away as the app does.
  *
@@ -31,13 +38,49 @@ import org.openhab.binding.danfosslink.internal.protocol.dto.WeeklyScheduleDTO;
  */
 @NonNullByDefault
 public final class HeatingSchedule {
+    private static final Set<String> DAYS = Set.of("monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
+            "sunday");
+
+    /** Parses a user edit, rejecting unknown fields rather than silently discarding misspelled edits. */
+    public static WeeklyScheduleDTO parse(String json) {
+        try {
+            var value = JsonParser.parseString(json);
+            if (!value.isJsonObject()) {
+                throw new IllegalArgumentException("Schedule must be a weekday object");
+            }
+            var object = value.getAsJsonObject();
+            for (var entry : object.entrySet()) {
+                if (!DAYS.contains(entry.getKey()) || !entry.getValue().isJsonArray()) {
+                    throw new IllegalArgumentException("Unknown weekday or invalid day array: " + entry.getKey());
+                }
+                for (var period : entry.getValue().getAsJsonArray()) {
+                    if (!period.isJsonObject() || !Set.of("state", "startTimeFromMidnight", "endTimeFromMidnight")
+                            .containsAll(period.getAsJsonObject().keySet())) {
+                        throw new IllegalArgumentException("Invalid schedule period fields");
+                    }
+                }
+            }
+            return normalize(Objects.requireNonNull(GSON.fromJson(object, WeeklyScheduleDTO.class)));
+        } catch (JsonParseException e) {
+            throw new IllegalArgumentException("Malformed schedule JSON", e);
+        }
+    }
+
+    /** Combines weekday replacements, with later edits winning, without mutating either input. */
+    public static String merge(String earlier, String later) {
+        var result = GSON.toJsonTree(parse(earlier)).getAsJsonObject();
+        GSON.toJsonTree(parse(later)).getAsJsonObject().entrySet()
+                .forEach(entry -> result.add(entry.getKey(), entry.getValue()));
+        return result.toString();
+    }
+
     private HeatingSchedule() {
     }
 
     /** Validates a reported schedule without filling gaps or inventing omitted days. */
     public static String display(WeeklyScheduleDTO schedule) {
         normalize(schedule);
-        return org.openhab.binding.danfosslink.internal.ProtocolJson.GSON.toJson(schedule);
+        return GSON.toJson(schedule);
     }
 
     public static ScheduleRequestDTO room(int roomId, WeeklyScheduleDTO schedule) {

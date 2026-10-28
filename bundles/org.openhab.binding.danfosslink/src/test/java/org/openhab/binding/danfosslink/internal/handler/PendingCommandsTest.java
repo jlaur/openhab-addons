@@ -17,10 +17,18 @@ import static org.openhab.binding.danfosslink.internal.DanfossLinkBindingConstan
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
+import org.mockito.Mockito;
+import org.openhab.binding.danfosslink.internal.CloudClient;
+import org.openhab.binding.danfosslink.internal.ProtocolJson;
+import org.openhab.binding.danfosslink.internal.WorldState;
+import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
+import org.openhab.binding.danfosslink.internal.protocol.dto.WeeklyScheduleDTO;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
@@ -32,6 +40,56 @@ import org.openhab.core.library.types.OnOffType;
  */
 @NonNullByDefault
 class PendingCommandsTest {
+    private static WorldState scheduleWorld(String membership) throws Exception {
+        return WorldState.parse(com.google.gson.JsonParser
+                .parseString("{\"allRooms\":[{\"id\":1,\"zone\":\"None\"},{\"id\":2,\"zone\":\"" + membership
+                        + "\"},{\"id\":3,\"zone\":\"Living\"}]}")
+                .getAsJsonObject());
+    }
+
+    @Test
+    void scheduleEditsMergeAcrossZoneMembersWithLatestWeekdayWinning() throws Exception {
+        var world = scheduleWorld("Living");
+        var queue = new PendingCommands();
+        queue.add(PendingCommand.Schedule.capture(2, world, "{\"monday\":[]}"));
+        queue.add(PendingCommand.Schedule.capture(3, world, "{\"tuesday\":[]}"));
+        queue.add(PendingCommand.Schedule.capture(null, world, """
+                {"monday":[{"state":"AtHome","startTimeFromMidnight":"06:00:00","endTimeFromMidnight":"08:00:00"}]}
+                """));
+        queue.add(PendingCommand.Schedule.capture(1, world, "{\"sunday\":[]}"));
+        var batch = queue.drain();
+        assertEquals(2, batch.size());
+        var zone = (PendingCommand.Schedule) batch.getFirst();
+        assertNull(zone.roomId());
+        assertEquals(Set.of(2, 3), zone.memberOrigins());
+        var parsed = ProtocolJson.GSON.fromJson(zone.json(), WeeklyScheduleDTO.class);
+        assertEquals(3, Objects.requireNonNull(parsed.monday).size());
+        assertNotNull(parsed.tuesday);
+        assertNull(parsed.sunday);
+        queue.add(PendingCommand.Schedule.capture(null, world, "{\"wednesday\":[]}"));
+        assertFalse(zone.json().contains("wednesday"));
+    }
+
+    @Test
+    void scheduleTargetsAreRevalidatedAndPreparedWritesUseCorrectEndpoints() throws Exception {
+        var world = scheduleWorld("Living");
+        var time = ControllerTime.observed(null, Instant.EPOCH);
+        var room = PendingCommand.Schedule.capture(1, world, "{\"monday\":[]}");
+        var zone = PendingCommand.Schedule.capture(2, world, "{\"tuesday\":[]}");
+        var session = Mockito.mock(CloudClient.Session.class);
+        assertEquals("/api/rooms/1", room.prepare(world, Instant.EPOCH, time).uri());
+        assertEquals("/api/zones/living", zone.prepare(world, Instant.EPOCH, time).uri());
+        room.prepare(world, Instant.EPOCH, time).write().send(session);
+        zone.prepare(world, Instant.EPOCH, time).write().send(session);
+        Mockito.verify(session).roomSchedule(ArgumentMatchers.eq(1), ArgumentMatchers.any());
+        Mockito.verify(session).livingZoneSchedule(ArgumentMatchers.any());
+        assertThrows(IllegalArgumentException.class, () -> zone.prepare(scheduleWorld("None"), Instant.EPOCH, time));
+        assertThrows(IllegalArgumentException.class,
+                () -> PendingCommand.Schedule.capture(99, world, "{\"monday\":[]}"));
+        assertThrows(IllegalArgumentException.class,
+                () -> PendingCommand.Schedule.capture(2, scheduleWorld("Unknown"), "{\"monday\":[]}"));
+    }
+
     @Test
     void replacementsPreserveOtherTargetsAndMoveToTheEndOfTheirKind() {
         var queue = new PendingCommands();

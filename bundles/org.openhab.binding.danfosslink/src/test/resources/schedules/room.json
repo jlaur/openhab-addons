@@ -1,0 +1,121 @@
+{
+  "monday": [
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "00:00:00",
+      "endTimeFromMidnight": "15:00:00"
+    },
+    {
+      "state": "AtHome",
+      "startTimeFromMidnight": "15:00:00",
+      "endTimeFromMidnight": "18:00:00"
+    },
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "18:00:00",
+      "endTimeFromMidnight": "1.00:00:00"
+    }
+  ],
+  "tuesday": [
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "00:00:00",
+      "endTimeFromMidnight": "15:00:00"
+    },
+    {
+      "state": "AtHome",
+      "startTimeFromMidnight": "15:00:00",
+      "endTimeFromMidnight": "18:00:00"
+    },
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "18:00:00",
+      "endTimeFromMidnight": "1.00:00:00"
+    }
+  ],
+  "wednesday": [
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "00:00:00",
+      "endTimeFromMidnight": "15:00:00"
+    },
+    {
+      "state": "AtHome",
+      "startTimeFromMidnight": "15:00:00",
+      "endTimeFromMidnight": "18:00:00"
+    },
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "18:00:00",
+      "endTimeFromMidnight": "1.00:00:00"
+    }
+  ],
+  "thursday": [
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "00:00:00",
+      "endTimeFromMidnight": "15:00:00"
+    },
+    {
+      "state": "AtHome",
+      "startTimeFromMidnight": "15:00:00",
+      "endTimeFromMidnight": "18:00:00"
+    },
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "18:00:00",
+      "endTimeFromMidnight": "1.00:00:00"
+    }
+  ],
+  "friday": [
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "00:00:00",
+      "endTimeFromMidnight": "15:00:00"
+    },
+    {
+      "state": "AtHome",
+      "startTimeFromMidnight": "15:00:00",
+      "endTimeFromMidnight": "18:00:00"
+    },
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "18:00:00",
+      "endTimeFromMidnight": "1.00:00:00"
+    }
+  ],
+  "saturday": [
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "00:00:00",
+      "endTimeFromMidnight": "08:00:00"
+    },
+    {
+      "state": "AtHome",
+      "startTimeFromMidnight": "08:00:00",
+      "endTimeFromMidnight": "18:00:00"
+    },
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "18:00:00",
+      "endTimeFromMidnight": "1.00:00:00"
+    }
+  ],
+  "sunday": [
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "00:00:00",
+      "endTimeFromMidnight": "08:00:00"
+    },
+    {
+      "state": "AtHome",
+      "startTimeFromMidnight": "08:00:00",
+      "endTimeFromMidnight": "18:00:00"
+    },
+    {
+      "state": "Away",
+      "startTimeFromMidnight": "18:00:00",
+      "endTimeFromMidnight": "1.00:00:00"
+    }
+  ]
+}

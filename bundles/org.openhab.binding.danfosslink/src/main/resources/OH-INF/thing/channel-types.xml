@@ -28,8 +28,9 @@
 	<channel-type id="schedule" advanced="true">
 		<item-type>String</item-type>
 		<label>Schedule</label>
-		<description>Weekly heating schedule as JSON in controller local time</description>
-		<state readOnly="true"/>
+		<description>Weekly heating schedule as JSON in controller local time; editing a Living-zone member affects the entire
+			zone</description>
+		<autoUpdatePolicy>veto</autoUpdatePolicy>
 	</channel-type>
 
 	<channel-type id="setpoint">
