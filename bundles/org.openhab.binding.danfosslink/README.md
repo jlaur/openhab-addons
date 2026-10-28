@@ -2,7 +2,6 @@
 
 This binding connects to a Danfoss Link CC controller through the MDG cloud relay.
 It uses outbound connections on TCP port 443; no inbound port or LAN connection to the controller is required.
-The implementation is based on the reverse-engineered Android app protocol and has been developed against controller firmware 4.2.1724.
 
 ## Supported Things
 
@@ -34,7 +33,7 @@ Successful pairing is followed by a refresh.
 If pairing fails, obtain a fresh code and retry.
 An offline controller can be paired again if its previous app registration was removed.
 
-The binding generates its own app identity and persists its private key and paired controller certificate using openHAB's StorageService, keyed by Bridge UID.
+Pairing credentials are stored locally in openHAB.
 These credentials survive restarts; protect your openHAB userdata and backups.
 The pairing code is not persisted.
 Removing a Thing does not revoke its app registration on the physical controller.
@@ -44,16 +43,16 @@ Removing a Thing does not revoke its app registration on the physical controller
 The controller Bridge supports an optional advanced `timeZone` setting.
 Use a timezone ID such as `Europe/Copenhagen`, or leave it empty to use openHAB's timezone.
 
-| Thing | Parameter | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| controller | refreshInterval | No | 60 | Poll interval in seconds, minimum 10 |
-| controller | timeZone | No | openHAB timezone | Controller timezone ID; advanced setting |
-| room | roomId | Yes | | Non-negative room ID supplied by discovery |
+| Thing      | Parameter       | Required | Default          | Description                                |
+| ---------- | --------------- | -------- | ---------------- | ------------------------------------------ |
+| controller | refreshInterval | No       | 60               | Poll interval in seconds, minimum 10       |
+| controller | timeZone        | No       | openHAB timezone | Controller timezone ID; advanced setting   |
+| room       | roomId          | Yes      |                  | Non-negative room ID supplied by discovery |
 
 The Bridge exposes the controller's serial number and firmware version as Thing properties.
 The `systemTime` property contains the last controller-reported timestamp, including its UTC offset (for example, `2026-10-16T14:30:00+02:00`).
 It updates when controller data is refreshed; it is not a continuously advancing clock and retains its last value during communication outages.
-If the reported time differs from openHAB by more than five minutes, the binding logs a warning once per controller handler lifecycle.
+If the reported time differs from openHAB by more than five minutes, the binding logs a warning once after each Bridge initialization.
 The binding does not set or correct the controller's clock.
 
 ## Channels
@@ -84,61 +83,48 @@ The binding does not set or correct the controller's clock.
 | living-zone       | manual               | Switch             | Read/Write | ON selects manual operation for the Living zone; OFF resumes its schedule |
 
 Temperature states use the controller's reported temperature scale.
-The observed protocol value is `Celcius`.
-The binding also recognizes `Fahrenheit`, although this representation has not yet been verified against a controller configured to use Fahrenheit.
 Missing temperatures or unknown scales produce `UNDEF`, not zero.
 
 Setpoint commands with units are converted to the controller's scale.
 Unitless numeric commands use that scale directly.
 Commands outside the room's reported minimum and maximum, commands with incompatible units, or commands without known room limits are rejected.
-The four setpoint channels also expose these room-specific limits as dynamic state-description minimum and maximum values.
-Their display pattern uses the controller's temperature unit so the bounds and displayed values use the same scale.
-The bounds are refreshed when the controller reports changes; no step size is inferred from them.
-The binding reads the controller again after a write to publish its reported state.
-It does not automatically replay a failed write because the controller may already have applied it.
+The setpoint channels expose the room-specific minimum and maximum temperatures.
 The controller's own schedules and modes may subsequently change the current setpoint.
 The three persistent setpoints are separate settings; writing one does not change the operating mode.
 The controller may adjust related values, for example lowering Away/Sleeping when Home is lowered below it.
-Reported values are refreshed after writes.
 
 The manual switch follows the app's behaviour: for an independent room it changes only that room, but for a room in the Living zone it changes manual/scheduled operation for the entire Living zone.
-The binding refreshes all rooms afterwards.
 An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
 Manual commands are rejected when zone membership is unknown.
 
 ### Alarms
 
-The Bridge reports `allUnresolvedAlarms` from each normal world refresh, without an additional cloud request.
+The Bridge reports unresolved controller alarms.
 An empty list publishes OFF, 0 and `[]` to `alarm`, `alarm-count` and `alarms`, respectively.
-Missing, malformed or unavailable alarm data publishes `UNDEF` to all three channels; malformed alarm data does not interrupt heating updates.
+Unavailable alarm data produces `UNDEF` for all three channels.
 All unresolved alarms are included, including those already marked as read.
-The `alarms` channel preserves the controller's JSON fields, including message identifiers and unknown parameters.
-Message identifiers are not yet translated into readable descriptions, and non-empty payloads still need live verification.
+The `alarms` channel contains raw JSON with message identifiers rather than translated alarm descriptions.
 These channels are read-only; the binding does not acknowledge or clear faults.
 
 ### Current State
 
-The controller channel `current-state` reports `systemStatus.currentState` from the controller, without evaluating schedules locally.
-Values recognized by the app include `AtHome`, `Away`, `Asleep`, `Vacation`, `Pause`, `Manual`, `Boost`, `Normal`, `Off`, `On` and `Invalid`.
-If the controller reports a comma-separated composite state, the binding uses its first component, matching the app.
+The controller channel `current-state` reports the overall controller state.
+Known values include `AtHome`, `Away`, `Asleep`, `Vacation`, `Pause`, `Manual`, `Boost`, `Normal`, `Off`, `On` and `Invalid`.
 Unknown state names are preserved; missing or empty values and communication failures produce `UNDEF`.
 The channel supports REFRESH and does not accept state-changing commands.
 
 `current-state` and `home` report different information: the overall controller state and the explicit Home override respectively.
 Scheduled Home can report `AtHome` while `home` is OFF; cancelling the override does not necessarily change `current-state` to `Away`.
-Both channels are updated from controller readback, without deriving one from the other.
 For automation, `Away` or `Asleep` together with `home` OFF can be used as a condition for activating Home.
 This overall state does not establish the current schedule period of each independently scheduled room.
 
 ### Home Override
 
 Select rooms with their `home-selected` channels, then send ON to the controller's `home` channel.
-Room identifiers are resolved by the binding; users do not supply them.
 Selection changes only stage intent, even while Home is active, and do not send controller requests.
 Sending ON captures the current selection; subsequent selection edits do not change that queued request.
 Send ON again to explicitly apply a revised selection while Home is active.
-This repeated-activation behavior still needs verification on the controller.
-Send OFF to cancel Home through its own mode endpoint, retaining the staged selection.
+Send OFF to cancel Home, retaining the staged selection.
 
 The Living zone and its member rooms share a single selection.
 Changing any member's `home-selected` channel selects or deselects the whole zone and updates the other member channels.
@@ -150,9 +136,7 @@ Resolve the selection or regulation setting and send ON again; the binding does 
 The `home` switch reflects the controller-reported override: ON for Active, OFF for Inactive, or `UNDEF` when unavailable.
 The `home-selected` channels represent staged intent, not the actual override membership.
 Changes made in the app or on the controller update `home` without overwriting staged selections.
-Selections start OFF, survive ordinary polls, reconnects and cancellation, and reset when the controller handler is reinitialized (including a binding restart).
-Failed writes are not replayed automatically; controller rejections are logged at DEBUG and followed by readback.
-TRACE logging includes the Home request for troubleshooting.
+Selections start OFF, survive ordinary polls, reconnects and cancellation, and reset when the Bridge is reinitialized (including a binding restart).
 
 ### Controller Clock Conversion
 
@@ -160,16 +144,9 @@ Pause and Vacation DateTime channels use openHAB time.
 For local controller timestamps, the binding uses the controller Bridge's optional advanced `timeZone` setting (for example, `Europe/Copenhagen`).
 Leave it empty to use the timezone configured in openHAB regional settings.
 Set it to the controller's timezone when that differs from openHAB; invalid timezone IDs put the Bridge OFFLINE with a configuration error.
-The offset is calculated separately for each date, so planned periods can cross daylight-saving transitions.
-For each world response, the binding estimates clock skew by comparing the controller's `systemTime` with openHAB time when the response is received.
-Outgoing deadlines are shifted into controller time; incoming mode dates are shifted back into openHAB time before validation or publication.
-This also applies to vacations configured outside openHAB and to edits of planned vacation dates.
-Staged vacation dates stay in openHAB time until sent using a fresh controller response.
-
-The estimate is refreshed for every response and is not retained across connections.
-Network latency and the controller's timestamp precision can cause small differences in readback.
-If a response has no usable `systemTime`, dates remain unadjusted for that response.
-The `systemTime` property and clock-skew warning remain uncorrected; the binding does not change the controller clock.
+The binding accounts for daylight-saving transitions and compensates for differences between the controller clock and openHAB time.
+Small differences in reported dates can occur because of network latency and timestamp precision.
+Clock compensation requires a valid controller timestamp and does not change the controller's clock.
 
 ### Pause
 
@@ -179,18 +156,11 @@ A future DateTime command to `pause-until` starts Pause immediately or changes i
 Dates are truncated to whole seconds; expired dates and dates beyond 2099 are rejected.
 The binding always supplies an end time when activating Pause and cannot request indefinite Pause.
 
-The channels publish controller readback rather than assuming commands succeeded.
 `pause` is ON while the controller reports Active and OFF for Inactive.
 `pause-until` reports the controller's end timestamp, or `UNDEF` when inactive or no end is reported.
 Missing or unrecognized Pause data produces `UNDEF` for both channels.
-Commands rejected by the controller are logged at DEBUG and followed by a refresh; failed writes are not retried automatically.
-The controller manages expiration, so openHAB does not schedule a separate cancellation.
 
-Arbitrary durations still need verification on a real controller.
-To test, send a deadline five minutes in the future, check the returned `pause-until`, and confirm that `pause` returns to OFF after expiration (allowing for the polling interval).
-A successful request alone does not prove that the controller honors the requested duration.
 Timestamps use the configured timezone and the clock-skew conversion described above.
-TRACE logging includes the outgoing Pause request for comparison with readback.
 
 ### Vacation
 
@@ -199,7 +169,7 @@ The `vacation-temperature` channel reads and changes the persistent Vacation tem
 It uses the controller's temperature scale and exposes the reported minimum and maximum as dynamic channel limits.
 Commands with units are converted to that scale; unitless commands use the controller's scale.
 Commands outside those limits, with incompatible units, or without known limits or scale are rejected.
-The setting is read back after a write; missing values or an unknown scale produce `UNDEF`.
+Missing values or an unknown temperature scale produce `UNDEF`.
 
 The `vacation` switch is ON for both Planned and Active vacations, and OFF for Inactive.
 Use `vacation-state` to distinguish those states.
@@ -211,12 +181,11 @@ Sending ON with neither date staged starts vacation immediately without an end t
 Sending ON with both dates staged plans the interval: both dates must be in the future, with end later than start.
 Incomplete, expired, or reversed intervals are rejected and logged at DEBUG; they never fall back to indefinite vacation.
 DateTime commands identify absolute times.
-Requests follow the controller's UTC or local-time convention using the offset in `systemInfo.systemTime`, with whole-second precision.
+Dates use whole-second precision and the controller clock conversion described above.
 
 While Planned, changing either date immediately submits the updated interval using the other date from a fresh controller response.
 Each command must leave a valid future interval.
 For example, to move a vacation beyond its current end, move the end first, then the start.
-Accepted dates are refreshed from the controller, including any normalization.
 Rejected edits restore the controller-reported dates.
 Date edits while Active are not supported; cancel and configure a new vacation instead.
 Sending ON when already Planned or Active leaves the vacation unchanged.
@@ -225,14 +194,13 @@ Sending OFF cancels an active or planned vacation and clears locally staged date
 To discard staged dates and start an indefinite vacation, send OFF, wait for confirmation, then send ON.
 A vacation created or changed in the app or on the Link CC replaces staged values when polled.
 When a reported vacation completes or is cancelled, the date channels are cleared to `UNDEF`.
-Staged dates are held in memory and are cleared when the Bridge handler is restarted or disposed.
+Staged dates are held in memory and are cleared when the Bridge is restarted or removed.
 The binding does not cancel Home or Pause or change room Manual/Schedule regulation when controlling Vacation.
 
 ### Living Zone
 
-The `living-zone` Thing controls the shared Living zone without selecting a representative room.
-Its `manual` switch uses the same zone command as the manual switch of a member room.
-ON selects manual operation; OFF selects automatic operation following the zone's schedule.
+The `living-zone` Thing controls the shared Living zone.
+Send ON to its `manual` channel for manual operation, or OFF to follow the zone's schedule.
 Each room keeps its own temperature setpoints.
 Configure room membership on the Danfoss Link CC controller.
 Each room Thing exposes a `livingZone` property: `true` for a member of the Living zone, or `false` for an independent room.
@@ -240,8 +208,7 @@ The property is updated from controller responses and removed when the room's me
 During communication outages, it retains the last reported value.
 The binding reads membership to determine which rooms share the Living zone's schedule and manual/scheduled mode; it does not change membership.
 
-The controller's world response reports regulation on the member rooms rather than a separate zone object.
-The zone's manual state is therefore derived from its members: all must report Manual for ON or Schedule for OFF.
+The zone's manual switch is ON when all members use manual operation and OFF when all members follow the schedule.
 An empty zone, conflicting member modes, or missing/unknown member modes produce `UNDEF`.
 The Thing remains available when the zone is empty.
 
@@ -258,14 +225,10 @@ After a failed read, the binding retries at the first normal poll after one minu
 Schedule failures publish `UNDEF` without discarding successfully read heating data or taking the Bridge offline solely because a schedule read failed.
 
 Independent rooms read their own schedule.
-Living-zone Things and member rooms read through the lowest-ID Living-zone member in the current world response.
-Consumers using that same member share a single detailed room request within the poll.
+Living-zone Things and member rooms report the shared Living-zone schedule.
 If no member exists, or a room's membership is unknown, its schedule is `UNDEF`.
-Detailed room and shared Living-zone schedule reads have been verified on a live controller.
-TRACE logging includes the response to `GET /api/rooms/{roomId}`.
-Users do not need to supply room IDs to fetch schedules.
 
-The channel uses the protocol's lowercase weekday names and period fields, for example:
+The schedule JSON uses lowercase weekday names and the following period fields:
 
 ```json
 {"monday":[{"state":"Away","startTimeFromMidnight":"00:00:00","endTimeFromMidnight":"06:00:00"},{"state":"AtHome","startTimeFromMidnight":"06:00:00","endTimeFromMidnight":"22:00:00"},{"state":"Away","startTimeFromMidnight":"22:00:00","endTimeFromMidnight":"1.00:00:00"}]}
@@ -291,34 +254,30 @@ For example, this command requests Home from 15:00 to 18:30 on Monday, with Away
 ```
 
 **Editing a Living-zone member room changes the schedule of the entire Living zone.**
-Independent rooms use their own endpoint; member rooms and the Living-zone Thing use the shared zone endpoint.
 Pending edits to the same target merge by weekday, including edits made through different member Things; the latest edit to each weekday wins.
-Already-sent commands are not merged or replayed.
 Before sending, the binding checks fresh room membership; a queued edit is rejected if an originating room has changed membership or disappeared.
 Schedule writes do not change Manual/Schedule regulation, Home, Pause or Vacation modes, or temperature setpoints.
 
-The schedule channel vetoes autoupdate and publishes controller readback after a write, including after an HTTP rejection.
-During refresh or write readback from the same source, the last reported schedule remains visible until a new result arrives.
-Failed reads and changed or unavailable sources still produce `UNDEF`.
+The schedule channel displays the controller-confirmed schedule.
+The last reported schedule remains visible while a refresh or update is in progress.
+Failed reads or changes in room membership can produce `UNDEF`.
 Linked schedule channels affected by the write are refreshed without waiting for the 15-minute interval.
 If a write fails ambiguously, it is not automatically retried; the next successful refresh reports what the controller actually stored.
 
-Schedule writes, preservation of omitted weekdays and acceptance of `Asleep` in weekly writes still require live validation.
-For a first test, save the complete reported week, change a single weekday, check readback and the app/controller (including untouched days), then restore the saved schedule.
-A graphical schedule editor is not yet provided.
+Schedules are edited using JSON commands; there is no graphical editor.
 
 ### Regulation State
 
 The `regulation-state` channel publishes the controller's value unchanged.
-The Android app defines the following values; other firmware versions may report additional values.
+Known values are listed below; other firmware versions may report additional values.
 
-| Value | Meaning |
-| --- | --- |
-| `Heating` | Heating demand. The app displays its heating indicator only for this value. |
-| `Deadband` | Idle/no heating or cooling demand. Also observed during Pause. |
-| `Cooling` | Cooling state. This does not establish that an installation supports active cooling. |
-| `ForecastHeating` | Apparently predictive/preheating operation; its precise meaning has not been verified. |
-| `Invalid` | The app's fallback for missing or unrecognized values; not necessarily a value sent by the controller. |
+| Value             | Meaning                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `Heating`         | Heating demand.                                                                      |
+| `Deadband`        | No heating or cooling demand.                                                        |
+| `Cooling`         | Cooling state. This does not establish that an installation supports active cooling. |
+| `ForecastHeating` | Controller forecast-heating state; exact meaning is unknown.                         |
+| `Invalid`         | Invalid state.                                                                       |
 
 The binding publishes `UNDEF` when the value is missing or the room/controller is unavailable.
 It does not replace unrecognized values with `Invalid`.
@@ -339,22 +298,6 @@ String LivingRegulation "Regulation [%s]" { channel="danfosslink:room:home:livin
 Switch LivingZoneManual "Living Zone Manual" { channel="danfosslink:living-zone:home:living:manual" }
 ```
 
-## Transport and Certificates
-
-The binding includes the public MDG CA certificate extracted from the Android app.
-No APK, external certificate file, Python installation, or Java security configuration changes are required.
-Cloud certificates are validated against this trust anchor and the MDG control service identity.
-Controller certificates are authenticated during PACE pairing and pinned for subsequent connections.
-
-Bouncy Castle is provided by shared OSGi bundles for the legacy TLS and PACE protocols.
-These dependencies are installed automatically when installing the binding feature.
-The controller uses an ECDSA certificate with explicit Brainpool P320r1 parameters, and the original TLS implementation uses a legacy supported-group identifier.
-Enabling `TLS_RSA_*` suites does not resolve these EC certificate and protocol compatibility issues.
-The binding keeps this compatibility handling local rather than changing global JVM security settings.
-
-Cloud service availability and future protocol compatibility are outside the binding's control.
-Communication failures mark the Bridge offline; polling retries automatically.
-
 ## Troubleshooting Commands
 
 To trace a command, enable binding logging in the openHAB console:
@@ -364,12 +307,10 @@ log:set TRACE org.openhab.binding.danfosslink
 ```
 
 Send the command once and inspect `openhab.log`.
-The log records commands being applied, request URIs, write bodies, response HTTP status, and bounded controller error details.
-A failed operation identifies its stage; HTTP rejections also appear in the controller Bridge status.
-A rejection or communication failure makes the Bridge offline and room channel states undefined until communication recovers.
+Communication failures make the Bridge offline until communication recovers.
 Failed writes are not automatically replayed.
 
-The trace includes room IDs and control values, but does not log pairing PINs, credentials, or complete world responses.
+TRACE logs include controller response payloads, room IDs and control values; review them before sharing.
 Restore the usual logging level after collecting the trace:
 
 ```text
