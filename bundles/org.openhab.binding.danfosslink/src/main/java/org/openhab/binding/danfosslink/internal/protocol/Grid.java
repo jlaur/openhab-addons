@@ -72,14 +72,15 @@ public final class Grid implements Closeable {
     }
 
     private void handshake() throws IOException {
-        var hello = Wire.message(1).fixed32(1, 0xf09d8ca8).number(2, 1).number(3, 0);
+        var hello = Wire.message(ControlMessageType.HANDSHAKE.code()).fixed32(1, 0xf09d8ca8).number(2, 1).number(3, 0);
         for (var entry : Map.of("app.package.name", "com.danfoss.linkapp", "app.display.name", "release",
                 "app.version.name", "Android-1.3.2", "app.version.code", "11415").entrySet()) {
             hello.bytes(4, Wire.fields().text(1, entry.getKey()).text(2, entry.getValue()).build());
         }
         control.send(hello.build());
         var reply = next();
-        if (reply.type() != 1 || reply.fields().number(1) != 0xf09d8ca8L || reply.fields().number(2) != 1
+        if (ControlMessageType.fromCode(reply.type()) != ControlMessageType.HANDSHAKE
+                || reply.fields().number(1) != 0xf09d8ca8L || reply.fields().number(2) != 1
                 || reply.fields().number(3) != 0) {
             throw new IOException("Unexpected MDG handshake");
         }
@@ -88,15 +89,18 @@ public final class Grid implements Closeable {
     public Transport call(X509CertificateHolder controller) throws IOException {
         String peerId = Identity.peerId(controller);
         logger.trace("MDG configuring controller peer whitelist");
-        request(20, 21, Wire.fields().text(2, peerId));
-        return route(request(10, 11, Wire.fields().text(2, peerId).text(3, "cc_json")), Transport.pinned(controller));
+        request(ControlMessageType.SET_PEER_WHITELIST, ControlMessageType.SET_PEER_WHITELIST_REPLY,
+                Wire.fields().text(2, peerId));
+        return route(request(ControlMessageType.PLACE_CALL, ControlMessageType.PLACE_CALL_REPLY,
+                Wire.fields().text(2, peerId).text(3, "cc_json")), Transport.pinned(controller));
     }
 
     public X509CertificateHolder pair(String code) throws IOException {
         if (!code.matches("[0-9]{9}")) {
             throw new IllegalArgumentException("The cloud pairing code must contain nine digits");
         }
-        var reply = request(32, 33, Wire.fields().text(2, code.substring(0, 4)));
+        var reply = request(ControlMessageType.PLACE_PAIRING_CALL, ControlMessageType.PLACE_PAIRING_CALL_REPLY,
+                Wire.fields().text(2, code.substring(0, 4)));
         // The initial certificate is provisional: PACE authenticates it by binding both
         // public keys to the OTP.
         // It is returned for persistence only after the proof and contact exchange
@@ -162,8 +166,8 @@ public final class Grid implements Closeable {
         Transport peer = Transport.connect(host, (int) port, operation);
         String stage = "relay introduction";
         try {
-            peer.send(Wire.message(0).fixed32(1, 0xf09d8c95).number(2, 1).number(3, 0).bytes(4, routing.bytes(5))
-                    .text(5, "tlsv1_2").build());
+            peer.send(Wire.message(RelayMessageType.HANDSHAKE.code()).fixed32(1, 0xf09d8c95).number(2, 1).number(3, 0)
+                    .bytes(4, routing.bytes(5)).text(5, "tlsv1_2").build());
             stage = "waiting for relay to connect controller";
             for (int count = 0; count < 10; count++) {
                 byte[] packet;
@@ -173,11 +177,12 @@ public final class Grid implements Closeable {
                     throw new RelayConnectionClosedException(e);
                 }
                 var message = Wire.decode(packet);
-                logger.trace("MDG relay response type {}", message.type());
-                if (message.type() == 1) {
+                RelayMessageType type = RelayMessageType.fromCode(message.type());
+                logger.trace("MDG relay response type {} ({})", type, message.type());
+                if (type == RelayMessageType.PLEASE_HOLD) {
                     continue;
                 }
-                if (message.type() == 3) {
+                if (type == RelayMessageType.ROUTING_ERROR) {
                     long errorCode = message.fields().number(1);
                     RelayError error = RelayError.fromCode(errorCode);
                     logger.debug("MDG relay reported error {} ({})", error, errorCode);
@@ -188,8 +193,8 @@ public final class Grid implements Closeable {
                         default -> new IOException("MDG relay error " + error + " (" + errorCode + ")");
                     };
                 }
-                if (message.type() != 2) {
-                    throw new IOException("Unexpected relay response");
+                if (type != RelayMessageType.GO_AHEAD) {
+                    throw new IOException("Unexpected relay response " + type + " (" + message.type() + ")");
                 }
                 if (message.fields().values().containsKey(1) && !"tlsv1_2".equals(message.fields().text(1))) {
                     throw new IOException("Unexpected relay protocol");
@@ -211,11 +216,12 @@ public final class Grid implements Closeable {
         }
     }
 
-    private Wire.Fields request(int type, int responseType, Wire.Builder fields) throws IOException {
+    private Wire.Fields request(ControlMessageType type, ControlMessageType responseType, Wire.Builder fields)
+            throws IOException {
         int id = ++requestId;
-        control.send(Wire.message(type).number(1, id).raw(fields.build()).build());
+        control.send(Wire.message(type.code()).number(1, id).raw(fields.build()).build());
         var reply = next();
-        if (reply.type() != responseType || reply.fields().number(1) != id) {
+        if (ControlMessageType.fromCode(reply.type()) != responseType || reply.fields().number(1) != id) {
             throw new IOException("Unexpected MDG response");
         }
         return reply.fields();
@@ -224,17 +230,21 @@ public final class Grid implements Closeable {
     private Wire.Message next() throws IOException {
         for (int count = 0; count < 100; count++) {
             var message = Wire.decode(control.receive());
-            switch (message.type()) {
-                case 2 -> {
-                    logger.debug("MDG ended the control session, reason {}", message.fields().number(1));
-                    throw new IOException("MDG ended the session, reason " + message.fields().number(1));
+            switch (ControlMessageType.fromCode(message.type())) {
+                case BYE -> {
+                    long reasonCode = message.fields().number(1);
+                    ByeReason reason = ByeReason.fromCode(reasonCode);
+                    logger.debug("MDG ended the control session, reason {} ({})", reason, reasonCode);
+                    throw new IOException("MDG ended the session, reason " + reason + " (" + reasonCode + ")");
                 }
-                case 3 -> {
+                case RECONNECT -> {
                     logger.debug("MDG requested reconnection");
                     throw new IOException("MDG requested reconnection; retry this operation");
                 }
-                case 4 -> control.send(Wire.message(5).number(1, message.fields().number(1)).build());
-                case 12 -> control.send(Wire.message(13).number(1, message.fields().number(1)).number(2, 0).build());
+                case PING -> control.send(Wire.message(ControlMessageType.PING_REPLY.code())
+                        .number(1, message.fields().number(1)).build());
+                case INCOMING_CALL -> control.send(Wire.message(ControlMessageType.INCOMING_CALL_REPLY.code())
+                        .number(1, message.fields().number(1)).number(2, 0).build());
                 default -> {
                     return message;
                 }
