@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -46,6 +47,7 @@ import org.openhab.binding.danfosslink.internal.exception.ControllerUnavailableE
 import org.openhab.binding.danfosslink.internal.exception.RelayConnectionClosedException;
 import org.openhab.binding.danfosslink.internal.protocol.Alarms;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
+import org.openhab.binding.danfosslink.internal.protocol.HeatingSchedule;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Operation;
 import org.openhab.core.common.ThreadPoolManager;
@@ -63,6 +65,7 @@ import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerService;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -93,6 +96,7 @@ public class ControllerHandler extends BaseBridgeHandler {
     private HomeSelection homeSelection = new HomeSelection();
     private VacationState vacation = new VacationState();
 
+    private boolean scheduleRefreshPending;
     private boolean running;
     private boolean clockWarningLogged;
     private @Nullable Operation active;
@@ -159,6 +163,7 @@ public class ControllerHandler extends BaseBridgeHandler {
         Operation closing;
         synchronized (lifecycle) {
             running = false;
+            scheduleRefreshPending = false;
             ScheduledFuture<?> task = polling;
             polling = null;
             if (task != null) {
@@ -170,6 +175,13 @@ public class ControllerHandler extends BaseBridgeHandler {
             vacation = new VacationState();
             homeSelection = new HomeSelection();
             world = null;
+            for (Thing child : getThing().getThings()) {
+                if (child.getHandler() instanceof RoomHandler room) {
+                    room.invalidateSchedule();
+                } else if (child.getHandler() instanceof LivingZoneHandler zone) {
+                    zone.invalidateSchedule();
+                }
+            }
             descriptions.remove(getThing().getUID());
         }
         if (closing != null) {
@@ -343,6 +355,16 @@ public class ControllerHandler extends BaseBridgeHandler {
         return "Pairing started. Check the controller Thing status for the result.";
     }
 
+    void refreshSchedules() {
+        synchronized (lifecycle) {
+            if (!running) {
+                return;
+            }
+            scheduleRefreshPending = true;
+        }
+        refresh();
+    }
+
     public void refresh() {
         synchronized (lifecycle) {
             if (!running || active != null) {
@@ -350,6 +372,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             }
             Operation operation = new Operation();
             active = operation;
+            scheduleRefreshPending = false;
             List<PendingCommand> pending = pendingCommands.drain();
             worker.execute(() -> run(operation, null, pending));
         }
@@ -452,6 +475,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                             snapshot = readWorld(session);
                         }
                         publish(operation, snapshot.state());
+                        readSchedules(operation, session, snapshot.state());
                     }
                 }
             }
@@ -481,13 +505,65 @@ public class ControllerHandler extends BaseBridgeHandler {
         } finally {
             boolean again;
             synchronized (lifecycle) {
-                again = current(operation) && (paired || !pendingCommands.isEmpty());
+                again = current(operation) && (paired || scheduleRefreshPending || !pendingCommands.isEmpty());
                 if (operation.equals(active)) {
                     active = null;
                 }
             }
             if (again) {
                 refresh();
+            }
+        }
+    }
+
+    private void readSchedules(Operation operation, CloudClient.Session session, WorldState snapshot) {
+        var requests = new ArrayList<ScheduleDisplay.Request>();
+        synchronized (lifecycle) {
+            if (!current(operation)) {
+                return;
+            }
+            for (Thing child : getThing().getThings()) {
+                var request = switch (child.getHandler()) {
+                    case RoomHandler room -> room.scheduleRequest(snapshot, clock.instant());
+                    case LivingZoneHandler zone -> zone.scheduleRequest(snapshot, clock.instant());
+                    case null, default -> null;
+                };
+                if (request != null) {
+                    requests.add(request);
+                }
+            }
+        }
+        Map<Integer, State> results = new HashMap<>();
+        boolean sessionFailed = false;
+        for (var request : requests) {
+            synchronized (lifecycle) {
+                if (!current(operation)) {
+                    return;
+                }
+            }
+            State state = results.get(request.roomId());
+            if (state == null) {
+                state = UnDefType.UNDEF;
+                if (!sessionFailed) {
+                    try {
+                        var schedule = session.room(request.roomId()).schedule;
+                        if (schedule != null) {
+                            state = new StringType(HeatingSchedule.display(schedule));
+                        }
+                    } catch (ControllerResponseException | IllegalArgumentException e) {
+                        logger.debug("Schedule unavailable for room {}: {}", request.roomId(), e.getMessage());
+                    } catch (IOException e) {
+                        logger.debug("Schedule read failed for room {}: {}", request.roomId(), e.getMessage());
+                        // Do not continue issuing optional requests on a potentially broken stream.
+                        sessionFailed = true;
+                    }
+                }
+                results.put(request.roomId(), state);
+            }
+            synchronized (lifecycle) {
+                if (current(operation)) {
+                    request.complete().accept(state);
+                }
             }
         }
     }

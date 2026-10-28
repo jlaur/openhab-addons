@@ -48,6 +48,7 @@
 		<semantic-equipment-tag>Zone</semantic-equipment-tag>
 
 		<channels>
+			<channel id="schedule" typeId="schedule"/>
 			<channel id="home-selected" typeId="home-selected"/>
 			<channel id="manual" typeId="manual">
 				<description>Enable manual operation for the Living zone (ON), or resume its schedule (OFF)</description>
@@ -73,6 +74,7 @@
 			<channel id="home-setpoint" typeId="home-setpoint"/>
 			<channel id="away-setpoint" typeId="away-setpoint"/>
 			<channel id="manual-setpoint" typeId="manual-setpoint"/>
+			<channel id="schedule" typeId="schedule"/>
 			<channel id="home-selected" typeId="home-selected"/>
 			<channel id="manual" typeId="manual">
 				<description>Enable manual temperature or resume the schedule. For Living-zone rooms, this changes the entire Living

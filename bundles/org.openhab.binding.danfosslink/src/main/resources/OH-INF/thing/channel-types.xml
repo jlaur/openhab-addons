@@ -25,6 +25,13 @@
 		<state readOnly="true"/>
 	</channel-type>
 
+	<channel-type id="schedule" advanced="true">
+		<item-type>String</item-type>
+		<label>Schedule</label>
+		<description>Weekly heating schedule as JSON in controller local time</description>
+		<state readOnly="true"/>
+	</channel-type>
+
 	<channel-type id="setpoint">
 		<item-type>Number:Temperature</item-type>
 		<label>Setpoint</label>

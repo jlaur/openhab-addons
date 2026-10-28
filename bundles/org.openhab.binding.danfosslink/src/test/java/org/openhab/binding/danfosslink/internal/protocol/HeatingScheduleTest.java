@@ -38,6 +38,20 @@ class HeatingScheduleTest {
     }
 
     @Test
+    void displayPreservesReportedGapsAndOmittedDaysButRejectsMalformedPeriods() {
+        var json = JsonParser.parseString("""
+                {"monday":[{"state":"AtHome","startTimeFromMidnight":"06:00:00",
+                "endTimeFromMidnight":"08:00:00"}],"sunday":[]}
+                """);
+        assertEquals(json, JsonParser.parseString(HeatingSchedule.display(schedule(json.toString()))));
+        assertThrows(IllegalArgumentException.class, () -> HeatingSchedule.display(schedule("{}")));
+        assertThrows(IllegalArgumentException.class, () -> HeatingSchedule.display(schedule("""
+                {"monday":[{"state":"Unknown","startTimeFromMidnight":"00:00:00",
+                "endTimeFromMidnight":"1.00:00:00"}]}
+                """)));
+    }
+
+    @Test
     void localTimesRoundTripIncludingEndOfDayAndSleeping() {
         var json = JsonParser.parseString("""
                 {"state":"Asleep","startTimeFromMidnight":"00:00:00","endTimeFromMidnight":"1.00:00:00"}
