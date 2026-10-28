@@ -233,7 +233,8 @@ The Thing remains available when the zone is empty.
 
 The app's At Home override is a separate system-wide mode with its own selected-room list and timing.
 It is not the Living zone's manual/automatic setting and is not exposed by this Thing.
-Schedule editing is not yet implemented.
+Schedule editing is not yet exposed through channels or Thing actions.
+The protocol layer provides typed weekly schedule reads and writes in preparation for a future interface; these operations still need live controller validation.
 
 ### Regulation State
 

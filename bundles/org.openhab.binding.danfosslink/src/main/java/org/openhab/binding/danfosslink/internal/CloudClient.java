@@ -25,6 +25,7 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.exception.ControllerResponseException;
 import org.openhab.binding.danfosslink.internal.protocol.Grid;
+import org.openhab.binding.danfosslink.internal.protocol.HeatingSchedule;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Operation;
 import org.openhab.binding.danfosslink.internal.protocol.Transport;
@@ -32,6 +33,8 @@ import org.openhab.binding.danfosslink.internal.protocol.dto.ErrorResponseDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.JsonWebResponseDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeRequestDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ResponseEnvelopeDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.RoomDetailsDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.WeeklyScheduleDTO;
 import org.openhab.core.common.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,6 +98,36 @@ public final class CloudClient implements AutoCloseable {
 
         public WorldState world(ZoneId zone) throws IOException {
             return WorldState.parse(object(request("GET", "/api/world", new JsonObject()), "world content"), zone);
+        }
+
+        /**
+         * Reads the detailed room response, including its weekly schedule when supplied by the controller.
+         */
+        public RoomDetailsDTO room(int roomId) throws IOException {
+            if (roomId < 0) {
+                throw new IllegalArgumentException("Negative room ID");
+            }
+            JsonObject content = object(request("GET", "/api/rooms/" + roomId, new JsonObject()), "room content");
+            try {
+                RoomDetailsDTO room = GSON.fromJson(content, RoomDetailsDTO.class);
+                var id = room == null ? null : room.id;
+                if (room == null || id == null || id.compareTo(java.math.BigDecimal.valueOf(roomId)) != 0) {
+                    throw new IOException("Missing or mismatched room ID");
+                }
+                return room;
+            } catch (JsonParseException e) {
+                throw new IOException("Malformed room response", e);
+            }
+        }
+
+        public void roomSchedule(int roomId, WeeklyScheduleDTO schedule) throws IOException {
+            var body = HeatingSchedule.room(roomId, schedule);
+            request("PATCH", "/api/rooms/" + roomId, GSON.toJsonTree(body).getAsJsonObject());
+        }
+
+        public void livingZoneSchedule(WeeklyScheduleDTO schedule) throws IOException {
+            var body = HeatingSchedule.livingZone(schedule);
+            request("PATCH", "/api/zones/living", GSON.toJsonTree(body).getAsJsonObject());
         }
 
         public void apply(WorldState.Patch patch) throws IOException {

@@ -1,0 +1,125 @@
+/*
+ * Copyright (c) 2010-2026 Contributors to the openHAB project
+ *
+ * See the NOTICE file(s) distributed with this work for additional
+ * information.
+ *
+ * This program and the accompanying materials are made available under the
+ * terms of the Eclipse Public License 2.0 which is available at
+ * http://www.eclipse.org/legal/epl-2.0
+ *
+ * SPDX-License-Identifier: EPL-2.0
+ */
+package org.openhab.binding.danfosslink.internal.protocol;
+
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.protocol.dto.SchedulePeriodDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ScheduleRequestDTO;
+import org.openhab.binding.danfosslink.internal.protocol.dto.ScheduleState;
+import org.openhab.binding.danfosslink.internal.protocol.dto.WeeklyScheduleDTO;
+
+/**
+ * Prepares independent schedule patches, sorting periods and filling gaps with Away as the app does.
+ *
+ * @author Jacob Laursen - Initial contribution
+ */
+@NonNullByDefault
+public final class HeatingSchedule {
+    private HeatingSchedule() {
+    }
+
+    public static ScheduleRequestDTO room(int roomId, WeeklyScheduleDTO schedule) {
+        if (roomId < 0) {
+            throw new IllegalArgumentException("Negative room ID");
+        }
+        var request = new ScheduleRequestDTO();
+        request.id = roomId;
+        request.schedule = normalize(schedule);
+        return request;
+    }
+
+    public static ScheduleRequestDTO livingZone(WeeklyScheduleDTO schedule) {
+        var request = new ScheduleRequestDTO();
+        request.name = "Living";
+        request.schedule = normalize(schedule);
+        return request;
+    }
+
+    private static WeeklyScheduleDTO normalize(WeeklyScheduleDTO source) {
+        var result = new WeeklyScheduleDTO();
+        result.monday = day(source.monday);
+        result.tuesday = day(source.tuesday);
+        result.wednesday = day(source.wednesday);
+        result.thursday = day(source.thursday);
+        result.friday = day(source.friday);
+        result.saturday = day(source.saturday);
+        result.sunday = day(source.sunday);
+        if (result.monday == null && result.tuesday == null && result.wednesday == null && result.thursday == null
+                && result.friday == null && result.saturday == null && result.sunday == null) {
+            throw new IllegalArgumentException("At least one schedule day is required");
+        }
+        return result;
+    }
+
+    private record Period(ScheduleState state, int start, int end) {
+    }
+
+    private static @Nullable List<@Nullable SchedulePeriodDTO> day(@Nullable List<@Nullable SchedulePeriodDTO> source) {
+        if (source == null) {
+            return null;
+        }
+        var periods = new ArrayList<Period>();
+        for (@Nullable
+        SchedulePeriodDTO period : source) {
+            if (period == null) {
+                throw new IllegalArgumentException("Missing schedule period");
+            }
+            ScheduleState state = period.state;
+            LocalTime start = period.startTimeFromMidnight;
+            LocalTime end = period.endTimeFromMidnight;
+            if (state == null || start == null || end == null) {
+                throw new IllegalArgumentException("Incomplete or unknown schedule period");
+            }
+            if (start.getSecond() != 0 || start.getNano() != 0 || end.getSecond() != 0 || end.getNano() != 0) {
+                throw new IllegalArgumentException("Schedule periods require whole minutes");
+            }
+            int startMinute = start.toSecondOfDay() / 60;
+            int endMinute = end.equals(LocalTime.MIDNIGHT) ? 1440 : end.toSecondOfDay() / 60;
+            if (startMinute >= endMinute) {
+                throw new IllegalArgumentException("Schedule periods must end after they start within the same day");
+            }
+            periods.add(new Period(state, startMinute, endMinute));
+        }
+        periods.sort(Comparator.comparingInt(Period::start));
+        var result = new ArrayList<@Nullable SchedulePeriodDTO>();
+        int cursor = 0;
+        for (Period period : periods) {
+            if (period.start() < cursor) {
+                throw new IllegalArgumentException("Schedule periods overlap");
+            }
+            if (period.start() > cursor) {
+                result.add(period(ScheduleState.AWAY, cursor, period.start()));
+            }
+            result.add(period(period.state(), period.start(), period.end()));
+            cursor = period.end();
+        }
+        if (cursor < 1440) {
+            result.add(period(ScheduleState.AWAY, cursor, 1440));
+        }
+        return result;
+    }
+
+    private static SchedulePeriodDTO period(ScheduleState state, int start, int end) {
+        var period = new SchedulePeriodDTO();
+        period.state = state;
+        period.startTimeFromMidnight = LocalTime.ofSecondOfDay(start * 60L);
+        period.endTimeFromMidnight = end == 1440 ? LocalTime.MIDNIGHT : LocalTime.ofSecondOfDay(end * 60L);
+        return period;
+    }
+}
