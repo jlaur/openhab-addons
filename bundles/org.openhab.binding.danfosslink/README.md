@@ -59,7 +59,10 @@ The binding does not set or correct the controller's clock.
 ## Channels
 
 | Thing             | Channel              | Item Type          | Access     | Description                                                               |
-| ---               | ---                  | ---                | ---        | ---                                                                       |
+| ----------------- | -------------------- | ------------------ | ---------- | ------------------------------------------------------------------------- |
+| controller        | alarm                | Switch             | Read       | ON when unresolved alarms exist                                           |
+| controller        | alarm-count          | Number             | Read       | Number of unresolved alarms                                               |
+| controller        | alarms               | String             | Read       | Unresolved alarms as JSON                                                 |
 | controller        | current-state        | String             | Read       | Controller-reported overall state, such as AtHome, Away or Asleep         |
 | controller        | home                 | Switch             | Read/Write | ON applies the staged selection; OFF cancels Home                         |
 | room, living-zone | home-selected        | Switch             | Read/Write | Stage inclusion in the next Home activation                               |
@@ -101,6 +104,16 @@ The manual switch follows the app's behaviour: for an independent room it change
 The binding refreshes all rooms afterwards.
 An unknown or missing regulation type produces UNDEF; it is not reported as scheduled operation.
 Manual commands are rejected when zone membership is unknown.
+
+### Alarms
+
+The Bridge reports `allUnresolvedAlarms` from each normal world refresh, without an additional cloud request.
+An empty list publishes OFF, 0 and `[]` to `alarm`, `alarm-count` and `alarms`, respectively.
+Missing, malformed or unavailable alarm data publishes `UNDEF` to all three channels; malformed alarm data does not interrupt heating updates.
+All unresolved alarms are included, including those already marked as read.
+The `alarms` channel preserves the controller's JSON fields, including message identifiers and unknown parameters.
+Message identifiers are not yet translated into readable descriptions, and non-empty payloads still need live verification.
+These channels are read-only; the binding does not acknowledge or clear faults.
 
 ### Current State
 

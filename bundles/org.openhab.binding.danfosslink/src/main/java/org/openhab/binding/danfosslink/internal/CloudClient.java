@@ -24,6 +24,7 @@ import org.bouncycastle.cert.X509CertificateHolder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.danfosslink.internal.exception.ControllerResponseException;
+import org.openhab.binding.danfosslink.internal.protocol.Alarms;
 import org.openhab.binding.danfosslink.internal.protocol.Grid;
 import org.openhab.binding.danfosslink.internal.protocol.HeatingSchedule;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
@@ -118,6 +119,13 @@ public final class CloudClient implements AutoCloseable {
             } catch (JsonParseException e) {
                 throw new IOException("Malformed room response", e);
             }
+        }
+
+        /**
+         * Reads the dedicated alarm collection (API v3), whose scope may differ from unresolved world alarms.
+         */
+        public Alarms alarms() throws IOException {
+            return Alarms.parse(request("GET", "/api/alarms", new JsonObject()));
         }
 
         public void roomSchedule(int roomId, WeeklyScheduleDTO schedule) throws IOException {

@@ -44,11 +44,13 @@ import org.openhab.binding.danfosslink.internal.exception.ControllerConnectionTi
 import org.openhab.binding.danfosslink.internal.exception.ControllerResponseException;
 import org.openhab.binding.danfosslink.internal.exception.ControllerUnavailableException;
 import org.openhab.binding.danfosslink.internal.exception.RelayConnectionClosedException;
+import org.openhab.binding.danfosslink.internal.protocol.Alarms;
 import org.openhab.binding.danfosslink.internal.protocol.ControllerTime;
 import org.openhab.binding.danfosslink.internal.protocol.Identity;
 import org.openhab.binding.danfosslink.internal.protocol.Operation;
 import org.openhab.core.common.ThreadPoolManager;
 import org.openhab.core.i18n.TimeZoneProvider;
+import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.thing.Bridge;
@@ -460,6 +462,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                         updateState(channel, UnDefType.UNDEF);
                     }
                     publishPause(null);
+                    publishAlarms(null);
                     updateState(CHANNEL_HOME, UnDefType.UNDEF);
                     updateState(CHANNEL_CURRENT_STATE, UnDefType.UNDEF);
                     updateState(CHANNEL_VACATION_TEMPERATURE, UnDefType.UNDEF);
@@ -498,12 +501,18 @@ public class ControllerHandler extends BaseBridgeHandler {
         ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
         var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
                 raw.systemTime(), time.toOpenHab(raw.vacation()), time.toOpenHab(raw.pause()),
-                time.toOpenHab(raw.home()), raw.currentState(), raw.vacationTemperature());
+                time.toOpenHab(raw.home()), raw.currentState(), raw.vacationTemperature(), raw.alarms());
         return new Snapshot(state, time);
     }
 
     private boolean current(Operation operation) {
         return running && operation.equals(active);
+    }
+
+    private void publishAlarms(@Nullable Alarms alarms) {
+        updateState(CHANNEL_ALARM, alarms == null ? UnDefType.UNDEF : OnOffType.from(alarms.count() > 0));
+        updateState(CHANNEL_ALARM_COUNT, alarms == null ? UnDefType.UNDEF : new DecimalType(alarms.count()));
+        updateState(CHANNEL_ALARMS, alarms == null ? UnDefType.UNDEF : new StringType(alarms.json()));
     }
 
     private void publish(Operation operation, WorldState snapshot) {
@@ -513,6 +522,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                 return;
             }
             world = snapshot;
+            publishAlarms(snapshot.alarms());
             var temperature = snapshot.vacationTemperature();
             descriptions.update(new ChannelUID(getThing().getUID(), CHANNEL_VACATION_TEMPERATURE),
                     temperature == null ? null : temperature.minimum(),

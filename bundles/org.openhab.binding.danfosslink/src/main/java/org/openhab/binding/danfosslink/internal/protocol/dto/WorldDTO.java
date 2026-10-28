@@ -16,12 +16,15 @@ import java.util.List;
 
 import org.eclipse.jdt.annotation.Nullable;
 
+import com.google.gson.JsonElement;
+
 /**
  * Controller world response fields used by the binding.
  *
  * @author Jacob Laursen - Initial contribution
  */
 public class WorldDTO {
+    public @Nullable JsonElement allUnresolvedAlarms;
     public @Nullable List<RoomDTO> allRooms;
     public @Nullable SystemInfoDTO systemInfo;
     public @Nullable SystemStatusDTO systemStatus;
