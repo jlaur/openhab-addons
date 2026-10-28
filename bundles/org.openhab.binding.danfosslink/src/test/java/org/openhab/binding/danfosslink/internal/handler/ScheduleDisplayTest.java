@@ -81,6 +81,52 @@ class ScheduleDisplayTest {
     }
 
     @Test
+    void refreshRetainsReportedStateUntilReadbackSucceedsOrFails() {
+        var states = new ArrayList<State>();
+        var display = new ScheduleDisplay(new Object(), states::add);
+        Instant now = Instant.EPOCH;
+        var previous = new StringType("previous schedule");
+        var updated = new StringType("updated schedule");
+        display.start();
+        Objects.requireNonNull(display.request(2, true, now)).complete().accept(previous);
+        states.clear();
+        display.invalidate();
+        var readback = Objects.requireNonNull(display.request(2, true, now));
+        assertTrue(states.isEmpty(), "Starting a refresh must not publish UNDEF");
+        readback.complete().accept(updated);
+        assertEquals(java.util.List.of(updated), states);
+        states.clear();
+        display.invalidate();
+        var failure = Objects.requireNonNull(display.request(2, true, now));
+        assertTrue(states.isEmpty());
+        failure.complete().accept(UnDefType.UNDEF);
+        assertEquals(java.util.List.of(UnDefType.UNDEF), states);
+    }
+
+    @Test
+    void refreshStillInvalidatesChangedOrMissingSourcesAndRejectsEarlierReads() {
+        var states = new ArrayList<State>();
+        var display = new ScheduleDisplay(new Object(), states::add);
+        Instant now = Instant.EPOCH;
+        display.start();
+        var old = Objects.requireNonNull(display.request(2, true, now));
+        display.invalidate();
+        states.clear();
+        var current = Objects.requireNonNull(display.request(2, true, now));
+        old.complete().accept(new StringType("obsolete"));
+        assertTrue(states.isEmpty());
+        current.complete().accept(new StringType("current"));
+        states.clear();
+        display.invalidate();
+        assertNotNull(display.request(3, true, now));
+        assertEquals(java.util.List.of(UnDefType.UNDEF), states);
+        states.clear();
+        assertNull(display.request(null, true, now));
+        assertFalse(states.isEmpty());
+        assertTrue(states.stream().allMatch(UnDefType.UNDEF::equals));
+    }
+
+    @Test
     void sharedSchedulesUseOneDeterministicMemberAndMissingMembershipIsUnknown() throws Exception {
         var world = WorldState.parse(JsonParser.parseString("""
                 {"allRooms":[{"id":4,"zone":"Living"},{"id":2,"zone":"Living"},

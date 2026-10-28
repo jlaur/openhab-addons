@@ -45,6 +45,7 @@ final class ScheduleDisplay {
     void start() {
         synchronized (lifecycle) {
             running = true;
+            source = null;
             invalidate();
         }
     }
@@ -52,14 +53,15 @@ final class ScheduleDisplay {
     void stop() {
         synchronized (lifecycle) {
             running = false;
+            source = null;
             invalidate();
         }
     }
 
+    // Refresh the same source without discarding its last reported state while the read is pending.
     void invalidate() {
         synchronized (lifecycle) {
             revision++;
-            source = null;
             nextRead = Instant.MIN;
         }
     }

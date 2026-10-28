@@ -298,6 +298,8 @@ Before sending, the binding checks fresh room membership; a queued edit is rejec
 Schedule writes do not change Manual/Schedule regulation, Home, Pause or Vacation modes, or temperature setpoints.
 
 The schedule channel vetoes autoupdate and publishes controller readback after a write, including after an HTTP rejection.
+During refresh or write readback from the same source, the last reported schedule remains visible until a new result arrives.
+Failed reads and changed or unavailable sources still produce `UNDEF`.
 Linked schedule channels affected by the write are refreshed without waiting for the 15-minute interval.
 If a write fails ambiguously, it is not automatically retried; the next successful refresh reports what the controller actually stored.
 

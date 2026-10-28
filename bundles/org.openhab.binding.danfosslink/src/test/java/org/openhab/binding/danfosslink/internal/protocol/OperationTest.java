@@ -62,6 +62,8 @@ class OperationTest {
         assertNull(assertThrows(IOException.class, operation::check).getCause());
         var foreground = new IOException("Ordinary error");
         assertSame(foreground, operation.failure(foreground));
-        assertSame(foreground, new Operation().failure(foreground));
+        try (var active = new Operation()) {
+            assertSame(foreground, active.failure(foreground));
+        }
     }
 }
