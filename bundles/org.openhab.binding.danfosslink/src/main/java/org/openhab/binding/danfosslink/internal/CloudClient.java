@@ -77,7 +77,7 @@ public final class CloudClient implements AutoCloseable {
             try {
                 grid.maintain();
             } catch (IOException e) {
-                operation.close();
+                operation.fail(e);
             }
         });
         return new Session(peer, maintenance);
@@ -176,8 +176,14 @@ public final class CloudClient implements AutoCloseable {
             if (!"GET".equals(method)) {
                 logger.trace("Controller request {} body: {}", id, content);
             }
-            peer.send(envelope.toString().getBytes(StandardCharsets.UTF_8));
-            return response(peer.receive(), id);
+            byte[] bytes;
+            try {
+                peer.send(envelope.toString().getBytes(StandardCharsets.UTF_8));
+                bytes = peer.receive();
+            } catch (IOException e) {
+                throw operation.failure(e);
+            }
+            return response(bytes, id);
         }
 
         @Override

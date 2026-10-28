@@ -108,7 +108,7 @@ public final class Grid implements Closeable {
                         try {
                             maintain();
                         } catch (IOException e) {
-                            operation.close();
+                            operation.fail(e);
                         }
                     });
             try {
@@ -125,6 +125,8 @@ public final class Grid implements Closeable {
                 }, code.substring(4).getBytes(StandardCharsets.US_ASCII), Identity.publicKeyPem(peer.peerCertificate()),
                         Identity.publicKeyPem(identity.certificate));
                 return peer.peerCertificate();
+            } catch (IOException e) {
+                throw operation.failure(e);
             } finally {
                 operation.close();
                 maintenance.cancel(true);
