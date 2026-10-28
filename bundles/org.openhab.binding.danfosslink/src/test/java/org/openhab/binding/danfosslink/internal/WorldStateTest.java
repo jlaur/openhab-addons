@@ -546,4 +546,14 @@ class WorldStateTest {
         assertEquals(org.openhab.core.types.UnDefType.UNDEF, state.vacationTemperatureState());
         assertThrows(IllegalArgumentException.class, () -> state.vacationTemperaturePatch(new DecimalType(15)));
     }
+
+    @Test
+    void detailedScheduleDataDoesNotAffectWorldPolling() throws Exception {
+        var json = world();
+        json.getAsJsonArray("allRooms").get(0).getAsJsonObject().add("schedule", JsonParser.parseString("""
+                {"monday":[{"state":"FutureState","startTimeFromMidnight":"unknown"}]}
+                """));
+        assertEquals(new BigDecimal("20.5"),
+                java.util.Objects.requireNonNull(WorldState.parse(json).rooms().get(0)).temperature());
+    }
 }
