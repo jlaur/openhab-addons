@@ -80,7 +80,7 @@ class LivingZoneHandlerTest {
             handler.publish(state);
             verify(callback).stateUpdated(channel, OnOffType.ON);
             clearInvocations(callback);
-            handler.publish(new WorldState(Map.of(), null, null, null, null, null, null, null, null, null, null));
+            handler.publish(new WorldState(Map.of(), null, null, null, null, null, null, null, null, null, null, null));
             verify(callback).stateUpdated(channel, UnDefType.UNDEF);
             handler.dispose();
             clearInvocations(callback, controller);

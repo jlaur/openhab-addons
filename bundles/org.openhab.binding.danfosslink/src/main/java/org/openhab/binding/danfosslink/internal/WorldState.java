@@ -33,6 +33,7 @@ import javax.measure.quantity.Temperature;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.danfosslink.internal.protocol.Alarms;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeDTO;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeState;
 import org.openhab.binding.danfosslink.internal.protocol.dto.ModeType;
@@ -50,6 +51,7 @@ import org.openhab.core.library.unit.SIUnits;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
 import org.openhab.core.types.UnDefType;
+import org.slf4j.LoggerFactory;
 
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -63,7 +65,7 @@ import com.google.gson.JsonObject;
 public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String brandingType,
         @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
         @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home, @Nullable String currentState,
-        @Nullable TemperatureSetting vacationTemperature) {
+        @Nullable TemperatureSetting vacationTemperature, @Nullable Alarms alarms) {
 
     public record TemperatureSetting(@Nullable BigDecimal setpoint, @Nullable BigDecimal minimum,
             @Nullable BigDecimal maximum) {
@@ -137,9 +139,19 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
                     activeMode(world, ModeType.PAUSE, zone), activeMode(world, ModeType.AT_HOME, zone), currentState,
                     vacationTemperature == null ? null
                             : new TemperatureSetting(vacationTemperature.setpoint, vacationTemperature.minSetpoint,
-                                    vacationTemperature.maxSetpoint));
+                                    vacationTemperature.maxSetpoint),
+                    alarms(response.allUnresolvedAlarms));
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
+        }
+    }
+
+    private static @Nullable Alarms alarms(@Nullable JsonElement value) {
+        try {
+            return Alarms.parse(value);
+        } catch (IOException e) {
+            LoggerFactory.getLogger(WorldState.class).debug("Unresolved alarms unavailable: {}", e.getMessage());
+            return null;
         }
     }
 

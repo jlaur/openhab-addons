@@ -4,6 +4,27 @@
 	xmlns:thing="https://openhab.org/schemas/thing-description/v1.0.0"
 	xsi:schemaLocation="https://openhab.org/schemas/thing-description/v1.0.0 https://openhab.org/schemas/thing-description-1.0.0.xsd">
 
+	<channel-type id="alarm">
+		<item-type>Switch</item-type>
+		<label>Alarm</label>
+		<description>ON while the controller reports unresolved alarms</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="alarm-count">
+		<item-type>Number</item-type>
+		<label>Alarm Count</label>
+		<description>Number of unresolved alarms reported by the controller</description>
+		<state readOnly="true"/>
+	</channel-type>
+
+	<channel-type id="alarms">
+		<item-type>String</item-type>
+		<label>Alarms</label>
+		<description>Unresolved alarm details as controller JSON</description>
+		<state readOnly="true"/>
+	</channel-type>
+
 	<channel-type id="setpoint">
 		<item-type>Number:Temperature</item-type>
 		<label>Setpoint</label>
