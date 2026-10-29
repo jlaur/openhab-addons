@@ -14,6 +14,8 @@ package org.openhab.binding.danfosslink.internal.protocol.dto;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 import org.eclipse.jdt.annotation.Nullable;
 
@@ -22,11 +24,25 @@ import org.eclipse.jdt.annotation.Nullable;
  *
  * @author Jacob Laursen - Initial contribution
  */
-public class ModeDTO {
-    public @Nullable ModeType type;
-    public @Nullable ModeState state;
-    public @Nullable LocalDateTime startTime;
-    public @Nullable LocalDateTime endTime;
-    public @Nullable Instant startTimeUtc;
-    public @Nullable Instant endTimeUtc;
+public record ModeDTO(@Nullable ModeType type, @Nullable ModeState state, @Nullable LocalDateTime startTime,
+        @Nullable LocalDateTime endTime, @Nullable Instant startTimeUtc, @Nullable Instant endTimeUtc) {
+
+    /** A null local zone selects the UTC fields, without falling back to local fields. */
+    public @Nullable Instant getStartTime(@Nullable ZoneId localZone) {
+        return localZone == null ? validTime(startTimeUtc) : localTime(startTime, localZone);
+    }
+
+    public @Nullable Instant getEndTime(@Nullable ZoneId localZone) {
+        return localZone == null ? validTime(endTimeUtc) : localTime(endTime, localZone);
+    }
+
+    private static @Nullable Instant localTime(@Nullable LocalDateTime value, ZoneId zone) {
+        return value == null || value.getYear() < 1970 || value.getYear() > 2099 ? null
+                : value.atZone(zone).toInstant();
+    }
+
+    private static @Nullable Instant validTime(@Nullable Instant value) {
+        // The app treats dates outside this range as unspecified boundaries.
+        return value == null ? null : localTime(LocalDateTime.ofInstant(value, ZoneOffset.UTC), ZoneOffset.UTC);
+    }
 }

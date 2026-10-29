@@ -151,3 +151,15 @@ Communication failures make the Bridge offline; individual command rejection pat
 
 TRACE includes complete controller response payloads, including world responses, as well as room IDs and control values.
 Pairing PINs and credentials must not be logged.
+
+## Timestamp compatibility
+
+The app selects its timestamp convention from the literal `systemTime` suffix:
+`Z` selects UTC mode fields (`startTimeUtc` and `endTimeUtc`), whereas numeric offsets, including `+00:00`, select local fields (`startTime` and `endTime`).
+The selected fields are used without falling back to the other representation; absent and explicitly null fields both mean unspecified boundaries.
+This follows the recovered app implementations of `BaseRequest.SetTimestamp` and `BaseResponse.mo1072c`.
+
+World responses captured on firmware 4.2.1724 on 2026-10-29 confirm local timestamps for planned vacation and omitted timestamps after cancellation.
+UTC mode is supported from app-source evidence, but has not been verified against a live controller.
+`SystemInfoDTO` retains the original clock string and provides parsed time and local-offset getters; its field adapter only tolerates non-string optional clock data.
+`ModeDTO` preserves both timestamp representations and exposes derived instants without applying clock-skew correction.

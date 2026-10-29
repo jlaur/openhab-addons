@@ -319,7 +319,8 @@ class WorldStateTest {
         json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-16T12:00:00Z");
         vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
         assertNull(vacation.localZone());
-        assertEquals(java.time.Instant.parse("2026-10-20T14:00:00Z"), vacation.start());
+        assertNull(vacation.start());
+        assertNull(vacation.end());
     }
 
     @Test
@@ -383,7 +384,7 @@ class WorldStateTest {
                 """);
         var info = java.util.Objects.requireNonNull(
                 gson.fromJson(json, org.openhab.binding.danfosslink.internal.protocol.dto.SystemInfoDTO.class));
-        assertEquals(java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), info.systemTime);
+        assertEquals(java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), info.getSystemTime());
         assertEquals(json, gson.toJsonTree(info));
     }
 
@@ -440,13 +441,19 @@ class WorldStateTest {
     }
 
     @Test
-    void explicitNullUtcBoundariesDoNotFallBackToLocalDates() throws Exception {
+    void missingAndNullUtcBoundariesDoNotFallBackToLocalDates() throws Exception {
         var json = world();
         json.add("modes", JsonParser.parseString("""
                 [{"type":"Vacation","state":"Active","startTimeUtc":null,"endTimeUtc":null,
                 "startTime":"2026-10-20T14:00:00","endTime":"2026-10-22T14:00:00"}]
                 """));
         var mode = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertNull(mode.start());
+        assertNull(mode.end());
+        var payload = json.getAsJsonArray("modes").get(0).getAsJsonObject();
+        payload.remove("startTimeUtc");
+        payload.remove("endTimeUtc");
+        mode = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
         assertNull(mode.start());
         assertNull(mode.end());
         json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-16T14:00:00+00:00");
@@ -514,11 +521,50 @@ class WorldStateTest {
                 """);
         var mode = java.util.Objects.requireNonNull(
                 gson.fromJson(json, org.openhab.binding.danfosslink.internal.protocol.dto.ModeDTO.class));
-        assertEquals(java.time.LocalDateTime.parse("2026-12-23T08:24:52"), mode.startTime);
-        assertEquals(java.time.LocalDateTime.parse("9999-12-31T23:59:59"), mode.endTime);
-        assertEquals(java.time.Instant.parse("2026-12-23T07:24:52Z"), mode.startTimeUtc);
-        assertEquals(java.time.Instant.parse("0001-01-01T00:00:00Z"), mode.endTimeUtc);
+        assertEquals(java.time.LocalDateTime.parse("2026-12-23T08:24:52"), mode.startTime());
+        assertEquals(java.time.LocalDateTime.parse("9999-12-31T23:59:59"), mode.endTime());
+        assertEquals(java.time.Instant.parse("2026-12-23T07:24:52Z"), mode.startTimeUtc());
+        assertEquals(java.time.Instant.parse("0001-01-01T00:00:00Z"), mode.endTimeUtc());
         assertEquals(json, gson.toJsonTree(mode));
+    }
+
+    @Test
+    void capturedPlannedAndCancelledVacationPayloadsUseLocalDates() throws Exception {
+        var json = world();
+        json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-29T19:01:31+01:00");
+        json.add("modes", JsonParser.parseString("""
+                [{"endTime":"2026-12-24T16:25:14","startTime":"2026-12-24T08:25:14",
+                  "state":"Planned","type":"Vacation"}]
+                """));
+        var vacation = java.util.Objects
+                .requireNonNull(WorldState.parse(json, java.time.ZoneId.of("Europe/Copenhagen")).vacation());
+        assertEquals(ModeState.PLANNED, vacation.state());
+        assertEquals(java.time.Instant.parse("2026-12-24T07:25:14Z"), vacation.start());
+        assertEquals(java.time.Instant.parse("2026-12-24T15:25:14Z"), vacation.end());
+        json.add("modes", JsonParser.parseString("""
+                [{"state":"Inactive","type":"Vacation"}]
+                """));
+        vacation = java.util.Objects.requireNonNull(WorldState.parse(json).vacation());
+        assertEquals(ModeState.INACTIVE, vacation.state());
+        assertNull(vacation.start());
+        assertNull(vacation.end());
+    }
+
+    @Test
+    void timestampSpellingSurvivesDtoRoundTripAndSelectsTheContract() {
+        for (String suffix : new String[] { "Z", "+00:00", "+01:00", "-05:00" }) {
+            var json = new JsonObject();
+            json.addProperty("systemTime", "2026-10-29T19:01:31" + suffix);
+            var info = java.util.Objects.requireNonNull(ProtocolJson.GSON.fromJson(json,
+                    org.openhab.binding.danfosslink.internal.protocol.dto.SystemInfoDTO.class));
+            assertEquals(json, ProtocolJson.GSON.toJsonTree(info));
+            assertNotNull(info.getSystemTime());
+            if ("Z".equals(suffix)) {
+                assertNull(info.getLocalTimeOffset());
+            } else {
+                assertEquals(java.time.ZoneOffset.of(suffix), info.getLocalTimeOffset());
+            }
+        }
     }
 
     @Test

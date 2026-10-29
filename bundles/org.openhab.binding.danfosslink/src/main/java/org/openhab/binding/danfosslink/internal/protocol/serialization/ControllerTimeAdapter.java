@@ -13,9 +13,6 @@
 package org.openhab.binding.danfosslink.internal.protocol.serialization;
 
 import java.io.IOException;
-import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -26,31 +23,27 @@ import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 
 /**
- * Maps the optional controller timestamp without making malformed clock data prevent room polling.
+ * Preserves the clock timestamp spelling while ignoring non-string optional clock data.
  *
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class ControllerTimeAdapter extends TypeAdapter<ZonedDateTime> {
+public class ControllerTimeAdapter extends TypeAdapter<String> {
     @Override
-    public @Nullable ZonedDateTime read(JsonReader reader) throws IOException {
+    public @Nullable String read(JsonReader reader) throws IOException {
         if (reader.peek() != JsonToken.STRING) {
             reader.skipValue();
             return null;
         }
-        try {
-            return ZonedDateTime.parse(reader.nextString());
-        } catch (DateTimeParseException e) {
-            return null;
-        }
+        return reader.nextString();
     }
 
     @Override
-    public void write(JsonWriter writer, @Nullable ZonedDateTime value) throws IOException {
+    public void write(JsonWriter writer, @Nullable String value) throws IOException {
         if (value == null) {
             writer.nullValue();
         } else {
-            writer.value(DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(value));
+            writer.value(value);
         }
     }
 }
