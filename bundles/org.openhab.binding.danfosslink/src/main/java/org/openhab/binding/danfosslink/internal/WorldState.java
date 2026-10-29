@@ -86,6 +86,10 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
     public static WorldState parse(JsonObject world, @Nullable ZoneId zone) throws IOException {
         try {
             WorldDTO response = Objects.requireNonNull(GSON.fromJson(world, WorldDTO.class));
+            var modes = response.modes;
+            if (modes != null && modes.contains(null)) {
+                throw new IOException("Null mode entry in world response");
+            }
             Unit<Temperature> unit = null;
             var settings = response.temperatureSettings;
             String scale = settings == null ? null : settings.temperatureScale;

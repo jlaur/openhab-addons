@@ -15,10 +15,8 @@ package org.openhab.binding.danfosslink.internal.protocol.dto;
 import java.util.List;
 
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.danfosslink.internal.protocol.serialization.ModeListDeserializer;
 
 import com.google.gson.JsonElement;
-import com.google.gson.annotations.JsonAdapter;
 
 /**
  * Controller world response fields used by the binding.
@@ -28,7 +26,6 @@ import com.google.gson.annotations.JsonAdapter;
 public class WorldDTO {
     public @Nullable JsonElement allUnresolvedAlarms;
     public @Nullable List<RoomDTO> allRooms;
-    @JsonAdapter(ModeListDeserializer.class)
     public @Nullable List<ModeDTO> modes;
     public @Nullable SystemInfoDTO systemInfo;
     public @Nullable SystemStatusDTO systemStatus;

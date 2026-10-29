@@ -293,7 +293,7 @@ class WorldStateTest {
         assertNull(WorldState.parse(json).vacation());
         mode.addProperty("state", "Planned");
         mode.addProperty("startTime", "not-a-date");
-        assertNull(WorldState.parse(json).vacation());
+        assertThrows(IOException.class, () -> WorldState.parse(json));
         mode.remove("startTime");
         mode.remove("endTime");
         mode.addProperty("state", "Inactive");
@@ -408,8 +408,7 @@ class WorldStateTest {
         }
         mode.addProperty("state", "Active");
         mode.addProperty("endTime", "bad-date");
-        assertNull(WorldState.parse(json).pause());
-        assertNotNull(WorldState.parse(json).vacation());
+        assertThrows(IOException.class, () -> WorldState.parse(json));
         json.getAsJsonObject("systemInfo").addProperty("systemTime", "2026-10-17T12:00:00Z");
         mode.addProperty("endTime", "2026-10-17T14:05:00");
         mode.addProperty("endTimeUtc", "2026-10-17T12:05:00Z");
@@ -464,39 +463,36 @@ class WorldStateTest {
     }
 
     @Test
-    void malformedOptionalModePayloadDoesNotPreventRoomPolling() throws Exception {
-        for (String modes : new String[] { "null", "{}", "[null]", "[42]", "[{\"type\":\"Vacation\",\"state\":{}}]" }) {
+    void malformedModesFailTheResponseAndAValidResponseRecovers() throws Exception {
+        for (String modes : new String[] { "{}", "[null]", "[42]", "[{\"type\":\"Vacation\",\"state\":{}}]",
+                "[{\"type\":\"Pause\",\"state\":\"Active\",\"endTime\":\"bad-date\"}]",
+                "[{\"type\":\"FutureMode\",\"endTime\":\"bad-date\"}]" }) {
             var json = world();
             json.add("modes", JsonParser.parseString(modes));
-            var state = WorldState.parse(json);
-            assertNull(state.vacation());
-            assertFalse(state.rooms().isEmpty());
+            assertThrows(IOException.class, () -> WorldState.parse(json));
+            json.add("modes", JsonParser.parseString("""
+                    [{"type":"Vacation","state":"Inactive"}]
+                    """));
+            var recovered = WorldState.parse(json);
+            assertEquals(ModeState.INACTIVE, java.util.Objects.requireNonNull(recovered.vacation()).state());
+            assertFalse(recovered.rooms().isEmpty());
         }
     }
 
     @Test
-    void malformedKnownModesRemainUnavailableWithoutHidingOtherModes() throws Exception {
-        for (String invalid : new String[] { "{\"type\":\"Pause\",\"state\":{}}",
-                "{\"type\":\"Pause\",\"state\":\"Active\",\"endTime\":\"bad-date\"}" }) {
-            for (boolean invalidFirst : new boolean[] { true, false }) {
-                var json = world();
-                var modes = JsonParser.parseString("""
-                        [{"type":"Vacation","state":"Inactive"},
-                         {"type":"Pause","state":"Active"},
-                         {"type":"FutureMode","state":{},"endTime":"bad-date"}]
-                        """).getAsJsonArray();
-                if (invalidFirst) {
-                    modes.asList().add(0, JsonParser.parseString(invalid));
-                } else {
-                    modes.add(JsonParser.parseString(invalid));
-                }
-                json.add("modes", modes);
-                var state = WorldState.parse(json);
-                assertNull(state.pause());
-                assertEquals(ModeState.INACTIVE, java.util.Objects.requireNonNull(state.vacation()).state());
-                assertFalse(state.rooms().isEmpty());
-            }
-        }
+    void nullModesAndUnknownEnumsRemainOptional() throws Exception {
+        var json = world();
+        json.add("modes", com.google.gson.JsonNull.INSTANCE);
+        assertNull(WorldState.parse(json).vacation());
+        json.add("modes", JsonParser.parseString("""
+                [{"type":"Vacation","state":"Inactive"},
+                 {"type":"Pause","state":"FutureState"},
+                 {"type":"FutureMode","state":"Active"}]
+                """));
+        var state = WorldState.parse(json);
+        assertEquals(ModeState.INACTIVE, java.util.Objects.requireNonNull(state.vacation()).state());
+        assertNull(state.pause());
+        assertFalse(state.rooms().isEmpty());
     }
 
     @Test

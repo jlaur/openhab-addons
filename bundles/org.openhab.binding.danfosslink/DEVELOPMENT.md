@@ -164,6 +164,6 @@ UTC mode is supported from app-source evidence, but has not been verified agains
 `SystemInfoDTO` retains the original clock string and provides parsed time and local-offset getters; its field adapter only tolerates non-string optional clock data.
 `ModeDTO` preserves both timestamp representations and exposes derived instants without applying clock-skew correction.
 
-Mode entries are deserialized individually into `WorldDTO.modes`.
-Malformed known modes retain their type with an unavailable state, so they cannot be hidden by another entry of the same type; unrelated modes remain usable.
-Unknown mode types are ignored. A malformed list or an entry whose type cannot be read makes mode data unavailable without interrupting room updates.
+Gson deserializes `WorldDTO.modes` directly into mode DTOs and enums.
+Unknown enum names map to unspecified values, but malformed structures or timestamps fail the entire world response, including malformed timestamps on unknown mode types.
+The binding uses its existing communication-error and polling recovery path; optional mode parsing is deliberately not isolated from room updates.
