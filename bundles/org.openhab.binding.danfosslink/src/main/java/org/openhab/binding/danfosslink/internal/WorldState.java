@@ -65,7 +65,8 @@ import com.google.gson.JsonObject;
 public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> unit, @Nullable String brandingType,
         @Nullable String serialNumber, @Nullable String firmware, @Nullable ZonedDateTime systemTime,
         @Nullable Mode vacation, @Nullable Mode pause, @Nullable Mode home, @Nullable String currentState,
-        @Nullable TemperatureSetting vacationTemperature, @Nullable Alarms alarms) {
+        @Nullable TemperatureSetting vacationTemperature, @Nullable Alarms alarms,
+        @Nullable BigDecimal outdoorTemperature) {
 
     public record TemperatureSetting(@Nullable BigDecimal setpoint, @Nullable BigDecimal minimum,
             @Nullable BigDecimal maximum) {
@@ -140,7 +141,7 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
                     vacationTemperature == null ? null
                             : new TemperatureSetting(vacationTemperature.setpoint, vacationTemperature.minSetpoint,
                                     vacationTemperature.maxSetpoint),
-                    alarms(response.allUnresolvedAlarms));
+                    alarms(response.allUnresolvedAlarms), status == null ? null : status.outdoorTemperature);
         } catch (RuntimeException e) {
             throw new IOException("Malformed world response", e);
         }
@@ -282,6 +283,12 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
         var body = new TemperatureSettingsDTO();
         body.vacationTemperature = temperature;
         return new Patch("/api/settings/temperature", GSON.toJsonTree(body).getAsJsonObject());
+    }
+
+    public State outdoorTemperatureState() {
+        BigDecimal value = outdoorTemperature;
+        Unit<Temperature> scale = unit;
+        return value == null || scale == null ? UnDefType.UNDEF : new QuantityType<>(value, scale);
     }
 
     public State vacationTemperatureState() {

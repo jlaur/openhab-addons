@@ -527,6 +527,7 @@ public class ControllerHandler extends BaseBridgeHandler {
                     publishAlarms(null);
                     updateState(CHANNEL_HOME, UnDefType.UNDEF);
                     updateState(CHANNEL_CURRENT_STATE, UnDefType.UNDEF);
+                    updateState(CHANNEL_OUTDOOR_TEMPERATURE, UnDefType.UNDEF);
                     updateState(CHANNEL_VACATION_TEMPERATURE, UnDefType.UNDEF);
                     logger.debug("Controller {} operation failed during {}", getThing().getUID(), stage, e);
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, pin == null ? switch (e) {
@@ -615,7 +616,8 @@ public class ControllerHandler extends BaseBridgeHandler {
         ControllerTime time = ControllerTime.observed(raw.systemTime(), clock.instant());
         var state = new WorldState(raw.rooms(), raw.unit(), raw.brandingType(), raw.serialNumber(), raw.firmware(),
                 raw.systemTime(), time.toOpenHab(raw.vacation()), time.toOpenHab(raw.pause()),
-                time.toOpenHab(raw.home()), raw.currentState(), raw.vacationTemperature(), raw.alarms());
+                time.toOpenHab(raw.home()), raw.currentState(), raw.vacationTemperature(), raw.alarms(),
+                raw.outdoorTemperature());
         return new Snapshot(state, time);
     }
 
@@ -637,6 +639,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             }
             world = snapshot;
             publishAlarms(snapshot.alarms());
+            updateState(CHANNEL_OUTDOOR_TEMPERATURE, snapshot.outdoorTemperatureState());
             var temperature = snapshot.vacationTemperature();
             descriptions.update(new ChannelUID(getThing().getUID(), CHANNEL_VACATION_TEMPERATURE),
                     temperature == null ? null : temperature.minimum(),

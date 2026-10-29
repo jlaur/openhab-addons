@@ -74,6 +74,58 @@ import com.google.gson.JsonParser;
 @Timeout(30)
 class ControllerHandlerTest {
     @Test
+    void outdoorTemperatureRefreshFailureAndRecovery() throws Exception {
+        var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "outdoor").build();
+        var identity = Identity.generate();
+        var store = mock(PairingStore.class);
+        when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
+        var client = mock(CloudClient.class);
+        var session = mock(CloudClient.Session.class);
+        when(client.open(any())).thenReturn(session);
+        var state = WorldState.parse(JsonParser.parseString("""
+                {"allRooms":[],"temperatureSettings":{"temperatureScale":"Celcius"},
+                 "systemStatus":{"outdoorTemperature":-4.5}}
+                """).getAsJsonObject());
+        when(session.world(any())).thenReturn(state).thenThrow(new IOException("Disconnected")).thenReturn(state);
+        var handler = new ControllerHandler(bridge, store, mock(DanfossLinkStateDescriptionProvider.class)) {
+            @Override
+            CloudClient connect(Identity credentials, Operation operation) {
+                return client;
+            }
+        };
+        var callback = mock(ThingHandlerCallback.class);
+        var finished = new CountDownLatch(1);
+        var channel = new ChannelUID(bridge.getUID(), CHANNEL_OUTDOOR_TEMPERATURE);
+        var online = new AtomicInteger();
+        doAnswer(call -> {
+            ThingStatusInfo status = call.getArgument(1);
+            if (status.getStatus() == ThingStatus.ONLINE && online.incrementAndGet() == 2) {
+                finished.countDown();
+            }
+            return null;
+        }).when(callback).statusUpdated(eq(bridge), any());
+        handler.setCallback(callback);
+        try {
+            handler.initialize();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (!finished.await(100, TimeUnit.MILLISECONDS) && System.nanoTime() < deadline) {
+                // A refresh during an active operation is ignored; retry after it completes.
+                handler.handleCommand(channel, org.openhab.core.types.RefreshType.REFRESH);
+            }
+            assertEquals(0, finished.getCount());
+            var order = inOrder(callback);
+            var temperature = new org.openhab.core.library.types.QuantityType<>(new java.math.BigDecimal("-4.5"),
+                    org.openhab.core.library.unit.SIUnits.CELSIUS);
+            order.verify(callback).stateUpdated(channel, temperature);
+            order.verify(callback).stateUpdated(channel, UnDefType.UNDEF);
+            order.verify(callback).stateUpdated(channel, temperature);
+            verify(session, never()).apply(any());
+        } finally {
+            handler.dispose();
+        }
+    }
+
+    @Test
     void disposalRejectsLateResponseAndReinitializationRecovers() throws Exception {
         var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "test").build();
         var identity = Identity.generate();
@@ -87,7 +139,7 @@ class ControllerHandlerTest {
         var closed = new CountDownLatch(1);
         var online = new CountDownLatch(1);
         var state = new WorldState(Map.of(), null, "serial", "firmware", "Danfoss",
-                java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), null, null, null, null, null, null);
+                java.time.ZonedDateTime.parse("2026-10-16T14:30:00+02:00"), null, null, null, null, null, null, null);
         when(session.world(any())).thenAnswer(call -> {
             entered.countDown();
             assertTrue(release.await(10, TimeUnit.SECONDS));
@@ -144,7 +196,7 @@ class ControllerHandlerTest {
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenThrow(failure).thenReturn(session);
             when(session.world(any())).thenReturn(
-                    new WorldState(Map.of(), null, null, null, null, null, null, null, null, null, null, null));
+                    new WorldState(Map.of(), null, null, null, null, null, null, null, null, null, null, null, null));
             var handler = new ControllerHandler(bridge, store, mock(DanfossLinkStateDescriptionProvider.class)) {
                 @Override
                 CloudClient connect(Identity credentials, Operation operation) {
@@ -497,7 +549,7 @@ class ControllerHandlerTest {
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
             var inactive = new WorldState(Map.of(), null, null, null, null, null,
-                    new WorldState.Mode(ModeState.INACTIVE, null, null, null), null, null, null, null, null);
+                    new WorldState.Mode(ModeState.INACTIVE, null, null, null), null, null, null, null, null, null);
             var snapshot = new AtomicReference<>(inactive);
             when(session.world(any())).thenAnswer(call -> snapshot.get());
             doAnswer(call -> {
@@ -505,7 +557,7 @@ class ControllerHandlerTest {
                     throw new ControllerResponseException(400);
                 }
                 snapshot.set(new WorldState(Map.of(), null, null, null, null, null,
-                        new WorldState.Mode(ModeState.ACTIVE, null, null, null), null, null, null, null, null));
+                        new WorldState.Mode(ModeState.ACTIVE, null, null, null), null, null, null, null, null, null));
                 return null;
             }).when(session).vacation(any());
             var handler = new ControllerHandler(bridge, store, mock(DanfossLinkStateDescriptionProvider.class)) {
@@ -564,14 +616,14 @@ class ControllerHandlerTest {
         var laterEnd = end.plusSeconds(86400);
         var snapshot = new AtomicReference<>(new WorldState(Map.of(), null, null, null, null, controllerNow,
                 new WorldState.Mode(ModeState.PLANNED, start.minusSeconds(1500), end.minusSeconds(1500), offset), null,
-                null, null, null, null));
+                null, null, null, null, null));
         when(session.world(any())).thenAnswer(call -> snapshot.get());
         doAnswer(call -> {
             ModeRequestDTO body = call.getArgument(0);
             snapshot.set(new WorldState(Map.of(), null, null, null, null, controllerNow,
                     new WorldState.Mode(ModeState.PLANNED, Objects.requireNonNull(body.startTime).toInstant(offset),
                             Objects.requireNonNull(body.endTime).toInstant(offset), offset),
-                    null, null, null, null, null));
+                    null, null, null, null, null, null));
             return null;
         }).when(session).vacation(any());
         var handler = new ControllerHandler(bridge, store, mock(DanfossLinkStateDescriptionProvider.class),
@@ -631,7 +683,7 @@ class ControllerHandlerTest {
             when(client.open(any())).thenReturn(session);
             var time = now.plusSeconds(seconds).atZone(ZoneOffset.ofHours(2));
             when(session.world(any())).thenReturn(
-                    new WorldState(Map.of(), null, null, null, null, time, null, null, null, null, null, null));
+                    new WorldState(Map.of(), null, null, null, null, time, null, null, null, null, null, null, null));
             var logger = mock(org.slf4j.Logger.class);
             try (var factory = mockStatic(org.slf4j.LoggerFactory.class, CALLS_REAL_METHODS)) {
                 factory.when(() -> org.slf4j.LoggerFactory.getLogger(ControllerHandler.class)).thenReturn(logger);
@@ -687,9 +739,9 @@ class ControllerHandlerTest {
             var initialClock = now.plusSeconds(1500).atZone(ZoneOffset.UTC);
             var correctedClock = now.minusSeconds(600).atZone(ZoneOffset.UTC);
             var inactive = new WorldState(Map.of(), null, null, null, null, correctedClock, null,
-                    new WorldState.Mode(ModeState.INACTIVE, null, null, null), null, null, null, null);
+                    new WorldState.Mode(ModeState.INACTIVE, null, null, null), null, null, null, null, null);
             var snapshot = new AtomicReference<>(new WorldState(Map.of(), null, null, null, null, initialClock, null,
-                    inactive.pause(), null, null, null, null));
+                    inactive.pause(), null, null, null, null, null));
             when(session.world(any())).thenAnswer(call -> snapshot.get());
             doAnswer(call -> {
                 ModeRequestDTO body = call.getArgument(0);
@@ -703,7 +755,7 @@ class ControllerHandlerTest {
                     // Simulate a controller adjusting the requested five minutes to one hour.
                     snapshot.set(new WorldState(Map.of(), null, null, null, null, correctedClock, null,
                             new WorldState.Mode(ModeState.ACTIVE, null, now.plusSeconds(3000), null), null, null, null,
-                            null));
+                            null, null));
                 }
                 return null;
             }).when(session).pause(any());
@@ -870,7 +922,7 @@ class ControllerHandlerTest {
             var session = mock(CloudClient.Session.class);
             when(client.open(any())).thenReturn(session);
             when(session.world(any())).thenReturn(
-                    new WorldState(Map.of(), null, null, null, null, null, null, null, null, null, null, null));
+                    new WorldState(Map.of(), null, null, null, null, null, null, null, null, null, null, null, null));
             var handler = new ControllerHandler(bridge, store, mock(DanfossLinkStateDescriptionProvider.class),
                     () -> java.time.ZoneId.of("Europe/London")) {
                 void configureTimeZone(String zone) {

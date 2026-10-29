@@ -4,6 +4,18 @@
 	xmlns:thing="https://openhab.org/schemas/thing-description/v1.0.0"
 	xsi:schemaLocation="https://openhab.org/schemas/thing-description/v1.0.0 https://openhab.org/schemas/thing-description-1.0.0.xsd">
 
+	<channel-type id="outdoor-temperature">
+		<item-type>Number:Temperature</item-type>
+		<label>Outdoor Temperature</label>
+		<description>Outdoor temperature reported by the controller</description>
+		<category>Temperature</category>
+		<tags>
+			<tag>Measurement</tag>
+			<tag>Temperature</tag>
+		</tags>
+		<state readOnly="true" pattern="%.1f %unit%"/>
+	</channel-type>
+
 	<channel-type id="alarm">
 		<item-type>Switch</item-type>
 		<label>Alarm</label>

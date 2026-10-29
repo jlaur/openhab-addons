@@ -62,6 +62,7 @@ The binding does not set or correct the controller's clock.
 | controller        | alarm                | Switch             | Read       | ON when unresolved alarms exist                                           |
 | controller        | alarm-count          | Number             | Read       | Number of unresolved alarms                                               |
 | controller        | alarms               | String             | Read       | Unresolved alarms as JSON                                                 |
+| controller        | outdoor-temperature  | Number:Temperature | Read       | Outdoor temperature reported by the controller                            |
 | controller        | current-state        | String             | Read       | Controller-reported overall state, such as AtHome, Away or Asleep         |
 | controller        | home                 | Switch             | Read/Write | ON applies the staged selection; OFF cancels Home                         |
 | room, living-zone | schedule             | String             | Read/Write | Weekly heating schedule as JSON (advanced)                                |
@@ -81,6 +82,9 @@ The binding does not set or correct the controller's clock.
 | room              | manual               | Switch             | Read/Write | ON selects manual operation; OFF resumes the schedule                     |
 | room              | regulation-state     | String             | Read       | Controller's regulation state                                             |
 | living-zone       | manual               | Switch             | Read/Write | ON selects manual operation for the Living zone; OFF resumes its schedule |
+
+The controller's `outdoor-temperature` channel reports the outdoor measurement when supplied by connected equipment, such as a Danfoss Air unit.
+It is `UNDEF` when no outdoor temperature is available.
 
 Temperature states use the controller's reported temperature scale.
 Missing temperatures or unknown scales produce `UNDEF`, not zero.

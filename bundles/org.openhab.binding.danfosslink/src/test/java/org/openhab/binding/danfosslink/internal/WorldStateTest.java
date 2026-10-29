@@ -55,6 +55,30 @@ class WorldStateTest {
     }
 
     @Test
+    void outdoorTemperatureUsesReportedScaleAndPreservesMissingValues() throws Exception {
+        var json = world();
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).outdoorTemperatureState());
+        var status = new JsonObject();
+        json.add("systemStatus", status);
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).outdoorTemperatureState());
+        for (String value : new String[] { "-4.5", "0", "12.3" }) {
+            status.addProperty("outdoorTemperature", new BigDecimal(value));
+            assertEquals(new QuantityType<>(new BigDecimal(value), SIUnits.CELSIUS),
+                    WorldState.parse(json).outdoorTemperatureState());
+        }
+        json.getAsJsonObject("temperatureSettings").addProperty("temperatureScale", "Fahrenheit");
+        assertEquals(new QuantityType<>(new BigDecimal("12.3"), org.openhab.core.library.unit.ImperialUnits.FAHRENHEIT),
+                WorldState.parse(json).outdoorTemperatureState());
+        json.getAsJsonObject("temperatureSettings").addProperty("temperatureScale", "Unknown");
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).outdoorTemperatureState());
+        json.remove("temperatureSettings");
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).outdoorTemperatureState());
+        status.add("outdoorTemperature", com.google.gson.JsonNull.INSTANCE);
+        json.add("temperatureSettings", world().get("temperatureSettings"));
+        assertEquals(org.openhab.core.types.UnDefType.UNDEF, WorldState.parse(json).outdoorTemperatureState());
+    }
+
+    @Test
     void currentStateIsIndependentOfHomeOverrideAndAcceptsFutureValues() throws Exception {
         var json = world();
         assertNull(WorldState.parse(json).currentState());

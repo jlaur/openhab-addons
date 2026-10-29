@@ -13,6 +13,7 @@
 			<channel id="alarm" typeId="alarm"/>
 			<channel id="alarm-count" typeId="alarm-count"/>
 			<channel id="alarms" typeId="alarms"/>
+			<channel id="outdoor-temperature" typeId="outdoor-temperature"/>
 			<channel id="current-state" typeId="current-state"/>
 			<channel id="home" typeId="home"/>
 			<channel id="pause" typeId="pause"/>
