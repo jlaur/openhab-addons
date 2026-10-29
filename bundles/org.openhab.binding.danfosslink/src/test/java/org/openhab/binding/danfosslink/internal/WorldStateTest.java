@@ -475,6 +475,31 @@ class WorldStateTest {
     }
 
     @Test
+    void malformedKnownModesRemainUnavailableWithoutHidingOtherModes() throws Exception {
+        for (String invalid : new String[] { "{\"type\":\"Pause\",\"state\":{}}",
+                "{\"type\":\"Pause\",\"state\":\"Active\",\"endTime\":\"bad-date\"}" }) {
+            for (boolean invalidFirst : new boolean[] { true, false }) {
+                var json = world();
+                var modes = JsonParser.parseString("""
+                        [{"type":"Vacation","state":"Inactive"},
+                         {"type":"Pause","state":"Active"},
+                         {"type":"FutureMode","state":{},"endTime":"bad-date"}]
+                        """).getAsJsonArray();
+                if (invalidFirst) {
+                    modes.asList().add(0, JsonParser.parseString(invalid));
+                } else {
+                    modes.add(JsonParser.parseString(invalid));
+                }
+                json.add("modes", modes);
+                var state = WorldState.parse(json);
+                assertNull(state.pause());
+                assertEquals(ModeState.INACTIVE, java.util.Objects.requireNonNull(state.vacation()).state());
+                assertFalse(state.rooms().isEmpty());
+            }
+        }
+    }
+
+    @Test
     void vacationBoundariesUseDateSpecificOffsetsAndPreserveClockSkew() throws Exception {
         var zone = java.time.ZoneId.of("Europe/Copenhagen");
         String[][] periods = { { "2026-10-22T12:00:00Z", "2026-12-23T08:00:00", "2026-12-24T16:00:00" },

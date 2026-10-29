@@ -134,8 +134,8 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
             var vacationTemperature = settings == null ? null : settings.vacationTemperature;
             return new WorldState(Map.copyOf(rooms), unit, info == null ? null : info.brandingType(),
                     info == null ? null : info.serialNo(), info == null ? null : info.version(),
-                    info == null ? null : info.getSystemTime(), mode(world, info, ModeType.VACATION, zone),
-                    activeMode(world, info, ModeType.PAUSE, zone), activeMode(world, info, ModeType.AT_HOME, zone),
+                    info == null ? null : info.getSystemTime(), mode(response, ModeType.VACATION, zone),
+                    activeMode(response, ModeType.PAUSE, zone), activeMode(response, ModeType.AT_HOME, zone),
                     currentState,
                     vacationTemperature == null ? null
                             : new TemperatureSetting(vacationTemperature.setpoint, vacationTemperature.minSetpoint,
@@ -155,42 +155,33 @@ public record WorldState(Map<Integer, Room> rooms, @Nullable Unit<Temperature> u
         }
     }
 
-    private static @Nullable Mode activeMode(JsonObject world, @Nullable SystemInfoDTO info, ModeType type,
-            @Nullable ZoneId zone) {
-        Mode mode = mode(world, info, type, zone);
+    private static @Nullable Mode activeMode(WorldDTO world, ModeType type, @Nullable ZoneId zone) {
+        Mode mode = mode(world, type, zone);
         return mode == null || mode.state() == ModeState.PLANNED ? null : mode;
     }
 
-    private static @Nullable Mode mode(JsonObject world, @Nullable SystemInfoDTO info, ModeType type,
-            @Nullable ZoneId zone) {
-        // Optional mode data must not prevent room polling on older or unexpected controller responses.
-        try {
-            var modes = world.getAsJsonArray("modes");
-            if (modes == null) {
-                return null;
-            }
-            if (info != null && info.systemTime() != null && info.getSystemTime() == null) {
-                return null;
-            }
-            ZoneOffset localOffset = info == null ? null : info.getLocalTimeOffset();
-            ZoneId localZone = localOffset == null ? null : zone == null ? localOffset : zone;
-            Mode result = null;
-            for (JsonElement element : modes) {
-                JsonObject mode = element.getAsJsonObject();
-                if (type == GSON.fromJson(mode.get("type"), ModeType.class)) {
-                    ModeDTO response = Objects.requireNonNull(GSON.fromJson(mode, ModeDTO.class));
-                    ModeState state = response.state();
-                    if (result != null || state == null) {
-                        return null;
-                    }
-                    result = new Mode(state, response.getStartTime(localZone), response.getEndTime(localZone),
-                            localZone);
-                }
-            }
-            return result;
-        } catch (RuntimeException e) {
+    private static @Nullable Mode mode(WorldDTO world, ModeType type, @Nullable ZoneId zone) {
+        var modes = world.modes;
+        if (modes == null) {
             return null;
         }
+        var info = world.systemInfo;
+        if (info != null && info.systemTime() != null && info.getSystemTime() == null) {
+            return null;
+        }
+        ZoneOffset localOffset = info == null ? null : info.getLocalTimeOffset();
+        ZoneId localZone = localOffset == null ? null : zone == null ? localOffset : zone;
+        Mode result = null;
+        for (ModeDTO response : modes) {
+            if (type == response.type()) {
+                ModeState state = response.state();
+                if (result != null || state == null) {
+                    return null;
+                }
+                result = new Mode(state, response.getStartTime(localZone), response.getEndTime(localZone), localZone);
+            }
+        }
+        return result;
     }
 
     public record Patch(String uri, JsonObject body) {
