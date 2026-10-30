@@ -7,6 +7,7 @@
 	<bridge-type id="account">
 		<label>VELUX ACTIVE Account</label>
 		<description>Account used to access VELUX ACTIVE with NETATMO</description>
+
 		<config-description>
 			<parameter name="username" type="text" required="true">
 				<label>Username</label>
@@ -30,9 +31,11 @@
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="account"/>
 		</supported-bridge-type-refs>
+
 		<label>VELUX ACTIVE Gateway</label>
-		<description>NXG gateway and departure mode</description>
-		<category>NetworkAppliance</category>
+		<description>Gateway and departure mode</description>
+		<semantic-equipment-tag>NetworkAppliance</semantic-equipment-tag>
+
 		<channels>
 			<channel id="locked" typeId="locked"/>
 			<channel id="last-seen" typeId="last-seen"/>
@@ -44,9 +47,11 @@
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="gateway"/>
 		</supported-bridge-type-refs>
+
 		<label>VELUX ACTIVE Indoor Climate Sensor</label>
-		<description>NXS indoor climate sensor with room measurements and battery diagnostics</description>
-		<category>Sensor</category>
+		<description>Indoor climate sensor with room measurements and battery diagnostics</description>
+		<semantic-equipment-tag>Sensor</semantic-equipment-tag>
+
 		<channels>
 			<channel id="temperature" typeId="system.indoor-temperature">
 				<label>Temperature</label>
@@ -63,6 +68,7 @@
 			<channel id="signal-strength" typeId="system.signal-strength"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
+
 		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
@@ -70,15 +76,18 @@
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="gateway"/>
 		</supported-bridge-type-refs>
+
 		<label>VELUX ACTIVE Departure Switch</label>
-		<description>NXD departure switch battery and connectivity diagnostics</description>
-		<category>WallSwitch</category>
+		<description>Departure switch battery and connectivity diagnostics</description>
+		<semantic-equipment-tag>Button</semantic-equipment-tag>
+
 		<channels>
 			<channel id="battery-level" typeId="system.battery-level"/>
 			<channel id="low-battery" typeId="system.low-battery"/>
 			<channel id="signal-strength" typeId="system.signal-strength"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
+
 		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
@@ -86,14 +95,17 @@
 		<supported-bridge-type-refs>
 			<bridge-type-ref id="gateway"/>
 		</supported-bridge-type-refs>
+
 		<label>VELUX ACTIVE Window/Cover</label>
-		<description>NXO roof window, blind or shutter</description>
-		<category>Blinds</category>
+		<description>Roof window, blind or shutter</description>
+		<semantic-equipment-tag>Window</semantic-equipment-tag>
+
 		<channels>
 			<channel id="position" typeId="position"/>
 			<channel id="mode" typeId="operating-mode"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
+
 		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
