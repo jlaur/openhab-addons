@@ -23,6 +23,7 @@ import javax.crypto.spec.SecretKeySpec;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants;
 import org.openhab.binding.veluxactive.internal.exception.ApiException;
 import org.openhab.core.storage.Storage;
 import org.openhab.core.storage.StorageService;
@@ -47,7 +48,9 @@ public class SigningKeyStore {
 
     @Activate
     public SigningKeyStore(@Reference StorageService storageService) {
-        storage = storageService.getStorage(getClass().getName(), getClass().getClassLoader());
+        storage = storageService.getStorage(
+                "org.openhab.binding." + VeluxActiveBindingConstants.BINDING_ID + ".pairings",
+                getClass().getClassLoader());
     }
 
     public synchronized void put(String gatewayId, SigningKey key) {
