@@ -14,6 +14,7 @@ package org.openhab.binding.veluxactive.internal;
 
 import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants.*;
 
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -120,7 +121,7 @@ public class VeluxActiveApi {
     }
 
     public HomeStatus homeStatus(String token, String homeId) throws ApiException, InterruptedException {
-        String form = "home_id=" + java.net.URLEncoder.encode(homeId, java.nio.charset.StandardCharsets.UTF_8);
+        String form = "home_id=" + URLEncoder.encode(homeId, StandardCharsets.UTF_8);
         JsonObject body = requireBody(request(token, "/api/homestatus", form, false));
         try {
             HomeStatus status = GSON.fromJson(body, HomeStatus.class);

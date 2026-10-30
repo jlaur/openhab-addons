@@ -33,6 +33,7 @@ import com.google.gson.JsonParseException;
  */
 @NonNullByDefault
 public final class VeluxActiveTokenResponseDeserializer implements JsonDeserializer<AccessTokenResponse> {
+
     private final Gson gson = new GsonBuilder().create();
 
     @Override

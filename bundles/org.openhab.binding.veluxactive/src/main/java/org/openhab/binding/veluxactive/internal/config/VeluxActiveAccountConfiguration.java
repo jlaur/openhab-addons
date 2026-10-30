@@ -20,11 +20,16 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
  * @author Jacob Laursen - Initial contribution
  */
 @NonNullByDefault
-public class VeluxActiveAccountConfiguration {
-    public String username = "";
-    public String password = "";
+public record VeluxActiveAccountConfiguration(String username, String password, int refreshInterval) {
 
-    public int refreshInterval = 60;
+    public static final int MINIMUM_REFRESH_INTERVAL = 30;
+    public static final int DEFAULT_REFRESH_INTERVAL = 60;
+
+    public VeluxActiveAccountConfiguration {
+        username = username != null ? username : "";
+        password = password != null ? password : "";
+        refreshInterval = refreshInterval > 0 ? refreshInterval : DEFAULT_REFRESH_INTERVAL;
+    }
 
     public boolean isComplete() {
         return !username.isBlank() && !password.isBlank();

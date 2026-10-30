@@ -135,7 +135,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             return;
         }
         previousConfiguration = configuration;
-        if (configuration.refreshInterval < 10) {
+        if (configuration.refreshInterval() < VeluxActiveAccountConfiguration.MINIMUM_REFRESH_INTERVAL) {
             finish(session, configuration, ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                     "@text/offline.conf-error.account.refresh-interval", 0);
             return;
@@ -145,8 +145,9 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                     "@text/offline.conf-error.account.credentials-required", 0);
             return;
         }
+
         // Include the account identity so editing a Thing while openHAB is stopped cannot reuse another user's token.
-        String identity = CLIENT_ID + "\n" + configuration.username;
+        String identity = CLIENT_ID + "\n" + configuration.username();
         String serviceHandle = getThing().getUID() + ":"
                 + UUID.nameUUIDFromBytes(identity.getBytes(StandardCharsets.UTF_8));
         OAuthClientService service = oAuthFactory
@@ -188,8 +189,8 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 return;
             }
             if (response == null) {
-                response = service.getAccessTokenByResourceOwnerPasswordCredentials(configuration.username,
-                        configuration.password, SCOPE);
+                response = service.getAccessTokenByResourceOwnerPasswordCredentials(configuration.username(),
+                        configuration.password(), SCOPE);
             }
             String accessToken = response.getAccessToken();
             Instant createdOn = response.getCreatedOn();
@@ -267,7 +268,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             try {
                 task.run();
             } catch (RuntimeException e) {
-                logger.error("Unexpected VELUX ACTIVE authentication failure ({})", e.getClass().getSimpleName());
+                logger.debug("Unexpected VELUX ACTIVE authentication failure", e);
                 synchronized (this) {
                     if (session == generation) {
                         updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
@@ -420,7 +421,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                     if (!targets.isEmpty() && accessToken != null && !Thread.currentThread().isInterrupted()) {
                         long delay = pollRequested ? 0
                                 : fastPollsRemaining > 0 ? 5
-                                        : getConfigAs(VeluxActiveAccountConfiguration.class).refreshInterval;
+                                        : getConfigAs(VeluxActiveAccountConfiguration.class).refreshInterval();
                         if (fastPollsRemaining > 0) {
                             fastPollsRemaining--;
                         }
