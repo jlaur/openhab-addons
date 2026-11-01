@@ -35,6 +35,7 @@ import org.openhab.core.types.RefreshType;
  */
 @NonNullByDefault
 public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
+
     private volatile @Nullable VeluxActiveAccountHandler accountHandler;
     private volatile long generation;
     private volatile boolean active;
@@ -69,13 +70,13 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
                 return;
             }
             accountHandler = account;
-            ModuleRequestContext target = captureRequestContext();
+            ModuleRequestContext requestContext = captureRequestContext();
             if (config.moduleId.isBlank()) {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                         "@text/offline.conf-error.module.missing-id");
                 return;
             }
-            if (bridge == null || account == null || target == null) {
+            if (bridge == null || account == null || requestContext == null) {
                 clearState();
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_UNINITIALIZED);
                 return;
@@ -85,7 +86,7 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
                 return;
             }
-            if (!isRequestContextCurrent(target)) {
+            if (!isRequestContextCurrent(requestContext)) {
                 return;
             }
             if (getThing().getStatus() == ThingStatus.OFFLINE) {
@@ -150,24 +151,25 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
                 : new ModuleRequestContext(this, parent.homeId(), config.moduleId, session, parent);
     }
 
-    protected boolean isRequestContextCurrent(ModuleRequestContext context) {
-        if (!active || generation != context.generation()) {
+    protected boolean isRequestContextCurrent(ModuleRequestContext requestContext) {
+        if (!active || generation != requestContext.generation()) {
             return false;
         }
-        ModuleRequestContext parent = context.parent();
+        ModuleRequestContext parent = requestContext.parent();
         // Parent generations invalidate child work without acquiring a parent monitor.
         if (parent != null) {
             return parent.handler().isRequestContextCurrent(parent)
                     && parent.handler().getThing().getStatus() == ThingStatus.ONLINE;
         }
         VeluxActiveAccountHandler account = accountHandler;
-        return account != null && context.homeId().equals(account.homeId(context.moduleId()));
+        return account != null && requestContext.homeId().equals(account.homeId(requestContext.moduleId()));
     }
 
-    protected boolean checkGateway(ModuleRequestContext target, Module module) {
-        ModuleRequestContext parent = target.parent();
+    protected boolean checkGateway(ModuleRequestContext requestContext, Module module) {
+        ModuleRequestContext parentRequestContext = requestContext.parent();
         String reportedBridge = module.bridge;
-        if (parent != null && reportedBridge != null && !parent.moduleId().equals(reportedBridge)) {
+        if (parentRequestContext != null && reportedBridge != null
+                && !parentRequestContext.moduleId().equals(reportedBridge)) {
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                     "@text/offline.conf-error.module.wrong-gateway");
@@ -176,10 +178,10 @@ public abstract class VeluxActiveModuleHandler extends BaseThingHandler {
         return true;
     }
 
-    abstract void update(ModuleRequestContext target, HomeStatus status);
+    abstract void update(ModuleRequestContext requestContext, HomeStatus status);
 
-    synchronized void failed(ModuleRequestContext target, @Nullable String message) {
-        if (isRequestContextCurrent(target)) {
+    synchronized void failed(ModuleRequestContext requestContext, @Nullable String message) {
+        if (isRequestContextCurrent(requestContext)) {
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, message);
         }

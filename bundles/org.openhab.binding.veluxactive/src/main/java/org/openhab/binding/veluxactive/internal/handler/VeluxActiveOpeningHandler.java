@@ -16,6 +16,7 @@ import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstan
 
 import java.time.DateTimeException;
 import java.time.Instant;
+import java.util.Map;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -43,7 +44,9 @@ import org.slf4j.LoggerFactory;
  */
 @NonNullByDefault
 public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
+
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveOpeningHandler.class);
+
     private @Nullable String veluxType;
 
     public VeluxActiveOpeningHandler(Thing thing) {
@@ -67,15 +70,15 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         if (!CHANNEL_POSITION.equals(channelUID.getId())) {
             return;
         }
-        ModuleRequestContext target;
+        ModuleRequestContext requestContext;
         String type;
         String gateway;
         synchronized (this) {
-            target = captureRequestContext();
+            requestContext = captureRequestContext();
             type = veluxType;
-            ModuleRequestContext parent = target == null ? null : target.parent();
+            ModuleRequestContext parent = requestContext == null ? null : requestContext.parent();
             gateway = parent == null ? null : parent.moduleId();
-            if (target == null || getThing().getStatus() != ThingStatus.ONLINE) {
+            if (requestContext == null || getThing().getStatus() != ThingStatus.ONLINE) {
                 return;
             }
         }
@@ -86,7 +89,7 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         // The app's stop command applies to every opening on the gateway.
         if (command == StopMoveType.STOP) {
             if (gateway != null && !gateway.isBlank()) {
-                account.stopMovements(target, gateway);
+                account.stopMovements(requestContext, gateway);
             } else {
                 logger.warn("Cannot stop movements for {} until its gateway is known", getThing().getUID());
             }
@@ -110,35 +113,36 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             return;
         }
         if ("window".equals(type) && apiPosition != 0) {
-            ModuleRequestContext parent = target.parent();
+            ModuleRequestContext parent = requestContext.parent();
             if (parent != null && parent.handler() instanceof VeluxActiveGatewayHandler handler && handler.canSign()) {
-                account.setSignedPosition(target, apiPosition);
+                account.setSignedPosition(requestContext, apiPosition);
             } else {
                 logger.warn("Pair the gateway before opening windows for {}", getThing().getUID());
             }
         } else {
-            account.setPosition(target, gateway, apiPosition);
+            account.setPosition(requestContext, gateway, apiPosition);
         }
     }
 
     @Override
-    synchronized void update(ModuleRequestContext target, HomeStatus status) {
-        if (!isRequestContextCurrent(target)) {
+    synchronized void update(ModuleRequestContext requestContext, HomeStatus status) {
+        if (!isRequestContextCurrent(requestContext)) {
             return;
         }
-        Module module = status.module(target.moduleId());
-        if (module != null && !checkGateway(target, module)) {
+        Module module = status.module(requestContext.moduleId());
+        if (module != null && !checkGateway(requestContext, module)) {
             return;
         }
-        if (status.error(target.moduleId()) != null || module != null && Boolean.FALSE.equals(module.reachable)) {
-            failed(target, "@text/offline.comm-error.opening.unreachable");
+        if (status.error(requestContext.moduleId()) != null
+                || module != null && Boolean.FALSE.equals(module.reachable)) {
+            failed(requestContext, "@text/offline.comm-error.opening.unreachable");
             return;
         }
         if (module == null) {
             missingStatus("@text/status.opening.missing");
             return;
         }
-        var properties = editProperties();
+        Map<String, String> properties = editProperties();
         String type = module.veluxType;
         if (type != null) {
             veluxType = type;
@@ -167,8 +171,8 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         updateStatus(ThingStatus.ONLINE);
     }
 
-    synchronized void positionAccepted(ModuleRequestContext target, int apiPosition) {
-        if (isRequestContextCurrent(target)) {
+    synchronized void positionAccepted(ModuleRequestContext requestContext, int apiPosition) {
+        if (isRequestContextCurrent(requestContext)) {
             Integer expected = position(apiPosition);
             if (expected != null) {
                 // Acceptance predicts the destination; status polls reconcile the actual position.

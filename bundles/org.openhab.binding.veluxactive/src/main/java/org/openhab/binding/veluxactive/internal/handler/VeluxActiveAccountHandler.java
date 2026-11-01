@@ -18,10 +18,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -36,8 +38,10 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.veluxactive.internal.ModuleRequestContext;
 import org.openhab.binding.veluxactive.internal.VeluxActiveApi;
+import org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants;
 import org.openhab.binding.veluxactive.internal.api.ModuleInfo;
 import org.openhab.binding.veluxactive.internal.api.ModuleType;
+import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.serialization.VeluxActiveTokenResponseDeserializer;
 import org.openhab.binding.veluxactive.internal.config.VeluxActiveAccountConfiguration;
 import org.openhab.binding.veluxactive.internal.discovery.VeluxActiveDiscoveryService;
@@ -70,13 +74,17 @@ import com.google.gson.GsonBuilder;
  */
 @NonNullByDefault
 public class VeluxActiveAccountHandler extends BaseBridgeHandler {
+
     private static final long RETRY_SECONDS = 60;
+    private static final int FAST_POLL_SECONDS = 5;
 
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveAccountHandler.class);
+    private final ScheduledExecutorService authenticationScheduler;
     private final OAuthFactory oAuthFactory;
     private final Executor executor;
     private final VeluxActiveApi api;
     private final TimeZoneProvider timeZoneProvider;
+
     private @Nullable String accessToken;
     private @Nullable ScheduledFuture<?> scheduledPoll;
     private volatile Map<String, String> gatewayHomes = Map.of();
@@ -84,7 +92,6 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
     private boolean pollQueued;
     private boolean pollRequested;
     private int fastPollsRemaining;
-    private final ScheduledExecutorService authenticationScheduler;
 
     // Lifecycle decisions and status publication use the handler monitor; network I/O never holds it.
     private long generation;
@@ -102,7 +109,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         this.oAuthFactory = oAuthFactory;
         this.api = api;
         this.timeZoneProvider = timeZoneProvider;
-        this.executor = ThreadPoolManager.getPool("veluxactive");
+        this.executor = ThreadPoolManager.getPool("binding-" + VeluxActiveBindingConstants.BINDING_ID);
         this.authenticationScheduler = scheduler;
     }
 
@@ -339,7 +346,7 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
                 return;
             }
             try {
-                var modules = api.modules(token);
+                List<ModuleInfo> modules = api.modules(token);
                 synchronized (this) {
                     if (isCurrent(session)) {
                         consumer.accept(modules);
@@ -373,39 +380,41 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
     }
 
     private void pollModules(long session) {
-        var targets = new java.util.ArrayList<ModuleRequestContext>();
+        var requestContexts = new ArrayList<ModuleRequestContext>();
         try {
             if (!isCurrent(session) || accessToken == null) {
                 return;
             }
-            for (var thing : getThing().getThings()) {
-                collectTargets(thing, targets);
+            for (Thing thing : getThing().getThings()) {
+                collectRequestContexts(thing, requestContexts);
             }
-            if (!targets.isEmpty()) {
-                refreshTopology(session, targets);
-                targets.clear();
-                for (var thing : getThing().getThings()) {
-                    collectTargets(thing, targets);
+            if (!requestContexts.isEmpty()) {
+                refreshTopology(session, requestContexts);
+                requestContexts.clear();
+                for (Thing thing : getThing().getThings()) {
+                    collectRequestContexts(thing, requestContexts);
                 }
             }
-            var byHome = targets.stream().filter(target -> !target.homeId().isBlank())
+            Map<String, List<ModuleRequestContext>> byHome = requestContexts.stream()
+                    .filter(requestContext -> !requestContext.homeId().isBlank())
                     .collect(Collectors.groupingBy(ModuleRequestContext::homeId));
-            for (var entry : byHome.entrySet()) {
+            for (Entry<String, List<ModuleRequestContext>> entry : byHome.entrySet()) {
                 String token = accessToken;
                 if (!isCurrent(session) || token == null) {
                     return;
                 }
                 try {
-                    var status = api.homeStatus(token, entry.getKey());
+                    HomeStatus status = api.homeStatus(token, entry.getKey());
                     synchronized (this) {
                         if (isCurrent(session)) {
-                            entry.getValue().forEach(target -> target.handler().update(target, status));
+                            entry.getValue()
+                                    .forEach(requestContext -> requestContext.handler().update(requestContext, status));
                         }
                     }
                 } catch (ApiException e) {
                     synchronized (this) {
                         if (isCurrent(session)) {
-                            entry.getValue().forEach(target -> target.handler().failed(target,
+                            entry.getValue().forEach(requestContext -> requestContext.handler().failed(requestContext,
                                     "@text/offline.comm-error.module.status-error"));
                         }
                     }
@@ -418,9 +427,9 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             synchronized (this) {
                 if (isCurrent(session)) {
                     pollQueued = false;
-                    if (!targets.isEmpty() && accessToken != null && !Thread.currentThread().isInterrupted()) {
+                    if (!requestContexts.isEmpty() && accessToken != null && !Thread.currentThread().isInterrupted()) {
                         long delay = pollRequested ? 0
-                                : fastPollsRemaining > 0 ? 5
+                                : fastPollsRemaining > 0 ? FAST_POLL_SECONDS
                                         : getConfigAs(VeluxActiveAccountConfiguration.class).refreshInterval();
                         if (fastPollsRemaining > 0) {
                             fastPollsRemaining--;
@@ -439,45 +448,45 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         }
     }
 
-    private void collectTargets(Thing thing, List<ModuleRequestContext> targets) {
+    private void collectRequestContexts(Thing thing, List<ModuleRequestContext> requestContexts) {
         if (thing.getHandler() instanceof VeluxActiveModuleHandler module) {
-            var target = module.captureRequestContext();
-            if (target != null) {
-                targets.add(target);
+            ModuleRequestContext requestContext = module.captureRequestContext();
+            if (requestContext != null) {
+                requestContexts.add(requestContext);
             }
         }
         if (thing instanceof Bridge bridge) {
-            for (var child : bridge.getThings()) {
-                collectTargets(child, targets);
+            for (Thing child : bridge.getThings()) {
+                collectRequestContexts(child, requestContexts);
             }
         }
     }
 
-    private void refreshTopology(long session, List<ModuleRequestContext> targets) throws InterruptedException {
+    private void refreshTopology(long session, List<ModuleRequestContext> requestContexts) throws InterruptedException {
         String token = accessToken;
         if (token == null || !isCurrent(session)) {
             return;
         }
         try {
-            var modules = api.modules(token);
+            List<ModuleInfo> modules = api.modules(token);
             synchronized (this) {
                 if (isCurrent(session)) {
                     Map<String, String> homes = new HashMap<>();
-                    for (var module : modules) {
+                    for (ModuleInfo module : modules) {
                         if (module.type() == ModuleType.GATEWAY) {
                             homes.merge(module.moduleId(), module.homeId(),
                                     (first, second) -> first.equals(second) ? first : "");
                         }
                     }
                     gatewayHomes = Map.copyOf(homes);
-                    for (var target : targets) {
-                        if (target.handler() instanceof VeluxActiveGatewayHandler gateway) {
-                            gateway.homeResolved(!target.homeId().equals(homeId(target.moduleId())));
+                    for (ModuleRequestContext requestContext : requestContexts) {
+                        if (requestContext.handler() instanceof VeluxActiveGatewayHandler gateway) {
+                            gateway.homeResolved(!requestContext.homeId().equals(homeId(requestContext.moduleId())));
                         }
-                        if (target.handler() instanceof VeluxActiveIndoorSensorHandler sensor) {
-                            var current = sensor.captureRequestContext();
-                            if (current != null) {
-                                sensor.updateTopology(current, modules);
+                        if (requestContext.handler() instanceof VeluxActiveIndoorSensorHandler sensor) {
+                            ModuleRequestContext currentRequestContext = sensor.captureRequestContext();
+                            if (currentRequestContext != null) {
+                                sensor.updateTopology(currentRequestContext, modules);
                             }
                         }
                     }
@@ -493,35 +502,38 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         return gatewayHomes.getOrDefault(moduleId, "");
     }
 
-    void lock(ModuleRequestContext target) {
-        if (target.handler() instanceof VeluxActiveGatewayHandler gateway) {
-            sendCommand(target, (token, timezone) -> api.lock(token, target.homeId(), target.moduleId(), timezone),
-                    () -> gateway.lockAccepted(target));
+    void lock(ModuleRequestContext requestContext) {
+        if (requestContext.handler() instanceof VeluxActiveGatewayHandler gateway) {
+            sendCommand(requestContext,
+                    (token, timezone) -> api.lock(token, requestContext.homeId(), requestContext.moduleId(), timezone),
+                    () -> gateway.lockAccepted(requestContext));
         }
     }
 
-    void unlock(ModuleRequestContext target) {
-        if (target.handler() instanceof VeluxActiveGatewayHandler gateway) {
-            sendCommand(target, (token, timezone) -> {
-                var signature = gateway.sign(target, target.moduleId(), "scenario", "home", api.signingTime());
-                api.unlock(token, target.homeId(), target.moduleId(), timezone, signature);
-            }, () -> gateway.unlockAccepted(target));
+    void unlock(ModuleRequestContext requestContext) {
+        if (requestContext.handler() instanceof VeluxActiveGatewayHandler gateway) {
+            sendCommand(requestContext, (token, timezone) -> {
+                Map<String, Object> signature = gateway.sign(requestContext, requestContext.moduleId(), "scenario",
+                        "home", api.signingTime());
+                api.unlock(token, requestContext.homeId(), requestContext.moduleId(), timezone, signature);
+            }, () -> gateway.unlockAccepted(requestContext));
         }
     }
 
-    void setSignedPosition(ModuleRequestContext target, int position) {
-        ModuleRequestContext parent = target.parent();
-        if (parent != null && parent.handler() instanceof VeluxActiveGatewayHandler gateway
-                && target.handler() instanceof VeluxActiveOpeningHandler opening) {
-            sendCommand(target, (token, timezone) -> {
-                var signature = gateway.sign(parent, target.moduleId(), "target_position", position, api.signingTime());
-                api.setSignedPosition(token, target.homeId(), target.moduleId(), parent.moduleId(), position, timezone,
-                        signature);
-            }, () -> opening.positionAccepted(target, position));
+    void setSignedPosition(ModuleRequestContext requestContext, int position) {
+        ModuleRequestContext parentContext = requestContext.parent();
+        if (parentContext != null && parentContext.handler() instanceof VeluxActiveGatewayHandler gateway
+                && requestContext.handler() instanceof VeluxActiveOpeningHandler opening) {
+            sendCommand(requestContext, (token, timezone) -> {
+                Map<String, Object> signature = gateway.sign(parentContext, requestContext.moduleId(),
+                        "target_position", position, api.signingTime());
+                api.setSignedPosition(token, requestContext.homeId(), requestContext.moduleId(),
+                        parentContext.moduleId(), position, timezone, signature);
+            }, () -> opening.positionAccepted(requestContext, position));
         }
     }
 
-    synchronized void retrieveKey(ModuleRequestContext target, Runnable accepted, Runnable rejected) {
+    synchronized void retrieveKey(ModuleRequestContext requestContext, Runnable accepted, Runnable rejected) {
         if (!running) {
             rejected.run();
             return;
@@ -529,15 +541,16 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         long session = generation;
         enqueue(session, () -> {
             String token = accessToken;
-            if (token == null || !isCurrent(session) || target.homeId().isBlank()
-                    || !target.handler().isRequestContextCurrent(target)) {
+            if (token == null || !isCurrent(session) || requestContext.homeId().isBlank()
+                    || !requestContext.handler().isRequestContextCurrent(requestContext)) {
                 rejected.run();
                 return;
             }
             try {
-                api.retrieveKey(token, target.homeId(), target.moduleId(), timeZoneProvider.getTimeZone().getId());
+                api.retrieveKey(token, requestContext.homeId(), requestContext.moduleId(),
+                        timeZoneProvider.getTimeZone().getId());
                 synchronized (this) {
-                    if (isCurrent(session) && target.handler().isRequestContextCurrent(target)) {
+                    if (isCurrent(session) && requestContext.handler().isRequestContextCurrent(requestContext)) {
                         accepted.run();
                     } else {
                         rejected.run();
@@ -553,33 +566,37 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
         });
     }
 
-    void setPosition(ModuleRequestContext target, String gatewayId, int position) {
-        if (target.handler() instanceof VeluxActiveOpeningHandler opening) {
-            sendCommand(target, (token, timezone) -> api.setPosition(token, target.homeId(), target.moduleId(),
-                    gatewayId, position, timezone), () -> opening.positionAccepted(target, position));
+    void setPosition(ModuleRequestContext requestContext, String gatewayId, int position) {
+        if (requestContext.handler() instanceof VeluxActiveOpeningHandler opening) {
+            sendCommand(
+                    requestContext, (token, timezone) -> api.setPosition(token, requestContext.homeId(),
+                            requestContext.moduleId(), gatewayId, position, timezone),
+                    () -> opening.positionAccepted(requestContext, position));
         }
     }
 
-    void stopMovements(ModuleRequestContext target, String gatewayId) {
-        sendCommand(target, (token, timezone) -> api.stopMovements(token, target.homeId(), gatewayId, timezone), () -> {
-        });
+    void stopMovements(ModuleRequestContext requestContext, String gatewayId) {
+        sendCommand(requestContext,
+                (token, timezone) -> api.stopMovements(token, requestContext.homeId(), gatewayId, timezone), () -> {
+                });
     }
 
-    private synchronized void sendCommand(ModuleRequestContext target, ModuleCommand command, Runnable accepted) {
+    private synchronized void sendCommand(ModuleRequestContext requestContext, ModuleCommand command,
+            Runnable accepted) {
         if (!running) {
             return;
         }
         long session = generation;
         enqueue(session, () -> {
             String token = accessToken;
-            if (token == null || !isCurrent(session) || target.homeId().isBlank()
-                    || !target.handler().isRequestContextCurrent(target)) {
+            if (token == null || !isCurrent(session) || requestContext.homeId().isBlank()
+                    || !requestContext.handler().isRequestContextCurrent(requestContext)) {
                 return;
             }
             try {
                 command.execute(token, timeZoneProvider.getTimeZone().getId());
                 synchronized (this) {
-                    if (isCurrent(session) && target.handler().isRequestContextCurrent(target)) {
+                    if (isCurrent(session) && requestContext.handler().isRequestContextCurrent(requestContext)) {
                         accepted.run();
                         fastPollsRemaining = 6;
                         requestPoll();
@@ -588,7 +605,8 @@ public class VeluxActiveAccountHandler extends BaseBridgeHandler {
             } catch (ApiException e) {
                 synchronized (this) {
                     if (isCurrent(session)) {
-                        target.handler().failed(target, "@text/offline.comm-error.module.command-error");
+                        requestContext.handler().failed(requestContext,
+                                "@text/offline.comm-error.module.command-error");
                     }
                 }
                 recoverAuthentication(session, e);

@@ -26,6 +26,7 @@ import org.openhab.core.thing.ThingStatus;
  */
 @NonNullByDefault
 public class VeluxActiveDepartureSwitchHandler extends VeluxActiveBatteryModuleHandler {
+
     public VeluxActiveDepartureSwitchHandler(Thing thing) {
         super(thing);
     }

@@ -165,11 +165,11 @@ class VeluxActiveDepartureSwitchHandlerTest {
 
     @Test
     void disposalSuppressesLateUpdatesAndCommands() {
-        var target = requireNonNull(handler.captureRequestContext());
+        var requestContext = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
-        handler.update(target, new HomeStatus());
-        handler.failed(target, "late failure");
+        handler.update(requestContext, new HomeStatus());
+        handler.failed(requestContext, "late failure");
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_BATTERY), RefreshType.REFRESH);
         verifyNoInteractions(callback, account);
     }

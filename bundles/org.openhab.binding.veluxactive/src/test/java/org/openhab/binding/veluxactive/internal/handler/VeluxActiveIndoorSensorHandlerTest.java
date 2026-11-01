@@ -161,12 +161,12 @@ class VeluxActiveIndoorSensorHandlerTest {
 
     @Test
     void disposalSuppressesUpdatesAndRefresh() {
-        var target = requireNonNull(handler.captureRequestContext());
+        var requestContext = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
-        handler.updateTopology(target, List.of());
-        handler.update(target, new HomeStatus());
-        handler.failed(target, "late failure");
+        handler.updateTopology(requestContext, List.of());
+        handler.update(requestContext, new HomeStatus());
+        handler.failed(requestContext, "late failure");
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_TEMPERATURE), RefreshType.REFRESH);
         verifyNoInteractions(callback, account);
     }

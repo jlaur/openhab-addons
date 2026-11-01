@@ -34,6 +34,7 @@ import org.openhab.core.types.UnDefType;
  */
 @NonNullByDefault
 public abstract class VeluxActiveBatteryModuleHandler extends VeluxActiveModuleHandler {
+
     protected VeluxActiveBatteryModuleHandler(Thing thing) {
         super(thing);
     }

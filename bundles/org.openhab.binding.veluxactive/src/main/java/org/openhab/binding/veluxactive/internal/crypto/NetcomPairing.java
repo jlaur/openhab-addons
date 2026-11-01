@@ -27,8 +27,10 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
+import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
+import java.security.PublicKey;
 import java.security.interfaces.XECPublicKey;
 import java.security.spec.NamedParameterSpec;
 import java.security.spec.XECPublicKeySpec;
@@ -99,7 +101,7 @@ public class NetcomPairing implements AutoCloseable {
             if (receive(connection, 1).length != 0) {
                 throw new IOException("Invalid Netcom pong.");
             }
-            var pair = KeyPairGenerator.getInstance("X25519").generateKeyPair();
+            KeyPair pair = KeyPairGenerator.getInstance("X25519").generateKeyPair();
             byte[] publicKey = littleEndian(((XECPublicKey) pair.getPublic()).getU());
             connection.getOutputStream()
                     .write(frame(0x201, ByteBuffer.allocate(33).put((byte) 1).put(publicKey).array()));
@@ -112,7 +114,7 @@ public class NetcomPairing implements AutoCloseable {
             }
             byte[] bigEndian = peer.clone();
             reverse(bigEndian);
-            var key = KeyFactory.getInstance("X25519")
+            PublicKey key = KeyFactory.getInstance("X25519")
                     .generatePublic(new XECPublicKeySpec(NamedParameterSpec.X25519, new BigInteger(1, bigEndian)));
             KeyAgreement agreement = KeyAgreement.getInstance("X25519");
             agreement.init(pair.getPrivate());

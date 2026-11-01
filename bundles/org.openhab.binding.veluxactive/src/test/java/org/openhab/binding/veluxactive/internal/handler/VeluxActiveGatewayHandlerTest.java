@@ -214,12 +214,12 @@ class VeluxActiveGatewayHandlerTest {
 
     @Test
     void disposalSuppressesLateStatusAndCommands() {
-        var target = requireNonNull(handler.captureRequestContext());
+        var requestContext = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
-        handler.update(target, status("{\"home\":{\"id\":\"home\",\"modules\":[]}}"));
-        handler.failed(target, "late failure");
-        handler.lockAccepted(target);
+        handler.update(requestContext, status("{\"home\":{\"id\":\"home\",\"modules\":[]}}"));
+        handler.failed(requestContext, "late failure");
+        handler.lockAccepted(requestContext);
         handler.handleCommand(new ChannelUID(thing.getUID(), CHANNEL_LOCKED), OnOffType.ON);
         verifyNoInteractions(callback, account);
     }

@@ -66,9 +66,13 @@ import org.slf4j.LoggerFactory;
  */
 @NonNullByDefault
 public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implements BridgeHandler {
-    private final Logger logger = LoggerFactory.getLogger(VeluxActiveGatewayHandler.class);
 
+    private final static int MINIMUM_FIRMWARE_VERSION_REQUIRED_FOR_SIGNING = 27;
+    private final static int MINIMUM_FIRMWARE_VERSION_REQUIRED_FOR_SIGNING_WITH_NONCE = 60;
+
+    private final Logger logger = LoggerFactory.getLogger(VeluxActiveGatewayHandler.class);
     private final SigningKeyStore signingKeys;
+
     private volatile @Nullable Integer firmwareVersion;
     private @Nullable NetcomPairing pairing;
     private @Nullable ScheduledFuture<?> pairingTask;
@@ -93,19 +97,19 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     }
 
     public String pair(String host) {
-        ModuleRequestContext context = captureRequestContext();
+        ModuleRequestContext requestContext = captureRequestContext();
         VeluxActiveAccountHandler account = account();
         NetcomPairing attempt;
         synchronized (this) {
             if (pairing != null) {
                 return "IN_PROGRESS";
             }
-            if (context == null || account == null || context.homeId().isBlank() || !isRequestContextCurrent(context)
-                    || getThing().getStatus() != ThingStatus.ONLINE) {
+            if (requestContext == null || account == null || requestContext.homeId().isBlank()
+                    || !isRequestContextCurrent(requestContext) || getThing().getStatus() != ThingStatus.ONLINE) {
                 return "UNAVAILABLE: Gateway must be online with a resolved home.";
             }
             Integer firmware = firmwareVersion;
-            if (firmware == null || firmware < 27) {
+            if (firmware == null || firmware < MINIMUM_FIRMWARE_VERSION_REQUIRED_FOR_SIGNING) {
                 return "UNAVAILABLE: Signing firmware support is unknown or unavailable.";
             }
             try {
@@ -123,11 +127,11 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
                 }
             }, 60, TimeUnit.SECONDS);
         }
-        account.retrieveKey(context, () -> {
+        account.retrieveKey(requestContext, () -> {
             synchronized (this) {
-                if (attempt.equals(pairing) && isRequestContextCurrent(context)) {
+                if (attempt.equals(pairing) && isRequestContextCurrent(requestContext)) {
                     pairingResult = "WAITING_FOR_BUTTON";
-                    schedulePairing(context, attempt, 0);
+                    schedulePairing(requestContext, attempt, 0);
                 }
             }
         }, () -> {
@@ -141,14 +145,14 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     }
 
     public synchronized String pairingStatus() {
-        ModuleRequestContext context = captureRequestContext();
-        if ("IDLE".equals(pairingResult) && context != null && signingKeys.contains(context.moduleId())) {
+        ModuleRequestContext requestContext = captureRequestContext();
+        if ("IDLE".equals(pairingResult) && requestContext != null && signingKeys.contains(requestContext.moduleId())) {
             return "PAIRED";
         }
         return pairingResult;
     }
 
-    private void schedulePairing(ModuleRequestContext context, NetcomPairing attempt, int delay) {
+    private void schedulePairing(ModuleRequestContext requestContext, NetcomPairing attempt, int delay) {
         pairingTask = ThreadPoolManager.getScheduledPool(BINDING_ID + "-pairing").schedule(() -> {
             try {
                 SigningKey key = attempt.attempt();
@@ -156,17 +160,17 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
                     if (!attempt.equals(pairing)) {
                         return;
                     }
-                    if (!isRequestContextCurrent(context) || getThing().getStatus() != ThingStatus.ONLINE) {
+                    if (!isRequestContextCurrent(requestContext) || getThing().getStatus() != ThingStatus.ONLINE) {
                         finishPairing("CANCELLED");
                         return;
                     }
                     if (key != null) {
-                        signingKeys.put(context.moduleId(), key);
+                        signingKeys.put(requestContext.moduleId(), key);
                         finishPairing("PAIRED");
                     } else if (attempt.expired()) {
                         finishPairing("TIMED_OUT");
                     } else {
-                        schedulePairing(context, attempt, 1);
+                        schedulePairing(requestContext, attempt, 1);
                     }
                 }
             } catch (IOException | GeneralSecurityException e) {
@@ -207,19 +211,22 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     }
 
     boolean canSign() {
-        ModuleRequestContext context = captureRequestContext();
+        ModuleRequestContext requestContext = captureRequestContext();
         Integer firmware = firmwareVersion;
-        return context != null && getThing().getStatus() == ThingStatus.ONLINE && firmware != null && firmware >= 27
-                && signingKeys.contains(context.moduleId());
+        return requestContext != null && getThing().getStatus() == ThingStatus.ONLINE && firmware != null
+                && firmware >= MINIMUM_FIRMWARE_VERSION_REQUIRED_FOR_SIGNING
+                && signingKeys.contains(requestContext.moduleId());
     }
 
-    Map<String, Object> sign(ModuleRequestContext context, String moduleId, String field, Object value, long serverTime)
-            throws ApiException {
+    Map<String, Object> sign(ModuleRequestContext requestContext, String moduleId, String field, Object value,
+            long serverTime) throws ApiException {
         Integer firmware = firmwareVersion;
-        if (!isRequestContextCurrent(context) || firmware == null || firmware < 27) {
+        if (!isRequestContextCurrent(requestContext) || firmware == null
+                || firmware < MINIMUM_FIRMWARE_VERSION_REQUIRED_FOR_SIGNING) {
             throw new ApiException("Gateway signing support is unavailable.");
         }
-        return signingKeys.sign(context.moduleId(), moduleId, field, value, serverTime, firmware >= 60);
+        return signingKeys.sign(requestContext.moduleId(), moduleId, field, value, serverTime,
+                firmware >= MINIMUM_FIRMWARE_VERSION_REQUIRED_FOR_SIGNING_WITH_NONCE);
     }
 
     @Override
@@ -266,13 +273,13 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     }
 
     public void discover(Consumer<List<ModuleInfo>> consumer) {
-        ModuleRequestContext target = captureRequestContext();
+        ModuleRequestContext requestContext = captureRequestContext();
         VeluxActiveAccountHandler account = account();
-        if (target != null && account != null) {
+        if (requestContext != null && account != null) {
             account.discover(modules -> {
-                if (isRequestContextCurrent(target)) {
-                    consumer.accept(modules.stream().filter(module -> target.homeId().equals(module.homeId())
-                            && target.moduleId().equals(module.bridgeId())).toList());
+                if (isRequestContextCurrent(requestContext)) {
+                    consumer.accept(modules.stream().filter(module -> requestContext.homeId().equals(module.homeId())
+                            && requestContext.moduleId().equals(module.bridgeId())).toList());
                 }
             });
         }
@@ -296,8 +303,8 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        ModuleRequestContext target = captureRequestContext();
-        if (target == null) {
+        ModuleRequestContext requestContext = captureRequestContext();
+        if (requestContext == null) {
             return;
         }
         VeluxActiveAccountHandler account = account();
@@ -308,10 +315,10 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
             account.requestPoll();
         } else if (CHANNEL_LOCKED.equals(channelUID.getId())) {
             if (command == OnOffType.ON) {
-                account.lock(target);
+                account.lock(requestContext);
             } else if (command == OnOffType.OFF) {
                 if (canSign()) {
-                    account.unlock(target);
+                    account.unlock(requestContext);
                 } else {
                     logger.warn("Pair the gateway before unlocking {}", getThing().getUID());
                 }
@@ -320,11 +327,11 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
     }
 
     synchronized void homeResolved(boolean homeChanged) {
-        ModuleRequestContext target = captureRequestContext();
-        if (target == null || !isRequestContextCurrent(target)) {
+        ModuleRequestContext requestContext = captureRequestContext();
+        if (requestContext == null || !isRequestContextCurrent(requestContext)) {
             return;
         }
-        if (target.homeId().isBlank()) {
+        if (requestContext.homeId().isBlank()) {
             clearState();
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
                     "@text/offline.comm-error.gateway.home-unresolved");
@@ -334,12 +341,12 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         }
     }
 
-    synchronized void update(ModuleRequestContext target, HomeStatus status) {
-        if (!isRequestContextCurrent(target)) {
+    synchronized void update(ModuleRequestContext requestContext, HomeStatus status) {
+        if (!isRequestContextCurrent(requestContext)) {
             return;
         }
-        ModuleError error = status.error(target.moduleId());
-        Module module = status.module(target.moduleId());
+        ModuleError error = status.error(requestContext.moduleId());
+        Module module = status.module(requestContext.moduleId());
         if (error != null || module != null && Boolean.FALSE.equals(module.reachable)) {
             finishPairing("CANCELLED");
             clearState();
@@ -350,7 +357,7 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         } else if (module == null) {
             missingStatus("@text/status.gateway.missing");
         } else {
-            var properties = editProperties();
+            Map<String, String> properties = editProperties();
             Integer firmware = module.firmwareRevisionNetatmo;
             Integer hardware = module.hardwareVersion;
             if (firmware != null) {
@@ -379,23 +386,23 @@ public class VeluxActiveGatewayHandler extends VeluxActiveModuleHandler implemen
         }
     }
 
-    synchronized void lockAccepted(ModuleRequestContext target) {
-        if (isRequestContextCurrent(target)) {
+    synchronized void lockAccepted(ModuleRequestContext requestContext) {
+        if (isRequestContextCurrent(requestContext)) {
             lockPending = true;
             updateState(CHANNEL_LOCKED, OnOffType.ON);
         }
     }
 
     @Override
-    synchronized void failed(ModuleRequestContext context, @Nullable String message) {
-        if (isRequestContextCurrent(context)) {
+    synchronized void failed(ModuleRequestContext requestContext, @Nullable String message) {
+        if (isRequestContextCurrent(requestContext)) {
             finishPairing("CANCELLED");
         }
-        super.failed(context, message);
+        super.failed(requestContext, message);
     }
 
-    synchronized void unlockAccepted(ModuleRequestContext context) {
-        if (isRequestContextCurrent(context)) {
+    synchronized void unlockAccepted(ModuleRequestContext requestContext) {
+        if (isRequestContextCurrent(requestContext)) {
             lockPending = false;
             updateState(CHANNEL_LOCKED, OnOffType.OFF);
         }

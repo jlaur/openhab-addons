@@ -20,6 +20,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -55,7 +57,7 @@ class VeluxActiveApiTest {
     @Test
     void signedCommandsPreserveRoutingWithoutRainOverride() throws Exception {
         when(response.getContentAsString()).thenReturn("{\"status\":\"ok\"}");
-        var signature = java.util.Map.<String, Object> of("sign_key_id", "key-id", "timestamp", 1700000000L, "nonce", 1,
+        var signature = Map.<String, Object> of("sign_key_id", "key-id", "timestamp", 1700000000L, "nonce", 1,
                 "hash_target_position", "signature");
         api.setSignedPosition("token", "home", "window", "gateway", 50, "Europe/Copenhagen", signature);
         var module = commandBody().getAsJsonObject("home").getAsJsonArray("modules").get(0).getAsJsonObject();
@@ -64,7 +66,7 @@ class VeluxActiveApiTest {
         assertThat(module.get("target_position").getAsInt(), is(50));
         assertThat(module.has("force"), is(false));
         clearInvocations(request);
-        api.unlock("token", "home", "gateway", "Europe/Copenhagen", java.util.Map.of("hash_scenario", "signature"));
+        api.unlock("token", "home", "gateway", "Europe/Copenhagen", Map.of("hash_scenario", "signature"));
         module = commandBody().getAsJsonObject("home").getAsJsonArray("modules").get(0).getAsJsonObject();
         assertThat(module.get("scenario").getAsString(), is("home"));
         assertThat(module.get("hash_scenario").getAsString(), is("signature"));
@@ -237,7 +239,7 @@ class VeluxActiveApiTest {
                 ]}}}
                 """);
         var status = api.homeStatus("token", "home");
-        var module = java.util.Objects.requireNonNull(status.module("gateway"));
+        var module = Objects.requireNonNull(status.module("gateway"));
         assertThat(module.reachable, nullValue());
         assertThat(module.locked, is(Boolean.TRUE));
         assertThat(module.locking, is(Boolean.FALSE));
@@ -251,7 +253,7 @@ class VeluxActiveApiTest {
                 {"status":"ok","body":{"errors":[{"id":"gateway","code":6}]}}
                 """);
         var status = api.homeStatus("token", "home");
-        assertThat(java.util.Objects.requireNonNull(status.error("gateway")).code, is(6));
+        assertThat(Objects.requireNonNull(status.error("gateway")).code, is(6));
         assertThat(status.error("another-gateway"), nullValue());
         assertThat(status.module("gateway"), nullValue());
     }
@@ -323,7 +325,7 @@ class VeluxActiveApiTest {
         var exception = assertThrows(ApiUnauthorizedException.class, () -> VeluxActiveApi.parseResponse(200, """
                 {"error":{"code":2,"message":"secret-token"}}
                 """));
-        assertThat(java.util.Objects.requireNonNull(exception.getMessage()).contains("secret-token"), is(false));
+        assertThat(Objects.requireNonNull(exception.getMessage()).contains("secret-token"), is(false));
     }
 
     @ParameterizedTest
@@ -337,7 +339,7 @@ class VeluxActiveApiTest {
     void hidesTransportExceptionDetails() throws Exception {
         when(request.send()).thenThrow(new ExecutionException(new IllegalStateException("secret-token")));
         var error = assertThrows(ApiException.class, () -> api.modules("token"));
-        assertThat(java.util.Objects.requireNonNull(error.getMessage()).contains("secret-token"), is(false));
+        assertThat(Objects.requireNonNull(error.getMessage()).contains("secret-token"), is(false));
         assertThat(error.getCause(), nullValue());
     }
 }

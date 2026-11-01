@@ -122,10 +122,10 @@ class VeluxActiveOpeningHandlerTest {
         command(UpDownType.UP);
         command(UpDownType.DOWN);
         command(new PercentType(45));
-        var target = requireNonNull(handler.captureRequestContext());
-        verify(account).setPosition(target, "gateway", 0);
-        verify(account).setPosition(target, "gateway", 100);
-        verify(account).setPosition(target, "gateway", 45);
+        var requestContext = requireNonNull(handler.captureRequestContext());
+        verify(account).setPosition(requestContext, "gateway", 0);
+        verify(account).setPosition(requestContext, "gateway", 100);
+        verify(account).setPosition(requestContext, "gateway", 45);
         verify(callback, never()).stateUpdated(any(), any());
     }
 
@@ -248,8 +248,8 @@ class VeluxActiveOpeningHandlerTest {
                 {"home":{"id":"home","modules":[{"id":"opening","velux_type":"%s",
                  "bridge":"gateway","current_position":20,"target_position":0}]}}
                 """.formatted(type));
-        var target = requireNonNull(handler.captureRequestContext());
-        handler.positionAccepted(target, 0);
+        var requestContext = requireNonNull(handler.captureRequestContext());
+        handler.positionAccepted(requestContext, 0);
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType("window".equals(type) ? 100 : 0)));
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","current_position":10,"target_position":0}]}}
@@ -259,12 +259,12 @@ class VeluxActiveOpeningHandlerTest {
 
     @Test
     void disposalSuppressesLateUpdatesAndCommands() {
-        var target = requireNonNull(handler.captureRequestContext());
+        var requestContext = requireNonNull(handler.captureRequestContext());
         handler.dispose();
         clearInvocations(callback, account);
-        handler.update(target, new HomeStatus());
-        handler.failed(target, "late failure");
-        handler.positionAccepted(target, 0);
+        handler.update(requestContext, new HomeStatus());
+        handler.failed(requestContext, "late failure");
+        handler.positionAccepted(requestContext, 0);
         command(RefreshType.REFRESH);
         command(UpDownType.UP);
         command(StopMoveType.STOP);
@@ -273,17 +273,17 @@ class VeluxActiveOpeningHandlerTest {
 
     @Test
     void parentInvalidationSuppressesOldResponsesAndRecoveryUsesNewParent() {
-        var old = requireNonNull(handler.captureRequestContext());
-        when(gateway.isRequestContextCurrent(requireNonNull(old.parent()))).thenReturn(false);
+        var oldRequestContext = requireNonNull(handler.captureRequestContext());
+        when(gateway.isRequestContextCurrent(requireNonNull(oldRequestContext.parent()))).thenReturn(false);
         clearInvocations(callback);
-        handler.update(old, new HomeStatus());
-        handler.positionAccepted(old, 0);
-        handler.failed(old, "late");
+        handler.update(oldRequestContext, new HomeStatus());
+        handler.positionAccepted(oldRequestContext, 0);
+        handler.failed(oldRequestContext, "late");
         verifyNoInteractions(callback);
 
-        var parent = new ModuleRequestContext(gateway, "other-home", "other-gateway", 2, null);
-        when(gateway.captureRequestContext()).thenReturn(parent);
-        when(gateway.isRequestContextCurrent(parent)).thenReturn(true);
+        var parentRequestContext = new ModuleRequestContext(gateway, "other-home", "other-gateway", 2, null);
+        when(gateway.captureRequestContext()).thenReturn(parentRequestContext);
+        when(gateway.isRequestContextCurrent(parentRequestContext)).thenReturn(true);
         handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
         assertThat(requireNonNull(handler.captureRequestContext()).homeId(), is("other-home"));
         update("""
@@ -308,14 +308,14 @@ class VeluxActiveOpeningHandlerTest {
 
     @Test
     void offlineGatewaySuppressesUpdatesUntilRecovery() {
-        var target = requireNonNull(handler.captureRequestContext());
+        var requestContext = requireNonNull(handler.captureRequestContext());
         when(bridge.getStatus()).thenReturn(ThingStatus.OFFLINE);
         handler.bridgeStatusChanged(
                 new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, null));
         assertThat(thing.getStatusInfo().getStatusDetail(), is(ThingStatusDetail.BRIDGE_OFFLINE));
         clearInvocations(callback);
-        handler.positionAccepted(target, 0);
-        handler.update(target, new HomeStatus());
+        handler.positionAccepted(requestContext, 0);
+        handler.update(requestContext, new HomeStatus());
         verifyNoInteractions(callback);
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));

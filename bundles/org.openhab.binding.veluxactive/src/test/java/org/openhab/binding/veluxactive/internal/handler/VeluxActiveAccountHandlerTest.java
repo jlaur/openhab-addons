@@ -355,26 +355,26 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void signedUnlockUsesServerTimeAndAcknowledgesAfterSuccess() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = Objects.requireNonNull(gateway.captureRequestContext());
-        when(gateway.isRequestContextCurrent(target)).thenReturn(true);
+        var requestContext = Objects.requireNonNull(gateway.captureRequestContext());
+        when(gateway.isRequestContextCurrent(requestContext)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         when(api.signingTime()).thenReturn(1700000000L);
         var signature = java.util.Map.<String, Object> of("hash_scenario", "signature");
-        when(gateway.sign(target, "gateway", "scenario", "home", 1700000000L)).thenReturn(signature);
+        when(gateway.sign(requestContext, "gateway", "scenario", "home", 1700000000L)).thenReturn(signature);
         handler.initialize();
         executor.runAll();
         clearInvocations(api, gateway);
-        handler.unlock(target);
+        handler.unlock(requestContext);
         executor.runAll();
         var order = inOrder(api, gateway);
-        order.verify(gateway).sign(target, "gateway", "scenario", "home", 1700000000L);
+        order.verify(gateway).sign(requestContext, "gateway", "scenario", "home", 1700000000L);
         order.verify(api).unlock("access", "home", "gateway", "Europe/Copenhagen", signature);
-        order.verify(gateway).unlockAccepted(target);
+        order.verify(gateway).unlockAccepted(requestContext);
         doThrow(new ApiException("Rejected")).when(api).unlock(anyString(), anyString(), anyString(), anyString(),
                 anyMap());
         clearInvocations(gateway);
-        handler.unlock(target);
+        handler.unlock(requestContext);
         executor.runAll();
         verify(gateway, never()).unlockAccepted(any());
     }
@@ -382,18 +382,18 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void lockCommandUsesConfiguredTimezoneAndPollsForConfirmation() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = Objects.requireNonNull(gateway.captureRequestContext());
-        when(gateway.isRequestContextCurrent(target)).thenReturn(true);
+        var requestContext = Objects.requireNonNull(gateway.captureRequestContext());
+        when(gateway.isRequestContextCurrent(requestContext)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
         executor.runAll();
         clearInvocations(api, gateway, future);
-        handler.lock(target);
+        handler.lock(requestContext);
         executor.runAll();
         var order = inOrder(api, gateway);
         order.verify(api).lock("access", "home", "gateway", "Europe/Copenhagen");
-        order.verify(gateway).lockAccepted(target);
+        order.verify(gateway).lockAccepted(requestContext);
         order.verify(api).homeStatus("access", "home");
         verify(future).cancel(false);
         verify(scheduler).schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS));
@@ -402,24 +402,24 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void rejectedLockDoesNotPublishAcknowledgement() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = Objects.requireNonNull(gateway.captureRequestContext());
-        when(gateway.isRequestContextCurrent(target)).thenReturn(true);
+        var requestContext = Objects.requireNonNull(gateway.captureRequestContext());
+        when(gateway.isRequestContextCurrent(requestContext)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
         executor.runAll();
         doThrow(new ApiException("Rejected")).when(api).lock(anyString(), anyString(), anyString(), anyString());
-        handler.lock(target);
+        handler.lock(requestContext);
         executor.runAll();
         verify(gateway, never()).lockAccepted(any());
-        verify(gateway).failed(target, "@text/offline.comm-error.module.command-error");
+        verify(gateway).failed(requestContext, "@text/offline.comm-error.module.command-error");
     }
 
     @Test
     void disposalDuringLockSuppressesAcknowledgementAndRefresh() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = Objects.requireNonNull(gateway.captureRequestContext());
-        when(gateway.isRequestContextCurrent(target)).thenReturn(true);
+        var requestContext = Objects.requireNonNull(gateway.captureRequestContext());
+        when(gateway.isRequestContextCurrent(requestContext)).thenReturn(true);
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
@@ -429,7 +429,7 @@ class VeluxActiveAccountHandlerTest {
             handler.dispose();
             return null;
         }).when(api).lock(anyString(), anyString(), anyString(), anyString());
-        handler.lock(target);
+        handler.lock(requestContext);
         executor.runAll();
         verify(gateway, never()).lockAccepted(any());
         verify(api, never()).homeStatus(anyString(), anyString());
@@ -438,13 +438,13 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void queuedLockIsDiscardedWhenGatewayWasDisposed() throws Exception {
         var gateway = gateway("home", "gateway");
-        var target = Objects.requireNonNull(gateway.captureRequestContext());
+        var requestContext = Objects.requireNonNull(gateway.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
         executor.runAll();
-        handler.lock(target);
-        when(gateway.isRequestContextCurrent(target)).thenReturn(false);
+        handler.lock(requestContext);
+        when(gateway.isRequestContextCurrent(requestContext)).thenReturn(false);
         executor.runAll();
         verify(api, never()).lock(anyString(), anyString(), anyString(), anyString());
     }
@@ -453,8 +453,8 @@ class VeluxActiveAccountHandlerTest {
     void sensorAndGatewayShareHomeStatusAndTopologyFailureDoesNotBlockDiagnostics() throws Exception {
         var gateway = gateway("home", "gateway");
         var sensor = mock(VeluxActiveIndoorSensorHandler.class);
-        var target = new ModuleRequestContext(sensor, "home", "sensor", 1, null);
-        when(sensor.captureRequestContext()).thenReturn(target);
+        var requestContext = new ModuleRequestContext(sensor, "home", "sensor", 1, null);
+        when(sensor.captureRequestContext()).thenReturn(requestContext);
         var child = mock(org.openhab.core.thing.Thing.class);
         when(child.getHandler()).thenReturn(sensor);
         Bridge parent = gateway.getThing();
@@ -471,38 +471,38 @@ class VeluxActiveAccountHandlerTest {
         executor.runAll();
         verify(api, times(1)).homeStatus("access", "home");
         verify(gateway).update(any(), same(response));
-        verify(sensor).update(target, response);
+        verify(sensor).update(requestContext, response);
         verify(sensor, never()).updateTopology(any(), any());
         handler.requestPoll();
         executor.runAll();
         var order = inOrder(sensor);
-        order.verify(sensor).updateTopology(target, topology);
-        order.verify(sensor).update(target, response);
+        order.verify(sensor).updateTopology(requestContext, topology);
+        order.verify(sensor).update(requestContext, response);
     }
 
     @Test
     void openingAndGatewaySharePollingAndCommandsTriggerFastPoll() throws Exception {
         var gateway = gateway("home", "gateway");
         var opening = opening();
-        var target = Objects.requireNonNull(opening.captureRequestContext());
+        var requestContext = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         var response = new HomeStatus();
         when(api.homeStatus("access", "home")).thenReturn(response);
         handler.initialize();
         executor.runAll();
         verify(api, times(1)).homeStatus("access", "home");
-        verify(opening).update(target, response);
+        verify(opening).update(requestContext, response);
         verify(gateway).update(any(), same(response));
         clearInvocations(api, scheduler);
-        handler.setPosition(target, "gateway", 30);
+        handler.setPosition(requestContext, "gateway", 30);
         executor.runAll();
         var order = inOrder(api, opening);
         order.verify(api).setPosition("access", "home", "opening", "gateway", 30, "Europe/Copenhagen");
-        order.verify(opening).positionAccepted(target, 30);
+        order.verify(opening).positionAccepted(requestContext, 30);
         order.verify(api).homeStatus("access", "home");
         verify(scheduler).schedule(any(Runnable.class), eq(5L), eq(TimeUnit.SECONDS));
         clearInvocations(opening);
-        handler.stopMovements(target, "gateway");
+        handler.stopMovements(requestContext, "gateway");
         executor.runAll();
         verify(opening, never()).positionAccepted(any(), anyInt());
         verify(api).stopMovements("access", "home", "gateway", "Europe/Copenhagen");
@@ -511,7 +511,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void openingCommandFailureRecoversAndRefreshesRejectedAuthentication() throws Exception {
         var opening = opening();
-        var target = Objects.requireNonNull(opening.captureRequestContext());
+        var requestContext = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(client.refreshToken()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
@@ -519,29 +519,29 @@ class VeluxActiveAccountHandlerTest {
         executor.runAll();
         doThrow(new ApiUnauthorizedException("Rejected")).doNothing().when(api).setPosition("access", "home", "opening",
                 "gateway", 30, "Europe/Copenhagen");
-        handler.setPosition(target, "gateway", 30);
+        handler.setPosition(requestContext, "gateway", 30);
         executor.runAll();
-        verify(opening).failed(target, "@text/offline.comm-error.module.command-error");
+        verify(opening).failed(requestContext, "@text/offline.comm-error.module.command-error");
         verify(opening, never()).positionAccepted(any(), anyInt());
         verify(client).refreshToken();
         clearInvocations(opening);
-        handler.setPosition(target, "gateway", 30);
+        handler.setPosition(requestContext, "gateway", 30);
         executor.runAll();
-        verify(opening).update(eq(target), any());
+        verify(opening).update(eq(requestContext), any());
         verify(opening, never()).failed(any(), any());
     }
 
     @Test
     void queuedOpeningCommandsAreDiscardedAfterChildDisposal() throws Exception {
         var opening = opening();
-        var target = Objects.requireNonNull(opening.captureRequestContext());
+        var requestContext = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
         executor.runAll();
-        handler.setPosition(target, "gateway", 30);
-        handler.stopMovements(target, "gateway");
-        when(opening.isRequestContextCurrent(target)).thenReturn(false);
+        handler.setPosition(requestContext, "gateway", 30);
+        handler.stopMovements(requestContext, "gateway");
+        when(opening.isRequestContextCurrent(requestContext)).thenReturn(false);
         executor.runAll();
         verify(api, never()).setPosition(anyString(), anyString(), anyString(), anyString(), anyInt(), anyString());
         verify(api, never()).stopMovements(anyString(), anyString(), anyString(), anyString());
@@ -551,7 +551,7 @@ class VeluxActiveAccountHandlerTest {
     @Test
     void accountDisposalDuringMovementSuppressesFollowUpPoll() throws Exception {
         var opening = opening();
-        var target = Objects.requireNonNull(opening.captureRequestContext());
+        var requestContext = Objects.requireNonNull(opening.captureRequestContext());
         when(client.getAccessTokenResponse()).thenReturn(token());
         when(api.homeStatus("access", "home")).thenReturn(new HomeStatus());
         handler.initialize();
@@ -561,7 +561,7 @@ class VeluxActiveAccountHandlerTest {
             handler.dispose();
             return null;
         }).when(api).setPosition(anyString(), anyString(), anyString(), anyString(), anyInt(), anyString());
-        handler.setPosition(target, "gateway", 30);
+        handler.setPosition(requestContext, "gateway", 30);
         executor.runAll();
         verify(api, never()).homeStatus(anyString(), anyString());
         verify(opening, never()).positionAccepted(any(), anyInt());
@@ -678,9 +678,9 @@ class VeluxActiveAccountHandlerTest {
         Bridge parent = bridge.getThings().isEmpty() ? gateway("home", "gateway").getThing()
                 : (Bridge) bridge.getThings().getFirst();
         var opening = mock(VeluxActiveOpeningHandler.class);
-        var target = new ModuleRequestContext(opening, "home", "opening", 1, null);
-        when(opening.captureRequestContext()).thenReturn(target);
-        when(opening.isRequestContextCurrent(target)).thenReturn(true);
+        var requestContext = new ModuleRequestContext(opening, "home", "opening", 1, null);
+        when(opening.captureRequestContext()).thenReturn(requestContext);
+        when(opening.isRequestContextCurrent(requestContext)).thenReturn(true);
         var child = mock(org.openhab.core.thing.Thing.class);
         when(child.getHandler()).thenReturn(opening);
         var children = new ArrayList<>(parent.getThings());

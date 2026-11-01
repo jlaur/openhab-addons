@@ -15,6 +15,7 @@ package org.openhab.binding.veluxactive.internal.handler;
 import static org.openhab.binding.veluxactive.internal.VeluxActiveBindingConstants.*;
 
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
@@ -53,17 +54,18 @@ public class VeluxActiveIndoorSensorHandler extends VeluxActiveBatteryModuleHand
         super.initialize();
     }
 
-    synchronized void updateTopology(ModuleRequestContext target, List<ModuleInfo> modules) {
-        if (!isRequestContextCurrent(target)) {
+    synchronized void updateTopology(ModuleRequestContext requestContext, List<ModuleInfo> modules) {
+        if (!isRequestContextCurrent(requestContext)) {
             return;
         }
-        ModuleInfo moduleInfo = modules
-                .stream().filter(module -> target.homeId().equals(module.homeId())
-                        && target.moduleId().equals(module.moduleId()) && module.type() == ModuleType.INDOOR_SENSOR)
+        ModuleInfo moduleInfo = modules.stream()
+                .filter(module -> requestContext.homeId().equals(module.homeId())
+                        && requestContext.moduleId().equals(module.moduleId())
+                        && module.type() == ModuleType.INDOOR_SENSOR)
                 .findFirst().orElse(null);
         roomId = moduleInfo == null ? null : moduleInfo.roomId();
         String roomName = moduleInfo == null ? null : moduleInfo.roomName();
-        var properties = editProperties();
+        Map<String, String> properties = editProperties();
         if (roomName != null && !roomName.isBlank()) {
             properties.put("roomName", roomName);
         } else {
@@ -73,16 +75,17 @@ public class VeluxActiveIndoorSensorHandler extends VeluxActiveBatteryModuleHand
     }
 
     @Override
-    synchronized void update(ModuleRequestContext target, HomeStatus status) {
-        if (!isRequestContextCurrent(target)) {
+    synchronized void update(ModuleRequestContext requestContext, HomeStatus status) {
+        if (!isRequestContextCurrent(requestContext)) {
             return;
         }
-        Module module = status.module(target.moduleId());
-        if (module != null && !checkGateway(target, module)) {
+        Module module = status.module(requestContext.moduleId());
+        if (module != null && !checkGateway(requestContext, module)) {
             return;
         }
-        if (status.error(target.moduleId()) != null || module != null && Boolean.FALSE.equals(module.reachable)) {
-            failed(target, "@text/offline.comm-error.indoor-sensor.unreachable");
+        if (status.error(requestContext.moduleId()) != null
+                || module != null && Boolean.FALSE.equals(module.reachable)) {
+            failed(requestContext, "@text/offline.comm-error.indoor-sensor.unreachable");
             return;
         }
         if (module == null) {

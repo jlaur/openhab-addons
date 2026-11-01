@@ -2,25 +2,20 @@
 
 This binding supports VELUX ACTIVE with NETATMO accounts, gateways, indoor climate sensors, departure switches and connected windows/covers.
 For KLF 200 gateways, use the [Velux binding](https://www.openhab.org/addons/bindings/velux/).
+The KIG 300 gateway supports HomeKit, although only for a subset of the available features.
+For local integration, use the [HomeKit binding](https://www.openhab.org/addons/bindings/homekit/)
 
 ## Supported Things
 
 | Thing                 | Thing type         | API module type | VELUX product                                      | Description                                                 |
 | --------------------- | ------------------ | --------------- | -------------------------------------------------- | ----------------------------------------------------------- |
 | Account               | `account`          |                 | VELUX ACTIVE with NETATMO account                  | OAuth authentication and shared home status polling         |
-| Gateway               | `gateway`          | `NXG`           | Gateway supplied with KIG 300 or KIX 300           | Gateway status and departure locking/unlocking              |
+| Gateway               | `gateway`          | `NXG`           | KIG 300                                            | Gateway status and departure locking/unlocking              |
 | Indoor Climate Sensor | `indoor-sensor`    | `NXS`           | KLA 300                                            | Diagnostics and climate measurements from its assigned room |
 | Departure Switch      | `departure-switch` | `NXD`           | KLN 300                                            | Battery and connectivity diagnostics                        |
 | Window/Cover          | `opening`          | `NXO`           | Connected window, blind or shutter; various models | Position, operating mode and movement commands              |
 
-The codes `NXG`, `NXS`, `NXD` and `NXO` are module types reported by the Netatmo API.
-VELUX uses separate commercial references for products and kits:
-
-- **KIG 300** is VELUX App Control, supplying the gateway for app-based operation.
-- **KIX 300** is the VELUX ACTIVE starter kit, containing a gateway, an indoor climate sensor and a departure switch. These appear as separate `NXG`, `NXS` and `NXD` modules in the API.
-- **KLA 300** and **KLN 300** identify the indoor climate sensor and departure switch respectively, including when purchased separately.
-
-`NXO` covers multiple actuator models; the API's `velux_type` field distinguishes windows, blinds and shutters.
+**KIX 300** is the VELUX ACTIVE starter kit, containing a gateway, an indoor climate sensor and a departure switch.
 See the [VELUX product overview](https://www.velux.co.uk/professionals/technical-library/smart-home-systems/operation-and-remote-controls) for the commercial product references.
 
 Gateway Bridges are children of the Account Bridge.
@@ -32,11 +27,7 @@ An ONLINE account Bridge means authentication succeeded; gateway connectivity is
 Create and configure an Account Bridge, wait for it to become ONLINE, then start a VELUX ACTIVE discovery scan.
 The account discovers NXG gateways, including gateways that are currently unreachable.
 Accept the gateways from the Inbox, then scan again to discover their NXS sensors, NXD departure switches and NXO windows/covers.
-Modules are associated with their gateway using `bridge`, falling back to `modules_bridged`.
 Accept a discovered module from the Inbox to start polling.
-
-Discovery reads topology on demand.
-Status polling requests each configured home once per interval and distributes the result to its module Things.
 
 ## Account Configuration
 
@@ -44,16 +35,13 @@ Status polling requests each configured home once per interval and distributes t
 | --------------- | -------- | ------- | --------------------------------------------------- |
 | username        | Yes      |         | Email address of the VELUX ACTIVE account           |
 | password        | Yes      |         | Password of the VELUX ACTIVE account                |
-| refreshInterval | No       | 60      | Home status polling interval in seconds; minimum 10 |
+| refreshInterval | No       | 60      | Home status polling interval in seconds; minimum 30 |
 
 ## Gateway Configuration
 
 Discovery supplies the module identifier.
-For manual configuration, obtain it from `homesdata` or `homestatus`.
 The binding resolves the home automatically from account topology.
-Topology is refreshed during shared polling; communication failures retain the last successful association.
 An unresolved or ambiguous gateway is OFFLINE until its home is resolved and a status response confirms connectivity.
-Commands require a resolved home.
 Its children remain OFFLINE until the gateway recovers.
 
 | Parameter | Required | Description                                               |
@@ -71,22 +59,13 @@ The binding uses a temporary encrypted local connection to retrieve the signing 
 1. When `pairingStatus()` returns `WAITING_FOR_BUTTON`, briefly press the gateway's physical button to authorize retrieval.
 1. Check `pairingStatus()` until it returns `PAIRED`. The attempt times out after 60 seconds.
 
-For example, in a Rules DSL rule:
-
-```java
-val gatewayActions = getActions("veluxactive", "veluxactive:gateway:home:main")
-logInfo("velux", "{}", gatewayActions.pair("192.168.1.50"))
-// In a later rule invocation, after pressing the gateway button:
-logInfo("velux", "{}", gatewayActions.pairingStatus())
-```
-
 The action returns immediately. Progress is STARTING, WAITING_FOR_BUTTON, then PAIRED, FAILED or TIMED_OUT.
 Removing, reinitializing or disconnecting the gateway cancels an active attempt.
 If pairing fails, check the IP address, LAN access and physical button, then invoke the action again.
 Signed commands require a recent server clock sample and reported Netatmo firmware support (27 or later).
 Firmware 60 and later uses HMAC-SHA512 with a nonce; earlier supported firmware uses the legacy SHA-512 signature.
 
-Keys and replay counters are retained in private openHAB storage across normal restarts, not in Thing configuration or properties.
+Keys and replay counters are retained in private openHAB storage across normal restarts.
 Protect openHAB's userdata and backups as they contain these credentials.
 Removing the gateway Thing removes its locally stored key; a gateway factory reset requires pairing again.
 Deleting the local key does not revoke it on the gateway.
@@ -95,6 +74,9 @@ After pairing, send OFF to the gateway's `locked` channel to leave departure mod
 ## Channels
 
 The Account Bridge has no channels.
+
+### Gateway
+
 Gateway Bridges provide:
 
 | Channel   | Item type | Access     | Description                                                                   |
@@ -104,26 +86,15 @@ Gateway Bridges provide:
 
 Departure locking sends the unsigned `away` scenario through the gateway.
 This blocks movement through the VELUX system; it is not a door-lock command.
-OFF sends the signed `home` scenario after gateway pairing. Without pairing it is ignored with a warning.
-Automatic state prediction is disabled.
-The binding updates `locked` to the requested state when the API acknowledges the command without errors.
-While the gateway reports locking in progress, an acknowledged lock remains ON until polling reports the result.
-This acknowledgement confirms command acceptance; the following status polls reconcile the channel with the gateway’s reported state.
-After a successful command, the binding requests status immediately and then polls every five seconds for up to 30 seconds.
+OFF sends the signed `home` scenario after gateway pairing.
+Without pairing it is ignored with a warning.
 
-A gateway present in a successful home status response is considered reachable unless it reports `reachable=false` or an error for that gateway.
-Error code 6 marks a gateway unreachable.
-A gateway absent from a partial response retains ONLINE status if previously online; otherwise it is OFFLINE until connectivity is confirmed.
 Unavailable or missing channel values are UNDEF, rather than interpreted as unlocked.
-Channel refresh commands request a shared status update.
 
-## Indoor Climate Sensor
+### Indoor Climate Sensor
 
 The physical NXS sensor combines module diagnostics and measurements from its assigned room.
 Discovery provides `moduleId`, which is the only required parameter for manual configuration under a Gateway Bridge.
-The binding resolves the room from `room_id`, falling back to room membership when needed.
-The module ID determines the Thing identity, so room reassignment preserves Item links.
-The assigned room name appears as a Thing property, along with the sensor firmware version.
 
 | Channel         | Item type            | Description                                   |
 | --------------- | -------------------- | --------------------------------------------- |
@@ -137,29 +108,29 @@ The assigned room name appears as a Thing property, along with the sensor firmwa
 | last-seen       | DateTime             | Last contact reported by the service          |
 
 All sensor channels are read-only.
-Account topology is refreshed once per shared polling cycle to resolve gateway homes and sensor rooms.
-A temporary topology failure retains the last known association and does not prevent module diagnostics from updating.
-Missing room association or readings yield UNDEF climate channels.
 An unreachable sensor yields UNDEF for all its channels.
 If multiple sensors belong to one room, their climate channels show the same room-level readings; battery and signal values remain per-device.
 
 ## Departure Switch
 
 The physical NXD departure switch is discovered automatically as a child of its Gateway Bridge.
-Manual configuration under a Gateway Bridge requires `moduleId`; no room association is needed.
-It exposes the read-only `battery-level`, `low-battery`, `signal-strength` and `last-seen` channels described above, and a firmware version property.
-Reachability is reflected in Thing status.
-Missing values become UNDEF; an unreachable switch clears all four channel states.
-It uses the existing shared home status polling.
+Manual configuration under a Gateway Bridge requires `moduleId`.
 
-The available module status does not report button presses.
+| Channel         | Item type            | Description                                   |
+| --------------- | -------------------- | --------------------------------------------- |
+| battery-level   | Number               | Battery percentage                            |
+| low-battery     | Switch               | ON for low or very low reported battery state |
+| signal-strength | Number               | Radio quality from 0 (very low) to 4 (full)   |
+| last-seen       | DateTime             | Last contact reported by the service          |
+
+Missing values become UNDEF; an unreachable switch clears all four channel states.
+
 Departure lock state and locking commands remain on the Gateway Bridge's `locked` channel.
 
 ## Window/Cover
 
 NXO modules are discovered as Window/Cover Things (`opening`), covering roof windows, blinds, venetian blinds, shutters and awning blinds.
 Manual configuration under a Gateway Bridge requires `moduleId`.
-The device subtype is learned from home status; commands use the parent gateway.
 
 | Channel   | Item type     | Access     | Description                                                              |
 | --------- | ------------- | ---------- | ------------------------------------------------------------------------ |
@@ -167,31 +138,21 @@ The device subtype is learned from home status; commands use the parent gateway.
 | mode      | String        | Read-only  | Reported operating mode, for example `algo-available` or `algo-disabled` |
 | last-seen | DateTime      | Read-only  | Last contact timestamp reported by the service                           |
 
-The binding normalizes the different API position conventions for windows and covers.
 UP requests fully open, DOWN requests fully closed, and percentage commands set intermediate positions.
 Blinds and shutters support unsigned position commands.
-Roof windows support closing (DOWN or 100%) without pairing. Opening or partial positioning requires pairing the parent gateway.
+Roof windows support closing (DOWN or 100%) without pairing.
+Opening or partial positioning requires pairing the parent gateway.
 
 **STOP stops all movements on the associated gateway**, including other windows and covers.
-It is the gateway-wide stop operation used by the VELUX app, not an individual actuator stop.
+It is the gateway-wide stop operation, not an individual actuator stop.
 The binding does not force movement past rain restrictions.
 
-The position channel shows the requested destination immediately after the API accepts a position command.
-Subsequent status polls reconcile it with the actual position reported by the device; acceptance does not mean movement is complete.
-Failed commands and STOP do not publish an expected position.
-Automatic state prediction is disabled.
-Successful commands trigger an immediate shared poll and five-second polling for up to 30 seconds.
-Missing or out-of-range positions become UNDEF.
-An unknown subtype also produces UNDEF positions and prevents position commands rather than guessing the direction.
 Unreachable modules go OFFLINE and clear their channels.
 Modules absent from a partial response clear their channels and retain ONLINE status if previously online; otherwise they are OFFLINE until connectivity is confirmed.
 
-## Gateway Properties
-
-Reported versions are exposed as `firmwareVersion` (Netatmo) and `hardwareVersion`.
-Missing version fields in a partial response preserve the previously reported properties.
-
 ## Example
+
+### Thing Configuration
 
 ```java
 Bridge veluxactive:account:home "VELUX ACTIVE Account" [
@@ -209,15 +170,10 @@ Bridge veluxactive:account:home "VELUX ACTIVE Account" [
 }
 ```
 
+### Item Configuration
+
 ```java
-Rollershutter VeluxWindow { channel="veluxactive:opening:home:main:window:position" }
-Switch VeluxDepartureLocked "Departure Locked" { channel="veluxactive:gateway:home:main:locked", autoupdate="false" }
-DateTime VeluxGatewayLastSeen "Last Seen" { channel="veluxactive:gateway:home:main:last-seen" }
+Rollershutter VeluxWindow "Position" <blinds> { channel="veluxactive:opening:home:main:window:position" }
+Switch VeluxDepartureLocked "Departure Locked" <lock> { channel="veluxactive:gateway:home:main:locked" }
+DateTime VeluxGatewayLastSeen "Last Seen" <time> { channel="veluxactive:gateway:home:main:last-seen" }
 ```
-
-## Protocol References
-
-- [VELUX ACTIVE integration](https://github.com/Niek/ha-velux-active)
-- [Authentication and status implementation](https://github.com/Niek/ha-velux-active/blob/main/custom_components/velux_active/api.py)
-- [Departure control implementation](https://github.com/Niek/ha-velux-active/blob/main/custom_components/velux_active/lock.py)
-- [Gateway connectivity interpretation](https://github.com/Niek/ha-velux-active/blob/main/custom_components/velux_active/connectivity.py)

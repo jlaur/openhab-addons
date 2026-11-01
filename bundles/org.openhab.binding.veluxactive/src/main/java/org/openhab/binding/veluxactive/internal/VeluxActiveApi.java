@@ -157,7 +157,7 @@ public class VeluxActiveApi {
 
     public void unlock(String token, String homeId, String gatewayId, String timezone, Map<String, Object> signature)
             throws ApiException, InterruptedException {
-        var module = new HashMap<String, Object>(signature);
+        Map<String, Object> module = new HashMap<>(signature);
         module.put("id", gatewayId);
         module.put("scenario", "home");
         setState(token, homeId, timezone, module);
@@ -168,7 +168,7 @@ public class VeluxActiveApi {
         if (position < 0 || position > 100) {
             throw new IllegalArgumentException("Position must be between 0 and 100.");
         }
-        var module = new HashMap<String, Object>(signature);
+        Map<String, Object> module = new HashMap<>(signature);
         module.put("id", moduleId);
         module.put("bridge", gatewayId);
         module.put("target_position", position);
@@ -200,12 +200,18 @@ public class VeluxActiveApi {
                         payload, StandardCharsets.UTF_8));
         ContentResponse response;
         try {
-            logger.trace("GET request for {}", request.getURI());
+            if (logger.isTraceEnabled()) {
+                logger.trace("POST request for {}: {}", request.getURI(), payload);
+            }
             response = request.send();
         } catch (ExecutionException | TimeoutException e) {
             throw new ApiException("Could not communicate with VELUX ACTIVE.");
         }
-        ApiResponse result = parseResponse(response.getStatus(), response.getContentAsString());
+        String content = response.getContentAsString();
+        if (logger.isTraceEnabled()) {
+            logger.trace("POST response for {}: HTTP {}: {}", request.getURI(), response.getStatus(), content);
+        }
+        ApiResponse result = parseResponse(response.getStatus(), content);
         Long seconds = result.timeServer;
         if (seconds != null && seconds > 0) {
             serverTime = new ServerTime(seconds, System.nanoTime());

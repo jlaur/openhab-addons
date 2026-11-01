@@ -43,14 +43,16 @@ import com.google.gson.JsonParseException;
 @NonNullByDefault
 @Component(service = SigningKeyStore.class)
 public class SigningKeyStore {
+
+    private static final String STORAGE_NAME = "org.openhab.binding." + VeluxActiveBindingConstants.BINDING_ID
+            + ".pairings";
+
     private final Storage<String> storage;
     private final Gson gson = new Gson();
 
     @Activate
     public SigningKeyStore(@Reference StorageService storageService) {
-        storage = storageService.getStorage(
-                "org.openhab.binding." + VeluxActiveBindingConstants.BINDING_ID + ".pairings",
-                getClass().getClassLoader());
+        storage = storageService.getStorage(STORAGE_NAME, getClass().getClassLoader());
     }
 
     public synchronized void put(String gatewayId, SigningKey key) {
