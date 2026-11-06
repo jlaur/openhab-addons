@@ -40,6 +40,9 @@
 			<channel id="locked" typeId="locked"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
+
+		<representation-property>moduleId</representation-property>
+
 		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</bridge-type>
 
@@ -69,6 +72,8 @@
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 
+		<representation-property>moduleId</representation-property>
+
 		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
@@ -88,6 +93,8 @@
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 
+		<representation-property>moduleId</representation-property>
+
 		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
 
@@ -105,6 +112,8 @@
 			<channel id="mode" typeId="operating-mode"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
+
+		<representation-property>moduleId</representation-property>
 
 		<config-description-ref uri="thing-type:veluxactive:module"/>
 	</thing-type>
