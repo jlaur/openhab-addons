@@ -21,6 +21,7 @@ import java.util.Map;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.veluxactive.internal.ModuleRequestContext;
+import org.openhab.binding.veluxactive.internal.api.VeluxType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
 import org.openhab.core.library.types.DateTimeType;
@@ -47,7 +48,7 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
 
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveOpeningHandler.class);
 
-    private @Nullable String veluxType;
+    private @Nullable VeluxType veluxType;
 
     public VeluxActiveOpeningHandler(Thing thing) {
         super(thing);
@@ -71,7 +72,7 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             return;
         }
         ModuleRequestContext requestContext;
-        String type;
+        VeluxType type;
         String gateway;
         synchronized (this) {
             requestContext = captureRequestContext();
@@ -103,16 +104,16 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         } else {
             return;
         }
-        if (!knownType(type)) {
+        if (type == null) {
             logger.warn("Cannot control {} until its window/cover type is known", getThing().getUID());
             return;
         }
-        int apiPosition = "window".equals(type) ? 100 - position : position;
+        int apiPosition = type.isInverted() ? 100 - position : position;
         if (gateway == null || gateway.isBlank()) {
             logger.warn("Cannot control {} until its gateway is known", getThing().getUID());
             return;
         }
-        if ("window".equals(type) && apiPosition != 0) {
+        if (type == VeluxType.WINDOW && apiPosition != 0) {
             ModuleRequestContext parent = requestContext.parent();
             if (parent != null && parent.handler() instanceof VeluxActiveGatewayHandler handler && handler.canSign()) {
                 account.setSignedPosition(requestContext, apiPosition);
@@ -143,10 +144,10 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
             return;
         }
         Map<String, String> properties = editProperties();
-        String type = module.veluxType;
+        VeluxType type = module.veluxType;
         if (type != null) {
             veluxType = type;
-            properties.put(PROPERTY_VELUX_TYPE, type);
+            properties.put(PROPERTY_VELUX_TYPE, type.toCamelCase());
         }
         Integer firmware = module.firmwareRevision;
         if (firmware != null) {
@@ -182,18 +183,12 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
     }
 
     private @Nullable Integer position(@Nullable Integer value) {
-        if (value == null || value < 0 || value > 100 || !knownType(veluxType)) {
+        VeluxType veluxType = this.veluxType;
+        if (value == null || value < 0 || value > 100 || veluxType == null) {
             return null;
         }
         // VELUX uses 0 = closed for windows and 100 = closed for covers.
-        return "window".equals(veluxType) ? 100 - value : value;
-    }
-
-    private static boolean knownType(@Nullable String type) {
-        return type != null && switch (type) {
-            case "window", "blind", "venetian_blind", "shutter", "awning_blind" -> true;
-            default -> false;
-        };
+        return veluxType.isInverted() ? 100 - value : value;
     }
 
     @Override

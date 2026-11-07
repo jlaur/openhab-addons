@@ -24,6 +24,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.openhab.binding.veluxactive.internal.api.ModuleType;
+import org.openhab.binding.veluxactive.internal.api.VeluxType;
 import org.openhab.binding.veluxactive.internal.api.dto.ApiResponse;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.binding.veluxactive.internal.api.dto.Module;
@@ -88,7 +89,7 @@ class VeluxActiveHomeStatusTest {
         assertThat(window.currentPosition, is(0));
         assertThat(window.securePosition, is(7));
         assertThat(window.rainPosition, is(50));
-        assertThat(window.veluxType, is("window"));
+        assertThat(window.veluxType, is(VeluxType.WINDOW));
         assertThat(window.bridge, is("gateway"));
         var sensor = requireNonNull(status.module("sensor"));
         assertThat(sensor.batteryLevel, is(3883));

@@ -29,8 +29,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.openhab.binding.veluxactive.internal.ModuleRequestContext;
+import org.openhab.binding.veluxactive.internal.api.VeluxType;
 import org.openhab.binding.veluxactive.internal.api.dto.HomeStatus;
 import org.openhab.core.config.core.Configuration;
 import org.openhab.core.library.types.DateTimeType;
@@ -94,29 +94,30 @@ class VeluxActiveOpeningHandlerTest {
         handler.initialize();
     }
 
-    @Test
-    void reportsWindowPositionsAndProperties() {
+    @ParameterizedTest
+    @EnumSource(value = VeluxType.class, names = { "WINDOW", "SHUTTER" })
+    void reportsWindowPositionsAndProperties(VeluxType type) {
         update("""
-                {"home":{"id":"home","modules":[{"id":"opening","type":"NXO","velux_type":"window",
+                {"home":{"id":"home","modules":[{"id":"opening","type":"NXO","velux_type":"%s",
                  "bridge":"gateway","current_position":20,"target_position":80,"mode":"algo_available",
                  "firmware_revision":53,"manufacturer":"Netatmo","last_seen":1791635702,"reachable":true}]}}
-                """);
+                """.formatted(type.serializedName()));
         assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType(80)));
         assertThat(states.get(CHANNEL_MODE), is(new StringType("algo-available")));
         assertThat(states.get(CHANNEL_LAST_SEEN), is(new DateTimeType(Instant.ofEpochSecond(1791635702L))));
         assertThat(thing.getProperties().get(Thing.PROPERTY_FIRMWARE_VERSION), is("53"));
         assertThat(thing.getProperties().get(Thing.PROPERTY_VENDOR), is("Netatmo"));
-        assertThat(thing.getProperties().get(PROPERTY_VELUX_TYPE), is("window"));
+        assertThat(thing.getProperties().get(PROPERTY_VELUX_TYPE), is(type.toCamelCase()));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "blind", "venetian_blind", "shutter", "awning_blind" })
-    void preservesCoverPositionsAndSupportsUnsignedMovement(String type) {
+    @EnumSource(value = VeluxType.class, names = { "BLIND", "VENETIAN_BLIND", "AWNING_BLIND" })
+    void preservesCoverPositionsAndSupportsUnsignedMovement(VeluxType type) {
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","velux_type":"%s",
                  "bridge":"gateway","current_position":20,"target_position":80}]}}
-                """.formatted(type));
+                """.formatted(type.serializedName()));
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType(20)));
         clearInvocations(account, callback);
         command(UpDownType.UP);
@@ -182,7 +183,7 @@ class VeluxActiveOpeningHandlerTest {
     @Test
     void inheritsGatewayRoutingEvenWhenStatusOmitsBridge() {
         update("""
-                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter","current_position":0}]}}
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"blind","current_position":0}]}}
                 """);
         clearInvocations(account);
         command(UpDownType.DOWN);
@@ -238,23 +239,23 @@ class VeluxActiveOpeningHandlerTest {
                 {"home":{"id":"home","modules":[{"id":"opening","current_position":35,"reachable":true}]}}
                 """);
         assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
-        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(35)));
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(65)));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = { "window", "shutter" })
-    void acceptedTargetIsPublishedAndNextPollReconcilesActualPosition(String type) {
+    @EnumSource(value = VeluxType.class, names = { "WINDOW", "SHUTTER" })
+    void acceptedTargetIsPublishedAndNextPollReconcilesActualPosition(VeluxType type) {
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","velux_type":"%s",
                  "bridge":"gateway","current_position":20,"target_position":0}]}}
                 """.formatted(type));
         var requestContext = requireNonNull(handler.captureRequestContext());
         handler.positionAccepted(requestContext, 0);
-        assertThat(states.get(CHANNEL_POSITION), is(new PercentType("window".equals(type) ? 100 : 0)));
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(type.isInverted() ? 100 : 0)));
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening","current_position":10,"target_position":0}]}}
                 """);
-        assertThat(states.get(CHANNEL_POSITION), is(new PercentType("window".equals(type) ? 90 : 10)));
+        assertThat(states.get(CHANNEL_POSITION), is(new PercentType(type.isInverted() ? 90 : 10)));
     }
 
     @Test
@@ -287,7 +288,7 @@ class VeluxActiveOpeningHandlerTest {
         handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
         assertThat(requireNonNull(handler.captureRequestContext()).homeId(), is("other-home"));
         update("""
-                {"home":{"id":"other-home","modules":[{"id":"opening","velux_type":"shutter",
+                {"home":{"id":"other-home","modules":[{"id":"opening","velux_type":"blind",
                 "bridge":"other-gateway","current_position":25}]}}
                 """);
         command(UpDownType.DOWN);
@@ -320,7 +321,7 @@ class VeluxActiveOpeningHandlerTest {
         when(bridge.getStatus()).thenReturn(ThingStatus.ONLINE);
         handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.ONLINE, ThingStatusDetail.NONE, null));
         update("""
-                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter","current_position":25}]}}
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"blind","current_position":25}]}}
                 """);
         assertThat(thing.getStatus(), is(ThingStatus.ONLINE));
         assertThat(states.get(CHANNEL_POSITION), is(new PercentType(25)));

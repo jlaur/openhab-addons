@@ -17,6 +17,7 @@ import java.util.List;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.veluxactive.internal.api.ModuleType;
+import org.openhab.binding.veluxactive.internal.api.VeluxType;
 
 import com.google.gson.annotations.SerializedName;
 
@@ -72,7 +73,7 @@ public class Module {
     public @Nullable Integer securePosition;
     public @Nullable Boolean silent;
     @SerializedName("velux_type")
-    public @Nullable String veluxType;
+    public @Nullable VeluxType veluxType;
     @SerializedName("battery_level")
     public @Nullable Integer batteryLevel;
     @SerializedName("battery_percent")
