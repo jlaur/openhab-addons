@@ -162,6 +162,9 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
         updateState(CHANNEL_POSITION, position == null ? UnDefType.UNDEF : new PercentType(position));
         String mode = module.mode;
         updateState(CHANNEL_MODE, mode == null ? UnDefType.UNDEF : new StringType(mode.replace('_', '-')));
+        String batteryState = module.batteryState;
+        updateState(CHANNEL_BATTERY_STATE,
+                batteryState == null ? UnDefType.UNDEF : new StringType(batteryState.replace('_', '-')));
         Long seen = module.lastSeen;
         try {
             updateState(CHANNEL_LAST_SEEN,
@@ -195,6 +198,7 @@ public class VeluxActiveOpeningHandler extends VeluxActiveModuleHandler {
     protected void clearState() {
         updateState(CHANNEL_POSITION, UnDefType.UNDEF);
         updateState(CHANNEL_MODE, UnDefType.UNDEF);
+        updateState(CHANNEL_BATTERY_STATE, UnDefType.UNDEF);
         updateState(CHANNEL_LAST_SEEN, UnDefType.UNDEF);
     }
 }

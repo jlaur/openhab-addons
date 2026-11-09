@@ -110,6 +110,7 @@
 		<channels>
 			<channel id="position" typeId="position"/>
 			<channel id="mode" typeId="operating-mode"/>
+			<channel id="battery-state" typeId="battery-state"/>
 			<channel id="last-seen" typeId="last-seen"/>
 		</channels>
 

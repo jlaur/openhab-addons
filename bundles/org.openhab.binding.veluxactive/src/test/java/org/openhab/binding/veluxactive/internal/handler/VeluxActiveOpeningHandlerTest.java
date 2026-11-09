@@ -204,12 +204,27 @@ class VeluxActiveOpeningHandlerTest {
                 {"home":{"id":"home","modules":[{"id":"opening","velux_type":"window","current_position":-1,
                  "target_position":101,"last_seen":9223372036854775807}]}}
                 """);
-        assertThat(states.size(), is(3));
+        assertThat(states.size(), is(4));
         assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
         update("""
                 {"home":{"id":"home","modules":[{"id":"opening"}]}}
                 """);
         assertThat(states.values().stream().allMatch(UnDefType.UNDEF::equals), is(true));
+    }
+
+    @Test
+    void reportsBatteryStateAndClearsItWhenMissing() {
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter",
+                 "battery_state":"very_low","reachable":true}]}}
+                """);
+        assertThat(states.get(CHANNEL_BATTERY_STATE), is(new StringType("very-low")));
+
+        update("""
+                {"home":{"id":"home","modules":[{"id":"opening","velux_type":"shutter",
+                 "reachable":true}]}}
+                """);
+        assertThat(states.get(CHANNEL_BATTERY_STATE), is(UnDefType.UNDEF));
     }
 
     @Test

@@ -38,6 +38,7 @@ public class VeluxActiveBindingConstants {
     public static final String CHANNEL_ILLUMINANCE = "illuminance";
     public static final String CHANNEL_BATTERY = "battery-level";
     public static final String CHANNEL_LOW_BATTERY = "low-battery";
+    public static final String CHANNEL_BATTERY_STATE = "battery-state";
     public static final String CHANNEL_SIGNAL = "signal-strength";
     public static final String CHANNEL_LOCKED = "locked";
     public static final String CHANNEL_LAST_SEEN = "last-seen";

@@ -132,11 +132,12 @@ Departure lock state and locking commands remain on the Gateway Bridge's `locked
 NXO modules are discovered as Window/Cover Things (`opening`), covering roof windows, blinds, venetian blinds, shutters and awning blinds.
 Manual configuration under a Gateway Bridge requires `moduleId`.
 
-| Channel   | Item type     | Access     | Description                                                              |
-| --------- | ------------- | ---------- | ------------------------------------------------------------------------ |
-| position  | Rollershutter | Read/write | Current position: 0% open, 100% closed                                   |
-| mode      | String        | Read-only  | Reported operating mode, for example `algo-available` or `algo-disabled` |
-| last-seen | DateTime      | Read-only  | Last contact timestamp reported by the service                           |
+| Channel       | Item type     | Access     | Description                                                                 |
+| ------------- | ------------- | ---------- | --------------------------------------------------------------------------- |
+| position      | Rollershutter | Read/write | Current position: 0% open, 100% closed                                      |
+| mode          | String        | Read-only  | Reported operating mode, for example `algo-available` or `algo-disabled`    |
+| battery-state | String        | Read-only  | Battery state, when available (`full`, `high`, `medium`, `low`, `very-low`) |
+| last-seen     | DateTime      | Read-only  | Last contact timestamp reported by the service                              |
 
 UP requests fully open, DOWN requests fully closed, and percentage commands set intermediate positions.
 Blinds and shutters support unsigned position commands.
