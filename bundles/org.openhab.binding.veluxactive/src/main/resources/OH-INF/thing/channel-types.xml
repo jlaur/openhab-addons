@@ -52,7 +52,7 @@
 		<category>Blinds</category>
 		<tags>
 			<tag>Control</tag>
-			<tag>OpenState</tag>
+			<tag>OpenLevel</tag>
 		</tags>
 		<state pattern="%d %%"/>
 		<autoUpdatePolicy>veto</autoUpdatePolicy>

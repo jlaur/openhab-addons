@@ -60,6 +60,9 @@ import com.google.gson.JsonParseException;
 @NonNullByDefault
 public class VeluxActiveApi {
     private static final String BASE_URL = "https://app.velux-active.com";
+    private static final String HOMES_DATA_PATH = "/api/homesdata";
+    private static final String HOME_STATUS_PATH = "/api/homestatus";
+    private static final String SET_STATE_PATH = "/syncapi/v1/setstate";
     private static final Gson GSON = new Gson();
 
     private final Logger logger = LoggerFactory.getLogger(VeluxActiveApi.class);
@@ -83,7 +86,7 @@ public class VeluxActiveApi {
     }
 
     public List<ModuleInfo> modules(String token) throws ApiException, InterruptedException {
-        JsonObject body = requireBody(request(token, "/api/homesdata", "", false));
+        JsonObject body = requireBody(request(token, HOMES_DATA_PATH, "", false));
         try {
             Topology topology = GSON.fromJson(body, Topology.class);
             List<@Nullable Home> homes = topology == null ? null : topology.homes;
@@ -122,7 +125,7 @@ public class VeluxActiveApi {
 
     public HomeStatus homeStatus(String token, String homeId) throws ApiException, InterruptedException {
         String form = "home_id=" + URLEncoder.encode(homeId, StandardCharsets.UTF_8);
-        JsonObject body = requireBody(request(token, "/api/homestatus", form, false));
+        JsonObject body = requireBody(request(token, HOME_STATUS_PATH, form, false));
         try {
             HomeStatus status = GSON.fromJson(body, HomeStatus.class);
             Home home = status == null ? null : status.home;
@@ -184,7 +187,7 @@ public class VeluxActiveApi {
             throws ApiException, InterruptedException {
         String payload = GSON.toJson(Map.of("app_type", "app_velux", "app_version", APP_VERSION, "home",
                 Map.of("id", homeId, "timezone", timezone, "modules", List.of(module))));
-        JsonElement body = request(token, "/syncapi/v1/setstate", payload, true).body;
+        JsonElement body = request(token, SET_STATE_PATH, payload, true).body;
         JsonElement errors = body == null ? null : body.getAsJsonObject().get("errors");
         if (errors != null && !errors.isJsonNull() && (!errors.isJsonArray() || !errors.getAsJsonArray().isEmpty())) {
             throw new ApiException("The gateway rejected the command.");

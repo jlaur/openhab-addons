@@ -18,7 +18,7 @@
 				<label>Password</label>
 				<description>Password of the VELUX ACTIVE account</description>
 			</parameter>
-			<parameter name="refreshInterval" type="integer" min="5" unit="s">
+			<parameter name="refreshInterval" type="integer" min="30" unit="s">
 				<label>Refresh Interval</label>
 				<description>Interval between home status requests</description>
 				<advanced>true</advanced>

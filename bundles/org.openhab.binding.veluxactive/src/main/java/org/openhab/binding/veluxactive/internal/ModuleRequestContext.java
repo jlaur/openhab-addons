@@ -22,10 +22,8 @@ import org.openhab.binding.veluxactive.internal.handler.VeluxActiveModuleHandler
  * The account groups contexts by home to share status requests and delivers results to their handlers.
  * Before executing a command or publishing a result, the captured context is checked with
  * {@link VeluxActiveModuleHandler#isRequestContextCurrent(ModuleRequestContext)} so work from an obsolete lifecycle or
- * home association
- * can be
- * discarded. Child contexts also capture their gateway's context, allowing the same check to reject work when the
- * gateway has been reinitialized, disposed or is no longer online.
+ * home association can be discarded. Child contexts also capture their gateway's context, allowing the same check to
+ * reject work when the gateway has been reinitialized, disposed or is no longer online.
  *
  * An unresolved home is represented by an empty ID so the module can participate in topology polling.
  * Such contexts must not be used for status requests or commands to the API.
