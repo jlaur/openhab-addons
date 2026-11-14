@@ -45,7 +45,7 @@ public class VeluxActivePairingActions implements ThingActions {
         this.handler = handler instanceof VeluxActiveGatewayHandler gateway ? gateway : null;
     }
 
-    @RuleAction(label = "Pair Gateway", description = "Start pairing, then press the gateway button. Use pairingStatus to check progress.")
+    @RuleAction(label = "Pair Gateway", description = "Pair only on a trusted network; this connection is not secure transport. Press the gateway button and check pairingStatus.")
     public @ActionOutput(type = "java.lang.String", label = "Pairing Result") String pair(
             @ActionInput(name = "host", label = "Gateway IP Address", description = "The IP address of this gateway on the local network") String host) {
         VeluxActiveGatewayHandler gateway = handler;
