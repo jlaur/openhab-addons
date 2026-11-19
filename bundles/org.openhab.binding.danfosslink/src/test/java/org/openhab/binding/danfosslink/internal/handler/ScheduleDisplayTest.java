@@ -81,7 +81,7 @@ class ScheduleDisplayTest {
     }
 
     @Test
-    void refreshRetainsReportedStateUntilReadbackSucceedsOrFails() {
+    void refreshRetainsReportedStateWhenReadbackFails() {
         var states = new ArrayList<State>();
         var display = new ScheduleDisplay(new Object(), states::add);
         Instant now = Instant.EPOCH;
@@ -99,8 +99,10 @@ class ScheduleDisplayTest {
         display.invalidate();
         var failure = Objects.requireNonNull(display.request(2, true, now));
         assertTrue(states.isEmpty());
-        failure.complete().accept(UnDefType.UNDEF);
-        assertEquals(java.util.List.of(UnDefType.UNDEF), states);
+        failure.failed().run();
+        assertTrue(states.isEmpty());
+        assertNull(display.request(2, true, now.plusSeconds(59)));
+        assertNotNull(display.request(2, true, now.plusSeconds(60)));
     }
 
     @Test

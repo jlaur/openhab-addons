@@ -66,7 +66,7 @@ final class ScheduleDisplay {
         }
     }
 
-    record Request(int roomId, Consumer<State> complete) {
+    record Request(int roomId, Consumer<State> complete, Runnable failed) {
     }
 
     @Nullable
@@ -88,15 +88,26 @@ final class ScheduleDisplay {
                 return null;
             }
             long requestedRevision = revision;
-            return new Request(roomId, state -> {
-                synchronized (lifecycle) {
-                    if (running && revision == requestedRevision) {
-                        // Failed reads are retried, but not on every heating command or short polling interval.
-                        nextRead = now.plus(state == UnDefType.UNDEF ? Duration.ofMinutes(1) : Duration.ofMinutes(15));
-                        publish.accept(state);
-                    }
-                }
-            });
+            return new Request(roomId, state -> complete(requestedRevision, now, state),
+                    () -> failed(requestedRevision, now));
+        }
+    }
+
+    private void complete(long requestedRevision, Instant now, State state) {
+        synchronized (lifecycle) {
+            if (running && revision == requestedRevision) {
+                nextRead = now.plus(state == UnDefType.UNDEF ? Duration.ofMinutes(1) : Duration.ofMinutes(15));
+                publish.accept(state);
+            }
+        }
+    }
+
+    private void failed(long requestedRevision, Instant now) {
+        synchronized (lifecycle) {
+            if (running && revision == requestedRevision) {
+                // Retry failures without replacing the last successfully reported schedule.
+                nextRead = now.plus(Duration.ofMinutes(1));
+            }
         }
     }
 

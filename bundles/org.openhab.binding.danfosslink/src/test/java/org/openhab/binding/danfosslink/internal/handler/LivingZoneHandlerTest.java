@@ -76,7 +76,7 @@ class LivingZoneHandlerTest {
             verify(callback).stateUpdated(channel, OnOffType.ON);
             clearInvocations(callback);
             handler.bridgeStatusChanged(new ThingStatusInfo(ThingStatus.OFFLINE, ThingStatusDetail.NONE, null));
-            verify(callback).stateUpdated(channel, UnDefType.UNDEF);
+            verify(callback, never()).stateUpdated(any(), any());
             handler.publish(state);
             verify(callback).stateUpdated(channel, OnOffType.ON);
             clearInvocations(callback);

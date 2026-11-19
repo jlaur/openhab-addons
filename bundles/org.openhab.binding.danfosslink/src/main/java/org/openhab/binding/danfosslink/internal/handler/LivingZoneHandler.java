@@ -28,7 +28,6 @@ import org.openhab.core.thing.ThingStatusInfo;
 import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
-import org.openhab.core.types.UnDefType;
 
 /**
  * Controls shared regulation for the controller's built-in Living zone.
@@ -135,9 +134,7 @@ public class LivingZoneHandler extends BaseThingHandler {
                 return;
             }
             if (status.getStatus() != ThingStatus.ONLINE) {
-                updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
                 schedule.invalidate();
-                updateState(CHANNEL_SCHEDULE, UnDefType.UNDEF);
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
             } else if (getThing().getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.UNKNOWN);

@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
+import org.eclipse.jdt.annotation.Nullable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
@@ -74,7 +75,7 @@ import com.google.gson.JsonParser;
 @Timeout(30)
 class ControllerHandlerTest {
     @Test
-    void outdoorTemperatureRefreshFailureAndRecovery() throws Exception {
+    void outdoorTemperatureRefreshFailureRetainsLastStateAndRecovers() throws Exception {
         var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "outdoor").build();
         var identity = Identity.generate();
         var store = mock(PairingStore.class);
@@ -117,8 +118,8 @@ class ControllerHandlerTest {
             var temperature = new org.openhab.core.library.types.QuantityType<>(new java.math.BigDecimal("-4.5"),
                     org.openhab.core.library.unit.SIUnits.CELSIUS);
             order.verify(callback).stateUpdated(channel, temperature);
-            order.verify(callback).stateUpdated(channel, UnDefType.UNDEF);
             order.verify(callback).stateUpdated(channel, temperature);
+            verify(callback, never()).stateUpdated(channel, UnDefType.UNDEF);
             verify(session, never()).apply(any());
         } finally {
             handler.dispose();
@@ -235,7 +236,7 @@ class ControllerHandlerTest {
     }
 
     @Test
-    void publishesAlarmsAndClearsUnavailableStatesBeforeRecovery() throws Exception {
+    void publishesAlarmsAndRetainsThemOnCommunicationFailure() throws Exception {
         var bridge = BridgeBuilder.create(THING_TYPE_CONTROLLER, "alarms").build();
         var identity = Identity.generate();
         var store = mock(PairingStore.class);
@@ -273,7 +274,11 @@ class ControllerHandlerTest {
                 handler.initialize();
                 assertTrue(finished.await(10, TimeUnit.SECONDS));
                 handler.dispose();
-                boolean unknown = "null".equals(alarms) || "failure".equals(alarms);
+                boolean unknown = "null".equals(alarms);
+                if ("failure".equals(alarms)) {
+                    verify(callback, never()).stateUpdated(any(), any());
+                    continue;
+                }
                 verify(callback).stateUpdated(new ChannelUID(bridge.getUID(), CHANNEL_ALARM),
                         unknown ? UnDefType.UNDEF : "[]".equals(alarms) ? OnOffType.OFF : OnOffType.ON);
                 verify(callback).stateUpdated(new ChannelUID(bridge.getUID(), CHANNEL_ALARM_COUNT),
@@ -298,10 +303,13 @@ class ControllerHandlerTest {
             when(roomThing.getHandler()).thenReturn(room);
             when(zoneThing.getHandler()).thenReturn(zone);
             doReturn(List.of(roomThing, zoneThing)).when(bridge).getThings();
-            var roomState = new AtomicReference<State>();
-            var zoneState = new AtomicReference<State>();
-            when(room.scheduleRequest(any(), any())).thenReturn(new ScheduleDisplay.Request(2, roomState::set));
-            when(zone.scheduleRequest(any(), any())).thenReturn(new ScheduleDisplay.Request(2, zoneState::set));
+            State previous = new StringType("previous");
+            var roomState = new AtomicReference<@Nullable State>(failure ? previous : null);
+            var zoneState = new AtomicReference<@Nullable State>(failure ? previous : null);
+            when(room.scheduleRequest(any(), any())).thenReturn(new ScheduleDisplay.Request(2, roomState::set, () -> {
+            }));
+            when(zone.scheduleRequest(any(), any())).thenReturn(new ScheduleDisplay.Request(2, zoneState::set, () -> {
+            }));
             var identity = Identity.generate();
             var store = mock(PairingStore.class);
             when(store.load(anyString())).thenReturn(new PairingStore.Credentials(identity, identity.certificate));
@@ -335,8 +343,8 @@ class ControllerHandlerTest {
                 handler.initialize();
                 assertTrue(closed.await(10, TimeUnit.SECONDS));
                 verify(session, times(1)).room(2);
-                assertEquals(failure ? UnDefType.UNDEF : new StringType(schedule), roomState.get());
-                assertEquals(roomState.get(), zoneState.get());
+                assertEquals(failure ? previous : new StringType(schedule), roomState.get());
+                assertEquals(Objects.requireNonNull(roomState.get()), Objects.requireNonNull(zoneState.get()));
                 verify(callback).statusUpdated(eq(bridge), argThat(info -> info.getStatus() == ThingStatus.ONLINE));
                 verify(callback, never()).statusUpdated(eq(bridge),
                         argThat(info -> info.getStatus() == ThingStatus.OFFLINE));
@@ -364,6 +372,7 @@ class ControllerHandlerTest {
                 if (attempted.get()) {
                     readBack.countDown();
                 }
+            }, () -> {
             }));
             var identity = Identity.generate();
             var store = mock(PairingStore.class);
@@ -807,7 +816,7 @@ class ControllerHandlerTest {
                 verify(callback, atLeastOnce()).stateUpdated(pause, OnOffType.OFF);
                 verify(callback, atLeastOnce()).stateUpdated(until, UnDefType.UNDEF);
                 if (failure == -1) {
-                    verify(callback, atLeastOnce()).stateUpdated(pause, UnDefType.UNDEF);
+                    verify(callback, never()).stateUpdated(pause, UnDefType.UNDEF);
                 }
                 verify(session, never()).vacation(any());
             } finally {
@@ -898,8 +907,8 @@ class ControllerHandlerTest {
                 verify(callback, atLeastOnce()).stateUpdated(channel, OnOffType.ON);
                 verify(callback, atLeastOnce()).stateUpdated(channel, OnOffType.OFF);
                 if (failure == -1) {
-                    verify(callback, atLeastOnce()).stateUpdated(channel, UnDefType.UNDEF);
-                    verify(callback).stateUpdated(currentStateChannel, UnDefType.UNDEF);
+                    verify(callback, never()).stateUpdated(channel, UnDefType.UNDEF);
+                    verify(callback, never()).stateUpdated(currentStateChannel, UnDefType.UNDEF);
                 }
                 verify(session, never()).pause(any());
                 verify(session, never()).vacation(any());

@@ -24,8 +24,10 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -520,15 +522,6 @@ public class ControllerHandler extends BaseBridgeHandler {
         } catch (IOException e) {
             synchronized (lifecycle) {
                 if (current(operation)) {
-                    for (String channel : VACATION_CHANNELS) {
-                        updateState(channel, UnDefType.UNDEF);
-                    }
-                    publishPause(null);
-                    publishAlarms(null);
-                    updateState(CHANNEL_HOME, UnDefType.UNDEF);
-                    updateState(CHANNEL_CURRENT_STATE, UnDefType.UNDEF);
-                    updateState(CHANNEL_OUTDOOR_TEMPERATURE, UnDefType.UNDEF);
-                    updateState(CHANNEL_VACATION_TEMPERATURE, UnDefType.UNDEF);
                     logger.debug("Controller {} operation failed during {}", getThing().getUID(), stage, e);
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, pin == null ? switch (e) {
                         case ControllerUnavailableException unavailable -> unavailable.getMessage() + "; will retry";
@@ -573,6 +566,7 @@ public class ControllerHandler extends BaseBridgeHandler {
             }
         }
         Map<Integer, State> results = new HashMap<>();
+        Set<Integer> failedSources = new HashSet<>();
         boolean sessionFailed = false;
         for (var request : requests) {
             synchronized (lifecycle) {
@@ -580,9 +574,10 @@ public class ControllerHandler extends BaseBridgeHandler {
                     return;
                 }
             }
-            State state = results.get(request.roomId());
-            if (state == null) {
-                state = UnDefType.UNDEF;
+            Integer source = request.roomId();
+            if (!results.containsKey(source) && !failedSources.contains(source)) {
+                boolean failed = sessionFailed;
+                State state = UnDefType.UNDEF;
                 if (!sessionFailed) {
                     try {
                         var schedule = session.room(request.roomId()).schedule;
@@ -595,13 +590,22 @@ public class ControllerHandler extends BaseBridgeHandler {
                         logger.debug("Schedule read failed for room {}: {}", request.roomId(), e.getMessage());
                         // Do not continue issuing optional requests on a potentially broken stream.
                         sessionFailed = true;
+                        failed = true;
                     }
                 }
-                results.put(request.roomId(), state);
+                if (failed) {
+                    failedSources.add(source);
+                } else {
+                    results.put(source, state);
+                }
             }
             synchronized (lifecycle) {
                 if (current(operation)) {
-                    request.complete().accept(state);
+                    if (failedSources.contains(source)) {
+                        request.failed().run();
+                    } else {
+                        request.complete().accept(Objects.requireNonNull(results.get(source)));
+                    }
                 }
             }
         }

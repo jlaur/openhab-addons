@@ -147,7 +147,7 @@ The binding keeps this compatibility handling local rather than changing global 
 
 The log records commands being applied, request URIs, write bodies, response HTTP status, and bounded controller error details.
 A failed operation identifies its stage.
-Communication failures make the Bridge offline; individual command rejection paths can recover through readback without taking the Bridge offline.
+Communication failures make the Bridge offline and retain its last channel states. Individual command rejection paths can recover through readback without taking the Bridge offline.
 
 TRACE includes complete controller response payloads, including world responses, as well as room IDs and control values.
 Pairing PINs and credentials must not be logged.

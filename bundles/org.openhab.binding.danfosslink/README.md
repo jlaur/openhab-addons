@@ -105,7 +105,8 @@ Manual commands are rejected when zone membership is unknown.
 
 The Bridge reports unresolved controller alarms.
 An empty list publishes OFF, 0 and `[]` to `alarm`, `alarm-count` and `alarms`, respectively.
-Unavailable alarm data produces `UNDEF` for all three channels.
+Unavailable alarm data in a controller response produces `UNDEF` for all three channels.
+During a communication outage, the channels retain their last reported values while the Bridge is offline.
 All unresolved alarms are included, including those already marked as read.
 The `alarms` channel contains raw JSON with message identifiers rather than translated alarm descriptions.
 These channels are read-only; the binding does not acknowledge or clear faults.
@@ -114,7 +115,8 @@ These channels are read-only; the binding does not acknowledge or clear faults.
 
 The controller channel `current-state` reports the overall controller state.
 Known values include `AtHome`, `Away`, `Asleep`, `Vacation`, `Pause`, `Manual`, `Boost`, `Normal`, `Off`, `On` and `Invalid`.
-Unknown state names are preserved; missing or empty values and communication failures produce `UNDEF`.
+Unknown state names are preserved; missing or empty values produce `UNDEF`.
+During a communication outage, the channel retains its last reported value while the Bridge is offline.
 The channel supports REFRESH and does not accept state-changing commands.
 
 `current-state` and `home` report different information: the overall controller state and the explicit Home override respectively.
@@ -137,7 +139,7 @@ Standalone rooms are selected individually.
 The binding rejects empty selections, missing selected rooms, changed standalone-room membership, and selected rooms whose regulation is not `Schedule`.
 Resolve the selection or regulation setting and send ON again; the binding does not silently skip rooms or change manual mode.
 
-The `home` switch reflects the controller-reported override: ON for Active, OFF for Inactive, or `UNDEF` when unavailable.
+The `home` switch reflects the controller-reported override: ON for Active, OFF for Inactive, or `UNDEF` when unavailable in a controller response.
 The `home-selected` channels represent staged intent, not the actual override membership.
 Changes made in the app or on the controller update `home` without overwriting staged selections.
 Selections start OFF, survive ordinary polls, reconnects and cancellation, and reset when the Bridge is reinitialized (including a binding restart).
@@ -226,7 +228,8 @@ Link it to a String Item to enable fetching.
 The binding reads it after normal heating updates, initially and then at the first controller poll after 15 minutes.
 Sending `REFRESH` to the linked channel requests a fresh read, including when another cloud operation is already running.
 After a failed read, the binding retries at the first normal poll after one minute.
-Schedule failures publish `UNDEF` without discarding successfully read heating data or taking the Bridge offline solely because a schedule read failed.
+Rejected, missing, or malformed schedule data publishes `UNDEF` without discarding successfully read heating data or taking the Bridge offline solely because a schedule read failed.
+A communication failure while reading a schedule retains its last reported value and retries at the next scheduled attempt.
 
 Independent rooms read their own schedule.
 Living-zone Things and member rooms report the shared Living-zone schedule.

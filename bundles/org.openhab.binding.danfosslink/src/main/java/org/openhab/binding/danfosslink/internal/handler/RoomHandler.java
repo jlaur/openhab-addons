@@ -193,15 +193,7 @@ public class RoomHandler extends BaseThingHandler {
             }
             if (status.getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
-                updateState(CHANNEL_TEMPERATURE, UnDefType.UNDEF);
-                updateState(CHANNEL_SETPOINT, UnDefType.UNDEF);
-                updateState(CHANNEL_REGULATION_STATE, UnDefType.UNDEF);
-                updateState(CHANNEL_HOME_SETPOINT, UnDefType.UNDEF);
-                updateState(CHANNEL_AWAY_SETPOINT, UnDefType.UNDEF);
-                updateState(CHANNEL_MANUAL_SETPOINT, UnDefType.UNDEF);
-                updateState(CHANNEL_MANUAL, UnDefType.UNDEF);
                 schedule.invalidate();
-                updateState(CHANNEL_SCHEDULE, UnDefType.UNDEF);
             } else if (getThing().getStatus() != ThingStatus.ONLINE) {
                 updateStatus(ThingStatus.UNKNOWN);
             }
